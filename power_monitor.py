@@ -231,7 +231,7 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            msg = "\u274c\U0001f526 Світло ЗК 6\nСвітло пропало!"
+            msg = "\u274c Світло ЗК 6\nСвітло пропало!"
             if dur:
                 msg += f"\nСвітло було {dur}"
             await tg_send(msg)
@@ -242,7 +242,7 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            msg = "\u2705\U0001f4a1 Світло ЗК 6\nСвітло з'явилось!"
+            msg = "\u2705 Світло ЗК 6\nСвітло з'явилось!"
             if dur:
                 msg += f"\nСвітла не було {dur}"
             await tg_send(msg)
@@ -361,8 +361,8 @@ def _power_status_text() -> str:
 
     dur = _format_duration(int(time.time() - since_ts))
     if is_down:
-        return f"\u274c\U0001f526 Світло ВІДСУТНЄ вже {dur}"
-    return f"\u2705\U0001f4a1 Світло є вже {dur}"
+        return f"\u274c Світло ВІДСУТНЄ вже {dur}"
+    return f"\u2705 Світло є вже {dur}"
 
 
 def _ts_fmt(ts: float) -> str:
@@ -485,11 +485,11 @@ td.down {{ color: #fca5a5; }}
 <h2>Легенда повідомлень</h2>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло пропало</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
+<tr><td>Світло пропало</td><td>\u274c Світло ЗК 6 / Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705 Світло ЗК 6 / Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
 <tr><td>MikroTik offline</td><td>\u26a0\ufe0f Світло ЗК 6 / MikroTik не відповідає вже N хв</td><td>prod</td></tr>
-<tr><td>Тест (є світло)</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло є вже Nгод Nхв</td><td>test</td></tr>
-<tr><td>Тест (нема світла)</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
+<tr><td>Тест (є світло)</td><td>\u2705 Світло є вже Nгод Nхв</td><td>test</td></tr>
+<tr><td>Тест (нема світла)</td><td>\u274c Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
 </table>
 
 <div class="ver">v {GIT_COMMIT}</div>
