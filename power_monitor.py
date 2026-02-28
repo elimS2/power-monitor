@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # e.g. https://power.elims.pp.ua
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")
 TG_WEBHOOK_SECRET = hashlib.sha256(TG_BOT_TOKEN.encode()).hexdigest()[:32]
 def _parse_keys(raw: str) -> dict:
     """Parse 'label:key,label2:key2' or plain 'key1,key2' into {key: label}."""
