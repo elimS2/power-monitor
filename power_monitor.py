@@ -528,10 +528,6 @@ td.down {{ color: #fca5a5; }}
 {ev_rows}</table>
 
 <h2>Telegram</h2>
-<div class="btn-row">
-<button class="btn" onclick="sendTest()">Надіслати тест</button>
-<span id="test-result"></span>
-</div>
 <table>
 <tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
 {tg_rows}</table>
@@ -547,15 +543,4 @@ td.down {{ color: #fca5a5; }}
 </table>
 
 <div class="ver">v {GIT_COMMIT}</div>
-<script>
-function sendTest() {{
-  var btn = document.querySelector('.btn');
-  btn.disabled = true;
-  btn.textContent = '...';
-  fetch('/api/test-telegram?key={key}', {{method:'POST'}})
-    .then(r => r.json())
-    .then(d => {{ btn.textContent = 'Надіслати тест'; btn.disabled = false; location.reload(); }})
-    .catch(() => {{ btn.textContent = 'Помилка'; btn.disabled = false; }});
-}}
-</script>
 </body></html>"""
