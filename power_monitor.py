@@ -196,12 +196,20 @@ def recent_tg_log(n: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+STATUS_BUTTON = {
+    "inline_keyboard": [[{"text": "\U0001f4ca Статус", "callback_data": "get_status"}]]
+}
+
+
 async def tg_send(text: str, chat_id: str = ""):
     target = chat_id or TG_CHAT_ID
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": target, "text": text}
+    if target == TG_CHAT_ID:
+        payload["reply_markup"] = STATUS_BUTTON
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(url, json={"chat_id": target, "text": text})
+            r = await client.post(url, json=payload)
             save_tg_log(target, text, r.status_code)
             log.info("TG [%s] to %s: %s", r.status_code, target, text.replace("\n", " | "))
     except Exception as e:
@@ -366,6 +374,22 @@ async def tg_webhook(request: Request):
     if secret != TG_WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
     data = await request.json()
+
+    cb = data.get("callback_query")
+    if cb and cb.get("data") == "get_status":
+        status = _power_status_text()
+        api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{api}/answerCallbackQuery",
+                json={
+                    "callback_query_id": cb["id"],
+                    "text": f"Світло ЗК 6\n{status}",
+                    "show_alert": True,
+                },
+            )
+        return {"ok": True}
+
     msg = data.get("message") or {}
     text = (msg.get("text") or "").strip()
     chat = msg.get("chat") or {}
