@@ -249,28 +249,34 @@ async def analyze():
         is_down = kv_get("power_down") == "1"
 
         if all_dead and not is_down:
+            now = time.time()
             prev = recent_events(1)
             if prev:
-                dur = _format_duration(int(time.time() - prev[0]["ts"]))
+                since_ts = prev[0]["ts"]
+            elif first_heartbeat_ts():
+                since_ts = first_heartbeat_ts()
             else:
-                dur = _format_duration(int(time.time() - first_heartbeat_ts())) if first_heartbeat_ts() else ""
+                since_ts = 0
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            msg = "\u274c Світло пропало!"
-            if dur:
-                msg += f"\nСвітло було {dur}"
+            msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло"
+            if since_ts:
+                dur = _format_duration(int(now - since_ts))
+                msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
             await tg_send(msg)
 
         elif latest_alive and is_down:
+            now = time.time()
             prev = recent_events(1)
-            dur = _format_duration(int(time.time() - prev[0]["ts"])) if prev else ""
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            msg = "\u2705 Світло з'явилось!"
-            if dur:
-                msg += f"\nСвітла не було {dur}"
+            msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось"
+            if prev:
+                since_ts = prev[0]["ts"]
+                dur = _format_duration(int(now - since_ts))
+                msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
             await tg_send(msg)
 
 
@@ -405,6 +411,7 @@ def _power_status_text() -> str:
     is_down = kv_get("power_down") == "1"
     ev = recent_events(1)
     hb = recent_heartbeats(1)
+    now = time.time()
 
     if ev:
         since_ts = ev[0]["ts"]
@@ -413,10 +420,14 @@ def _power_status_text() -> str:
     else:
         return "Світло є (немає даних)"
 
-    dur = _format_duration(int(time.time() - since_ts))
+    dur = _format_duration(int(now - since_ts))
     if is_down:
-        return f"\u274c Світло ВІДСУТНЄ вже {dur}"
-    return f"\u2705 Світло є вже {dur}"
+        return f"\u274c Світло ВІДСУТНЄ вже {dur} (з {_ts_fmt_hm(since_ts)})"
+    return f"\u2705 Світло є вже {dur} (з {_ts_fmt_hm(since_ts)})"
+
+
+def _ts_fmt_hm(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%H:%M")
 
 
 def _ts_fmt(ts: float) -> str:
@@ -535,11 +546,11 @@ td.down {{ color: #fca5a5; }}
 <h2>Легенда повідомлень</h2>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло пропало</td><td>\u274c Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705 Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
+<tr><td>Світло зникло</td><td>\u274c 23:31 Світло зникло / \U0001f553 Воно було 3год 30хв (20:01 - 23:31)</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705 01:15 Світло з'явилось / \U0001f553 Його не було 1год 44хв (23:31 - 01:15)</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
-<tr><td>Тест (є світло)</td><td>\u2705 Світло є вже Nгод Nхв</td><td>test</td></tr>
-<tr><td>Тест (нема світла)</td><td>\u274c Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
+<tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
+<tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ вже 15хв (з 23:31)</td><td>приват</td></tr>
 </table>
 
 <div class="ver">v {GIT_COMMIT}</div>
