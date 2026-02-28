@@ -28,6 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
+TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
 API_KEY = os.getenv("API_KEY", "changeme")
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
@@ -92,6 +93,14 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 val TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS tg_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT    NOT NULL,
+                text    TEXT    NOT NULL,
+                status  INTEGER NOT NULL,
+                ts      REAL    NOT NULL
+            );
         """)
 
 
@@ -154,13 +163,32 @@ def cleanup_old():
 
 # ─── Telegram ────────────────────────────────────────────────
 
-async def tg_send(text: str):
+def save_tg_log(chat_id: str, text: str, status: int):
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO tg_log(chat_id, text, status, ts) VALUES(?,?,?,?)",
+            (chat_id, text, status, time.time()),
+        )
+
+
+def recent_tg_log(n: int = 20) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT chat_id, text, status, ts FROM tg_log ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+async def tg_send(text: str, chat_id: str = ""):
+    target = chat_id or TG_CHAT_ID
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(url, json={"chat_id": TG_CHAT_ID, "text": text})
-            log.info("TG [%s]: %s", r.status_code, text.replace("\n", " | "))
+            r = await client.post(url, json={"chat_id": target, "text": text})
+            save_tg_log(target, text, r.status_code)
+            log.info("TG [%s] to %s: %s", r.status_code, target, text.replace("\n", " | "))
     except Exception as e:
+        save_tg_log(target, text, 0)
         log.error("TG send failed: %s", e)
 
 
@@ -270,6 +298,14 @@ async def ep_status(key: str = Query("")):
     }
 
 
+@app.post("/api/test-telegram")
+async def ep_test_telegram(key: str = Query("")):
+    _check_key(key)
+    target = TG_TEST_CHAT_ID or TG_CHAT_ID
+    await tg_send("Power Monitor: test message", chat_id=target)
+    return {"ok": True, "sent_to": target}
+
+
 def _ts_fmt(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%H:%M:%S")
 
@@ -334,6 +370,17 @@ async def dashboard(key: str = Query("")):
         label = "Пропало" if e["event"] == "down" else "З'явилось"
         ev_rows += f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}</td></tr>\n'
 
+    tg_rows = ""
+    for t in recent_tg_log(15):
+        ok = "up" if t["status"] == 200 else "down"
+        short_chat = "test" if t["chat_id"] == TG_TEST_CHAT_ID else "prod"
+        tg_rows += (
+            f'<tr><td>{_ts_fmt_full(t["ts"])}</td>'
+            f'<td class="{ok}">{t["status"]}</td>'
+            f'<td>{short_chat}</td>'
+            f'<td>{t["text"][:40]}</td></tr>\n'
+        )
+
     status_cls = "down" if is_down else "up"
     status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
 
@@ -367,6 +414,11 @@ th {{ background: var(--border); color: var(--muted); font-weight: 500; }}
 tr:not(:last-child) td {{ border-bottom: 1px solid var(--border); }}
 td.up {{ color: #6ee7b7; }}
 td.down {{ color: #fca5a5; }}
+.btn {{ display: inline-block; padding: 0.5rem 1.2rem; border: none; border-radius: 8px; cursor: pointer;
+        font-size: 0.9rem; font-weight: 500; background: #334155; color: #e2e8f0; margin: 0.5rem 0; }}
+.btn:hover {{ background: #475569; }}
+.btn:active {{ background: #1e293b; }}
+.btn-row {{ text-align: center; margin-bottom: 1rem; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
@@ -383,5 +435,26 @@ td.down {{ color: #fca5a5; }}
 <table>
 <tr><th>Час</th><th>Подія</th></tr>
 {ev_rows}</table>
+
+<h2>Telegram</h2>
+<div class="btn-row">
+<button class="btn" onclick="sendTest()">Надіслати тест</button>
+<span id="test-result"></span>
+</div>
+<table>
+<tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
+{tg_rows}</table>
+
 <div class="ver">v {GIT_COMMIT}</div>
+<script>
+function sendTest() {{
+  var btn = document.querySelector('.btn');
+  btn.disabled = true;
+  btn.textContent = '...';
+  fetch('/api/test-telegram?key={API_KEY}', {{method:'POST'}})
+    .then(r => r.json())
+    .then(d => {{ btn.textContent = 'Надіслати тест'; btn.disabled = false; location.reload(); }})
+    .catch(() => {{ btn.textContent = 'Помилка'; btn.disabled = false; }});
+}}
+</script>
 </body></html>"""
