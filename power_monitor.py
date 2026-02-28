@@ -209,16 +209,29 @@ async def analyze():
         is_down = kv_get("power_down") == "1"
 
         if all_dead and not is_down:
+            prev = recent_events(1)
+            if prev:
+                dur = _format_duration(int(time.time() - prev[0]["ts"]))
+            else:
+                dur = _format_duration(int(time.time() - first_heartbeat_ts())) if first_heartbeat_ts() else ""
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            await tg_send("\u274c\U0001f526 Світло ЗК 6\nСвітло пропало!")
+            msg = "\u274c\U0001f526 Світло ЗК 6\nСвітло пропало!"
+            if dur:
+                msg += f"\nСвітло було {dur}"
+            await tg_send(msg)
 
         elif latest_alive and is_down:
+            prev = recent_events(1)
+            dur = _format_duration(int(time.time() - prev[0]["ts"])) if prev else ""
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            await tg_send("\u2705\U0001f4a1 Світло ЗК 6\nСвітло з'явилось!")
+            msg = "\u2705\U0001f4a1 Світло ЗК 6\nСвітло з'явилось!"
+            if dur:
+                msg += f"\nСвітла не було {dur}"
+            await tg_send(msg)
 
 
 async def watchdog():
@@ -458,8 +471,8 @@ td.down {{ color: #fca5a5; }}
 <h2>Легенда повідомлень</h2>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло пропало</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло пропало!</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло з'явилось!</td><td>prod</td></tr>
+<tr><td>Світло пропало</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
 <tr><td>MikroTik offline</td><td>\u26a0\ufe0f Світло ЗК 6 / MikroTik не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>Тест (є світло)</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло є вже Nгод Nхв</td><td>test</td></tr>
 <tr><td>Тест (нема світла)</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
