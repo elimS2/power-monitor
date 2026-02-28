@@ -218,7 +218,7 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            await tg_send("\u2705\U0001f506 Світло ЗК 6\nСвітло з'явилось!")
+            await tg_send("\u2705\U0001f4a1 Світло ЗК 6\nСвітло з'явилось!")
 
 
 async def watchdog():
@@ -335,7 +335,7 @@ def _power_status_text() -> str:
     dur = _format_duration(int(time.time() - since_ts))
     if is_down:
         return f"\u274c\U0001f526 Світло ВІДСУТНЄ вже {dur}"
-    return f"\u2705\U0001f506 Світло є вже {dur}"
+    return f"\u2705\U0001f4a1 Світло є вже {dur}"
 
 
 def _ts_fmt(ts: float) -> str:
