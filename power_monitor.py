@@ -461,7 +461,8 @@ td.down {{ color: #fca5a5; }}
 <tr><td>Світло пропало</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло пропало!</td><td>prod</td></tr>
 <tr><td>Світло з'явилось</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло з'явилось!</td><td>prod</td></tr>
 <tr><td>MikroTik offline</td><td>\u26a0\ufe0f Світло ЗК 6 / MikroTik не відповідає вже N хв</td><td>prod</td></tr>
-<tr><td>Тест</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло є вже Nгод Nхв</td><td>test</td></tr>
+<tr><td>Тест (є світло)</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло є вже Nгод Nхв</td><td>test</td></tr>
+<tr><td>Тест (нема світла)</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
 </table>
 
 <div class="ver">v {GIT_COMMIT}</div>
