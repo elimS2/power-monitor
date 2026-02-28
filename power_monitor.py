@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import subprocess
 import logging
 import os
@@ -21,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 # ─── Config (override via environment variables) ─────────────
@@ -29,6 +30,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")  # e.g. https://power.elims.pp.ua
+TG_WEBHOOK_SECRET = hashlib.sha256(TG_BOT_TOKEN.encode()).hexdigest()[:32]
 def _parse_keys(raw: str) -> dict:
     """Parse 'label:key,label2:key2' or plain 'key1,key2' into {key: label}."""
     result = {}
@@ -206,6 +209,28 @@ async def tg_send(text: str, chat_id: str = ""):
         log.error("TG send failed: %s", e)
 
 
+# ─── Telegram bot (webhook for /status command) ──────────────
+
+async def setup_tg_bot():
+    """Register webhook and set bot menu commands on startup."""
+    if not WEBHOOK_HOST:
+        log.warning("WEBHOOK_HOST not set — bot commands disabled")
+        return
+    url = f"{WEBHOOK_HOST}/api/tg-webhook"
+    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(
+            f"{api}/setWebhook",
+            json={"url": url, "secret_token": TG_WEBHOOK_SECRET},
+        )
+        log.info("setWebhook: %s", r.json())
+        r = await client.post(
+            f"{api}/setMyCommands",
+            json={"commands": [{"command": "status", "description": "Статус світла"}]},
+        )
+        log.info("setMyCommands: %s", r.json())
+
+
 # ─── Detection logic ─────────────────────────────────────────
 
 _lock = asyncio.Lock()
@@ -288,6 +313,7 @@ async def bg_loop():
 async def lifespan(_app: FastAPI):
     init_db()
     task = asyncio.create_task(bg_loop())
+    await setup_tg_bot()
     log.info("Power monitor started, DB=%s", DB_PATH)
     yield
     task.cancel()
@@ -332,6 +358,32 @@ async def ep_test_telegram(key: str = Query("")):
     status = _power_status_text()
     await tg_send(f"Світло ЗК 6\n{status}", chat_id=target)
     return {"ok": True, "sent_to": target}
+
+
+@app.post("/api/tg-webhook")
+async def tg_webhook(request: Request):
+    secret = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if secret != TG_WEBHOOK_SECRET:
+        raise HTTPException(403, "forbidden")
+    data = await request.json()
+    msg = data.get("message") or {}
+    text = (msg.get("text") or "").strip()
+    chat = msg.get("chat") or {}
+    chat_id = chat.get("id")
+    if not chat_id:
+        return {"ok": True}
+    cid = str(chat_id)
+
+    if text == "/start":
+        await tg_send(
+            "Привіт! Натисни /status або скористайся меню, щоб дізнатися чи є світло.",
+            chat_id=cid,
+        )
+    elif text == "/status":
+        status = _power_status_text()
+        await tg_send(f"Світло ЗК 6\n{status}", chat_id=cid)
+
+    return {"ok": True}
 
 
 def _format_duration(seconds: int) -> str:
