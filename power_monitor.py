@@ -212,13 +212,13 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            await tg_send("Світло ЗК 6\nСвітло пропало!")
+            await tg_send("\U0001f534\U0001f4a1 Світло ЗК 6\nСвітло пропало!")
 
         elif latest_alive and is_down:
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            await tg_send("Світло ЗК 6\nСвітло з'явилось!")
+            await tg_send("\U0001f7e2\U0001f4a1 Світло ЗК 6\nСвітло з'явилось!")
 
 
 async def watchdog():
@@ -234,7 +234,7 @@ async def watchdog():
         kv_set("stale_alerted", "1")
         minutes = int(age // 60)
         log.warning("No heartbeat for %dm", minutes)
-        await tg_send(f"Світло ЗК 6\nMikroTik не відповідає вже {minutes} хв")
+        await tg_send(f"\u26a0\ufe0f Світло ЗК 6\nMikroTik не відповідає вже {minutes} хв")
     elif age <= STALE_THRESHOLD_SEC and alerted:
         kv_set("stale_alerted", "0")
 
@@ -334,8 +334,8 @@ def _power_status_text() -> str:
 
     dur = _format_duration(int(time.time() - since_ts))
     if is_down:
-        return f"Світло ВІДСУТНЄ вже {dur}"
-    return f"Світло є вже {dur}"
+        return f"\U0001f534\U0001f4a1 Світло ВІДСУТНЄ вже {dur}"
+    return f"\U0001f7e2\U0001f4a1 Світло є вже {dur}"
 
 
 def _ts_fmt(ts: float) -> str:
