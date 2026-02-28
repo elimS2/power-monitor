@@ -138,6 +138,12 @@ def recent_events(n: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def first_heartbeat_ts() -> float:
+    with _conn() as db:
+        row = db.execute("SELECT ts FROM heartbeats ORDER BY id ASC LIMIT 1").fetchone()
+        return row["ts"] if row else 0.0
+
+
 def cleanup_old():
     cutoff = time.time() - CLEANUP_KEEP_DAYS * 86400
     with _conn() as db:
@@ -290,8 +296,17 @@ async def dashboard(key: str = Query("")):
 
     duration_text = ""
     if ev:
-        last_ev = ev[0]
-        elapsed = int(time.time() - last_ev["ts"])
+        since_ts = ev[0]["ts"]
+        label = "Світло є вже" if ev[0]["event"] == "up" else "Світло відсутнє вже"
+    elif hb:
+        since_ts = first_heartbeat_ts() or hb[-1]["ts"]
+        label = "Світло є вже"
+    else:
+        since_ts = 0
+        label = ""
+
+    if since_ts:
+        elapsed = int(time.time() - since_ts)
         days, rem = divmod(elapsed, 86400)
         hours, rem = divmod(rem, 3600)
         minutes, _ = divmod(rem, 60)
@@ -301,11 +316,7 @@ async def dashboard(key: str = Query("")):
         if hours:
             parts.append(f"{hours}год")
         parts.append(f"{minutes}хв")
-        dur_str = " ".join(parts)
-        if last_ev["event"] == "up":
-            duration_text = f"Світло є вже {dur_str}"
-        else:
-            duration_text = f"Світло відсутнє вже {dur_str}"
+        duration_text = f"{label} {' '.join(parts)}"
 
     hb_rows = ""
     for r in hb:
