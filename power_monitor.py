@@ -417,7 +417,7 @@ async def dashboard(key: str = Query("")):
 :root {{ --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text);
-        max-width: 640px; margin: 0 auto; padding: 1rem; }}
+        max-width: 800px; margin: 0 auto; padding: 1rem; }}
 h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom: 1rem; }}
 .status {{ text-align: center; font-size: 1.8rem; font-weight: 700; padding: 1.2rem;
            border-radius: 12px; margin-bottom: 1.5rem; }}
