@@ -302,8 +302,40 @@ async def ep_status(key: str = Query("")):
 async def ep_test_telegram(key: str = Query("")):
     _check_key(key)
     target = TG_TEST_CHAT_ID or TG_CHAT_ID
-    await tg_send("Power Monitor: test message", chat_id=target)
+    status = _power_status_text()
+    await tg_send(f"Світло ЗК 6\n{status}", chat_id=target)
     return {"ok": True, "sent_to": target}
+
+
+def _format_duration(seconds: int) -> str:
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}д")
+    if hours:
+        parts.append(f"{hours}год")
+    parts.append(f"{minutes}хв")
+    return " ".join(parts)
+
+
+def _power_status_text() -> str:
+    is_down = kv_get("power_down") == "1"
+    ev = recent_events(1)
+    hb = recent_heartbeats(1)
+
+    if ev:
+        since_ts = ev[0]["ts"]
+    elif hb:
+        since_ts = first_heartbeat_ts() or hb[0]["ts"]
+    else:
+        return "Світло є (немає даних)"
+
+    dur = _format_duration(int(time.time() - since_ts))
+    if is_down:
+        return f"Світло ВІДСУТНЄ вже {dur}"
+    return f"Світло є вже {dur}"
 
 
 def _ts_fmt(ts: float) -> str:
@@ -330,29 +362,7 @@ async def dashboard(key: str = Query("")):
         mk_cls = "down"
         mk_text = "MikroTik: немає даних"
 
-    duration_text = ""
-    if ev:
-        since_ts = ev[0]["ts"]
-        label = "Світло є вже" if ev[0]["event"] == "up" else "Світло відсутнє вже"
-    elif hb:
-        since_ts = first_heartbeat_ts() or hb[-1]["ts"]
-        label = "Світло є вже"
-    else:
-        since_ts = 0
-        label = ""
-
-    if since_ts:
-        elapsed = int(time.time() - since_ts)
-        days, rem = divmod(elapsed, 86400)
-        hours, rem = divmod(rem, 3600)
-        minutes, _ = divmod(rem, 60)
-        parts = []
-        if days:
-            parts.append(f"{days}д")
-        if hours:
-            parts.append(f"{hours}год")
-        parts.append(f"{minutes}хв")
-        duration_text = f"{label} {' '.join(parts)}"
+    duration_text = _power_status_text() if (hb or ev) else ""
 
     hb_rows = ""
     for r in hb:
