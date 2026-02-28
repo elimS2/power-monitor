@@ -275,6 +275,25 @@ async def dashboard(key: str = Query("")):
         mk_cls = "down"
         mk_text = "MikroTik: немає даних"
 
+    duration_text = ""
+    if ev:
+        last_ev = ev[0]
+        elapsed = int(time.time() - last_ev["ts"])
+        days, rem = divmod(elapsed, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, _ = divmod(rem, 60)
+        parts = []
+        if days:
+            parts.append(f"{days}д")
+        if hours:
+            parts.append(f"{hours}год")
+        parts.append(f"{minutes}хв")
+        dur_str = " ".join(parts)
+        if last_ev["event"] == "up":
+            duration_text = f"Світло є вже {dur_str}"
+        else:
+            duration_text = f"Світло відсутнє вже {dur_str}"
+
     hb_rows = ""
     for r in hb:
         c204 = "down" if r["plug204"] == 0 else "up"
@@ -311,6 +330,7 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .status.up {{ background: #064e3b; color: #6ee7b7; }}
 .status.down {{ background: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }}
 @keyframes pulse {{ 0%,100% {{ opacity:1 }} 50% {{ opacity:.7 }} }}
+.duration {{ text-align: center; font-size: 1rem; color: var(--muted); margin-bottom: 0.5rem; }}
 .mk {{ text-align: center; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem; }}
 .mk.up {{ background: #1e293b; color: #6ee7b7; }}
 .mk.down {{ background: #7f1d1d; color: #fca5a5; }}
@@ -326,6 +346,7 @@ td.down {{ color: #fca5a5; }}
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
 <div class="status {status_cls}">{status_text}</div>
+<div class="duration">{duration_text}</div>
 <div class="mk {mk_cls}">{mk_text}</div>
 
 <h2>Heartbeats</h2>
