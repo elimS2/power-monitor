@@ -455,6 +455,15 @@ td.down {{ color: #fca5a5; }}
 <tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
 {tg_rows}</table>
 
+<h2>Легенда повідомлень</h2>
+<table>
+<tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
+<tr><td>Світло пропало</td><td>\u274c\U0001f526 Світло ЗК 6 / Світло пропало!</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло з'явилось!</td><td>prod</td></tr>
+<tr><td>MikroTik offline</td><td>\u26a0\ufe0f Світло ЗК 6 / MikroTik не відповідає вже N хв</td><td>prod</td></tr>
+<tr><td>Тест</td><td>\u2705\U0001f4a1 Світло ЗК 6 / Світло є вже Nгод Nхв</td><td>test</td></tr>
+</table>
+
 <div class="ver">v {GIT_COMMIT}</div>
 <script>
 function sendTest() {{
