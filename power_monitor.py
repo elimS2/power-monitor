@@ -196,17 +196,10 @@ def recent_tg_log(n: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-STATUS_BUTTON = {
-    "inline_keyboard": [[{"text": "\U0001f4ca Статус", "callback_data": "get_status"}]]
-}
-
-
 async def tg_send(text: str, chat_id: str = ""):
     target = chat_id or TG_CHAT_ID
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": target, "text": text}
-    if target == TG_CHAT_ID:
-        payload["reply_markup"] = STATUS_BUTTON
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(url, json=payload)
@@ -264,7 +257,7 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            msg = "\u274c Світло ЗК 6\nСвітло пропало!"
+            msg = "\u274c Світло пропало!"
             if dur:
                 msg += f"\nСвітло було {dur}"
             await tg_send(msg)
@@ -275,7 +268,7 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            msg = "\u2705 Світло ЗК 6\nСвітло з'явилось!"
+            msg = "\u2705 Світло з'явилось!"
             if dur:
                 msg += f"\nСвітла не було {dur}"
             await tg_send(msg)
@@ -294,7 +287,7 @@ async def watchdog():
         kv_set("stale_alerted", "1")
         minutes = int(age // 60)
         log.warning("No heartbeat for %dm", minutes)
-        await tg_send(f"\u26a0\ufe0f Світло ЗК 6\nMikroTik не відповідає вже {minutes} хв")
+        await tg_send(f"\u26a0\ufe0f MikroTik не відповідає вже {minutes} хв")
     elif age <= STALE_THRESHOLD_SEC and alerted:
         kv_set("stale_alerted", "0")
 
@@ -364,7 +357,7 @@ async def ep_test_telegram(key: str = Query("")):
     _check_key(key)
     target = TG_TEST_CHAT_ID or TG_CHAT_ID
     status = _power_status_text()
-    await tg_send(f"Світло ЗК 6\n{status}", chat_id=target)
+    await tg_send(status, chat_id=target)
     return {"ok": True, "sent_to": target}
 
 
@@ -374,21 +367,6 @@ async def tg_webhook(request: Request):
     if secret != TG_WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
     data = await request.json()
-
-    cb = data.get("callback_query")
-    if cb and cb.get("data") == "get_status":
-        status = _power_status_text()
-        api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(
-                f"{api}/answerCallbackQuery",
-                json={
-                    "callback_query_id": cb["id"],
-                    "text": f"Світло ЗК 6\n{status}",
-                    "show_alert": True,
-                },
-            )
-        return {"ok": True}
 
     msg = data.get("message") or {}
     text = (msg.get("text") or "").strip()
@@ -405,7 +383,7 @@ async def tg_webhook(request: Request):
         )
     elif text == "/status":
         status = _power_status_text()
-        await tg_send(f"Світло ЗК 6\n{status}", chat_id=cid)
+        await tg_send(status, chat_id=cid)
 
     return {"ok": True}
 
@@ -561,9 +539,9 @@ td.down {{ color: #fca5a5; }}
 <h2>Легенда повідомлень</h2>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло пропало</td><td>\u274c Світло ЗК 6 / Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705 Світло ЗК 6 / Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
-<tr><td>MikroTik offline</td><td>\u26a0\ufe0f Світло ЗК 6 / MikroTik не відповідає вже N хв</td><td>prod</td></tr>
+<tr><td>Світло пропало</td><td>\u274c Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705 Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
+<tr><td>MikroTik offline</td><td>\u26a0\ufe0f MikroTik не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>Тест (є світло)</td><td>\u2705 Світло є вже Nгод Nхв</td><td>test</td></tr>
 <tr><td>Тест (нема світла)</td><td>\u274c Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
 </table>
