@@ -266,6 +266,15 @@ async def dashboard(key: str = Query("")):
     hb = recent_heartbeats(30)
     ev = recent_events(30)
 
+    if hb:
+        last_hb_age = int(time.time() - hb[0]["ts"])
+        mk_online = last_hb_age < STALE_THRESHOLD_SEC
+        mk_cls = "up" if mk_online else "down"
+        mk_text = f"MikroTik: online ({last_hb_age}с тому)" if mk_online else f"MikroTik: OFFLINE ({last_hb_age // 60} хв тому)"
+    else:
+        mk_cls = "down"
+        mk_text = "MikroTik: немає даних"
+
     hb_rows = ""
     for r in hb:
         c204 = "down" if r["plug204"] == 0 else "up"
@@ -302,6 +311,9 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .status.up {{ background: #064e3b; color: #6ee7b7; }}
 .status.down {{ background: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }}
 @keyframes pulse {{ 0%,100% {{ opacity:1 }} 50% {{ opacity:.7 }} }}
+.mk {{ text-align: center; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem; }}
+.mk.up {{ background: #1e293b; color: #6ee7b7; }}
+.mk.down {{ background: #7f1d1d; color: #fca5a5; }}
 h2 {{ color: var(--muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;
      margin: 1.2rem 0 0.5rem; }}
 table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }}
@@ -314,6 +326,7 @@ td.down {{ color: #fca5a5; }}
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
 <div class="status {status_cls}">{status_text}</div>
+<div class="mk {mk_cls}">{mk_text}</div>
 
 <h2>Heartbeats</h2>
 <table>
