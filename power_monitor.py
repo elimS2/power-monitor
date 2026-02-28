@@ -221,15 +221,18 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Power Monitor", lifespan=lifespan)
 
 
+def _check_key(key: str):
+    if key != API_KEY:
+        raise HTTPException(403, "forbidden")
+
+
 @app.get("/api/heartbeat")
 async def ep_heartbeat(
     plug204: int = Query(0),
     plug175: int = Query(0),
     key: str = Query(""),
 ):
-    if key != API_KEY:
-        raise HTTPException(403, "bad key")
-
+    _check_key(key)
     save_heartbeat(plug204, plug175)
     kv_set("stale_alerted", "0")
     log.debug("HB plug204=%d plug175=%d", plug204, plug175)
@@ -238,7 +241,8 @@ async def ep_heartbeat(
 
 
 @app.get("/api/status")
-async def ep_status():
+async def ep_status(key: str = Query("")):
+    _check_key(key)
     return {
         "power_down": kv_get("power_down") == "1",
         "heartbeats": recent_heartbeats(20),
@@ -255,7 +259,8 @@ def _ts_fmt_full(ts: float) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+async def dashboard(key: str = Query("")):
+    _check_key(key)
     is_down = kv_get("power_down") == "1"
     hb = recent_heartbeats(30)
     ev = recent_events(30)
