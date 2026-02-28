@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
-API_KEY = os.getenv("API_KEY", "changeme")
+API_KEYS = [k.strip() for k in os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")).split(",") if k.strip()]
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
 # Both plugs must be dead for this many consecutive heartbeats → outage
@@ -283,7 +283,7 @@ app = FastAPI(title="Power Monitor", lifespan=lifespan)
 
 
 def _check_key(key: str):
-    if key != API_KEY:
+    if key not in API_KEYS:
         raise HTTPException(403, "forbidden")
 
 
@@ -484,7 +484,7 @@ function sendTest() {{
   var btn = document.querySelector('.btn');
   btn.disabled = true;
   btn.textContent = '...';
-  fetch('/api/test-telegram?key={API_KEY}', {{method:'POST'}})
+  fetch('/api/test-telegram?key={key}', {{method:'POST'}})
     .then(r => r.json())
     .then(d => {{ btn.textContent = 'Надіслати тест'; btn.disabled = false; location.reload(); }})
     .catch(() => {{ btn.textContent = 'Помилка'; btn.disabled = false; }});
