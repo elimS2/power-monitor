@@ -1,7 +1,7 @@
 """
 Power outage monitor server.
 
-Receives ICMP ping results from MikroTik every ~10s for two smart plugs,
+Receives ICMP ping results from router every ~10s for two smart plugs,
 stores in SQLite, detects outages by cross-checking both plugs, and
 sends Telegram notifications.
 
@@ -52,7 +52,7 @@ DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.d
 # Both plugs must be dead for this many consecutive heartbeats → outage
 OUTAGE_CONFIRM_COUNT = 6  # 6 × 10s = ~60 seconds
 
-# No heartbeat for this long → MikroTik/internet alert
+# No heartbeat for this long → router/internet alert
 STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", "300"))
 
 # Keep heartbeat data for this many days
@@ -287,7 +287,7 @@ async def watchdog():
         kv_set("stale_alerted", "1")
         minutes = int(age // 60)
         log.warning("No heartbeat for %dm", minutes)
-        await tg_send(f"\u26a0\ufe0f MikroTik не відповідає вже {minutes} хв")
+        await tg_send(f"\u26a0\ufe0f Роутер не відповідає вже {minutes} хв")
     elif age <= STALE_THRESHOLD_SEC and alerted:
         kv_set("stale_alerted", "0")
 
@@ -438,10 +438,10 @@ async def dashboard(key: str = Query("")):
         last_hb_age = int(time.time() - hb[0]["ts"])
         mk_online = last_hb_age < STALE_THRESHOLD_SEC
         mk_cls = "up" if mk_online else "down"
-        mk_text = f"MikroTik: online ({last_hb_age}с тому)" if mk_online else f"MikroTik: OFFLINE ({last_hb_age // 60} хв тому)"
+        mk_text = f"Роутер: online ({last_hb_age}с тому)" if mk_online else f"Роутер: OFFLINE ({last_hb_age // 60} хв тому)"
     else:
         mk_cls = "down"
-        mk_text = "MikroTik: немає даних"
+        mk_text = "Роутер: немає даних"
 
     duration_text = _power_status_text() if (hb or ev) else ""
 
@@ -537,7 +537,7 @@ td.down {{ color: #fca5a5; }}
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
 <tr><td>Світло пропало</td><td>\u274c Світло пропало! / Світло було 2д 5год 30хв</td><td>prod</td></tr>
 <tr><td>Світло з'явилось</td><td>\u2705 Світло з'явилось! / Світла не було 1год 15хв</td><td>prod</td></tr>
-<tr><td>MikroTik offline</td><td>\u26a0\ufe0f MikroTik не відповідає вже N хв</td><td>prod</td></tr>
+<tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>Тест (є світло)</td><td>\u2705 Світло є вже Nгод Nхв</td><td>test</td></tr>
 <tr><td>Тест (нема світла)</td><td>\u274c Світло ВІДСУТНЄ вже Nхв</td><td>test</td></tr>
 </table>
