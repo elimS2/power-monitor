@@ -29,7 +29,21 @@ from fastapi.responses import HTMLResponse, JSONResponse
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
-API_KEYS = [k.strip() for k in os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")).split(",") if k.strip()]
+def _parse_keys(raw: str) -> dict:
+    """Parse 'label:key,label2:key2' or plain 'key1,key2' into {key: label}."""
+    result = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" in entry:
+            label, key = entry.split(":", 1)
+            result[key.strip()] = label.strip()
+        else:
+            result[entry] = ""
+    return result
+
+API_KEYS = _parse_keys(os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")))
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
 # Both plugs must be dead for this many consecutive heartbeats → outage
