@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import logging
 import os
 import sqlite3
@@ -41,6 +42,18 @@ CLEANUP_KEEP_DAYS = 90
 
 # Kyiv timezone offset for display (UTC+2 / UTC+3 summer)
 UA_TZ = timezone(timedelta(hours=2))
+
+def _git_version() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).parent,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+GIT_COMMIT = _git_version()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -334,6 +347,7 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .mk {{ text-align: center; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem; }}
 .mk.up {{ background: #1e293b; color: #6ee7b7; }}
 .mk.down {{ background: #7f1d1d; color: #fca5a5; }}
+.ver {{ text-align: center; color: #475569; font-size: 0.75rem; margin-top: 2rem; }}
 h2 {{ color: var(--muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;
      margin: 1.2rem 0 0.5rem; }}
 table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }}
@@ -358,4 +372,5 @@ td.down {{ color: #fca5a5; }}
 <table>
 <tr><th>Час</th><th>Подія</th></tr>
 {ev_rows}</table>
+<div class="ver">v {GIT_COMMIT}</div>
 </body></html>"""
