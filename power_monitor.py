@@ -290,8 +290,8 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            await tg_send(msg)
             await update_chat_photo(True)
+            await tg_send(msg)
 
         elif latest_alive and is_down:
             now = time.time()
@@ -304,8 +304,8 @@ async def analyze():
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            await tg_send(msg)
             await update_chat_photo(False)
+            await tg_send(msg)
 
 
 async def watchdog():
