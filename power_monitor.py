@@ -439,6 +439,19 @@ async def tg_webhook(request: Request):
     if secret != TG_WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
     data = await request.json()
+    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
+
+    cp = data.get("channel_post") or {}
+    if cp.get("new_chat_photo"):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"{api}/deleteMessage",
+                    json={"chat_id": cp["chat"]["id"], "message_id": cp["message_id"]},
+                )
+        except Exception:
+            pass
+        return {"ok": True}
 
     msg = data.get("message") or {}
     text = (msg.get("text") or "").strip()
