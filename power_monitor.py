@@ -244,7 +244,11 @@ async def setup_tg_bot():
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(
             f"{api}/setWebhook",
-            json={"url": url, "secret_token": TG_WEBHOOK_SECRET},
+            json={
+                "url": url,
+                "secret_token": TG_WEBHOOK_SECRET,
+                "allowed_updates": ["message", "channel_post"],
+            },
         )
         log.info("setWebhook: %s", r.json())
         r = await client.post(
@@ -402,14 +406,18 @@ async def tg_webhook(request: Request):
 
     cp = data.get("channel_post") or {}
     if cp.get("new_chat_photo"):
+        cid = cp["chat"]["id"]
+        mid = cp["message_id"]
+        log.info("Deleting photo service msg chat=%s msg=%s", cid, mid)
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(
+                r = await client.post(
                     f"{api}/deleteMessage",
-                    json={"chat_id": cp["chat"]["id"], "message_id": cp["message_id"]},
+                    json={"chat_id": cid, "message_id": mid},
                 )
-        except Exception:
-            pass
+                log.info("deleteMessage result: %s", r.text[:200])
+        except Exception as e:
+            log.error("deleteMessage failed: %s", e)
         return {"ok": True}
 
     msg = data.get("message") or {}
