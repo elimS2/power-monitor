@@ -505,6 +505,52 @@ async def serve_icon(name: str):
     )
 
 
+@app.get("/manifest.json")
+async def pwa_manifest(key: str = Query("")):
+    _check_key(key)
+    return JSONResponse(
+        {
+            "name": "Power Monitor — ЗК 6",
+            "short_name": "Світло ЗК6",
+            "start_url": f"/?key={key}",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#0f172a",
+            "theme_color": "#0f172a",
+            "icons": [
+                {"src": "/icons/icon_on.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+            ],
+        },
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/sw.js")
+async def service_worker():
+    sw_code = """\
+const CACHE = 'pm-v1';
+const PRECACHE = ['/icons/icon_on.png', '/icons/icon_off.png'];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(self.clients.claim());
+});
+self.addEventListener('fetch', e => {
+  if (e.request.mode === 'navigate') return;
+  e.respondWith(
+    fetch(e.request).catch(() => caches.match(e.request))
+  );
+});
+"""
+    return Response(
+        content=sw_code,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(key: str = Query("")):
     _check_key(key)
@@ -559,6 +605,15 @@ async def dashboard(key: str = Query("")):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="10">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Світло ЗК6">
+<link rel="apple-touch-icon" href="/icons/icon_on.png">
+<link rel="manifest" href="/manifest.json?key={key}">
+<script>
+if('serviceWorker' in navigator){{navigator.serviceWorker.register('/sw.js');}}
+</script>
 <script>
 (function(){{
   var old=document.querySelector('link[rel="icon"]');
