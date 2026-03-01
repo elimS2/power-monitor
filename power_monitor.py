@@ -358,6 +358,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
+    await update_chat_photo(kv_get("power_down") == "1")
     log.info("Power monitor started, DB=%s", DB_PATH)
     yield
     task.cancel()
