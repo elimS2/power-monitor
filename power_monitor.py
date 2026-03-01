@@ -244,6 +244,7 @@ async def update_chat_photo(is_down: bool, cleanup: bool = True):
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:200])
             if cleanup and r.status_code == 200:
+                await asyncio.sleep(2)
                 r2 = await client.post(
                     f"{api}/sendMessage",
                     json={"chat_id": TG_CHAT_ID, "text": "."},
@@ -251,11 +252,11 @@ async def update_chat_photo(is_down: bool, cleanup: bool = True):
                 log.info("temp sendMessage [%s]: %s", r2.status_code, r2.text[:200])
                 if r2.status_code == 200:
                     temp_id = r2.json().get("result", {}).get("message_id", 0)
-                    log.info("temp_id=%d, deleting service msg id=%d", temp_id, temp_id - 1)
-                    d1 = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id - 1})
-                    log.info("delete service [%s]: %s", d1.status_code, d1.text[:200])
+                    for mid in range(temp_id - 1, max(temp_id - 4, 0), -1):
+                        d = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": mid})
+                        log.info("delete id=%d [%s]: %s", mid, d.status_code, d.text[:200])
                     d2 = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id})
-                    log.info("delete temp [%s]: %s", d2.status_code, d2.text[:200])
+                    log.info("delete temp id=%d [%s]: %s", temp_id, d2.status_code, d2.text[:200])
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
