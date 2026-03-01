@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Query, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 # ─── Config (override via environment variables) ─────────────
 
@@ -31,6 +31,7 @@ TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")
+AVATAR_ON_START = os.getenv("AVATAR_ON_START", "1") == "1"
 DELETE_PHOTO_MSG = os.getenv("DELETE_PHOTO_MSG", "0") == "1"
 TG_WEBHOOK_SECRET = hashlib.sha256(TG_BOT_TOKEN.encode()).hexdigest()[:32]
 def _parse_keys(raw: str) -> dict:
@@ -368,7 +369,10 @@ async def lifespan(_app: FastAPI):
     init_db()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
-    await update_chat_photo(kv_get("power_down") == "1")
+    if AVATAR_ON_START:
+        await update_chat_photo(kv_get("power_down") == "1")
+    else:
+        log.info("Skipping avatar update on start (AVATAR_ON_START=0)")
     log.info("Power monitor started, DB=%s", DB_PATH)
     yield
     task.cancel()
@@ -413,6 +417,7 @@ async def ep_test_telegram(key: str = Query("")):
     status = _power_status_text()
     await tg_send(status, chat_id=target)
     return {"ok": True, "sent_to": target}
+
 
 
 @app.post("/api/tg-webhook")
@@ -484,6 +489,16 @@ def _ts_fmt(ts: float) -> str:
 
 def _ts_fmt_full(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+_ALLOWED_ICONS = {p.name for p in _ICONS_DIR.glob("icon_*.png")}
+
+@app.get("/icons/{name}")
+async def serve_icon(name: str):
+    if name not in _ALLOWED_ICONS:
+        raise HTTPException(404)
+    data = (_ICONS_DIR / name).read_bytes()
+    return Response(content=data, media_type="image/png")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -600,6 +615,19 @@ td.down {{ color: #fca5a5; }}
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
 <tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ вже 15хв (з 23:31)</td><td>приват</td></tr>
+</table>
+
+<h2>Аватарки каналу</h2>
+<table>
+<tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr>
+<tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr>
+<tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr>
+<tr><td>Світло нема (v1)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr>
+<tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr>
+<tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr>
+<tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr>
+<tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr>
+<tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr>
 </table>
 
 <div class="ver">v {GIT_COMMIT}</div>
