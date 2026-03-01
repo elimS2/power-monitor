@@ -214,20 +214,48 @@ async def tg_send(text: str, chat_id: str = ""):
 
 # ─── Channel photo ───────────────────────────────────────────
 
-def _solid_png(w: int, h: int, r: int, g: int, b: int) -> bytes:
+def _icon_png(bg: tuple, segments: list, sz: int = 256, radius: int = 22) -> bytes:
+    """Generate PNG with white symbol (line segments) on colored background."""
     def _chunk(ctype: bytes, data: bytes) -> bytes:
         c = ctype + data
         return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
-    raw = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
+
+    r2 = radius * radius
+    bg3 = bytes(bg)
+    raw_rows = []
+    for y in range(sz):
+        px = bytearray()
+        for x in range(sz):
+            hit = False
+            for x1, y1, x2, y2 in segments:
+                dx, dy = x2 - x1, y2 - y1
+                lsq = dx * dx + dy * dy
+                if lsq == 0:
+                    d2 = (x - x1) ** 2 + (y - y1) ** 2
+                else:
+                    t = max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / lsq))
+                    d2 = (x - (x1 + t * dx)) ** 2 + (y - (y1 + t * dy)) ** 2
+                if d2 <= r2:
+                    hit = True
+                    break
+            px += b"\xff\xff\xff" if hit else bg3
+        raw_rows.append(b"\x00" + bytes(px))
+    raw = b"".join(raw_rows)
     return (
         b"\x89PNG\r\n\x1a\n"
-        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", sz, sz, 8, 2, 0, 0, 0))
         + _chunk(b"IDAT", zlib.compress(raw))
         + _chunk(b"IEND", b"")
     )
 
-_PHOTO_GREEN = _solid_png(512, 512, 34, 197, 94)
-_PHOTO_RED = _solid_png(512, 512, 239, 68, 68)
+_PHOTO_GREEN = _icon_png(
+    (34, 197, 94),
+    [(50, 140, 100, 196), (100, 196, 210, 50)],
+)
+_PHOTO_RED = _icon_png(
+    (239, 68, 68),
+    [(58, 58, 198, 198), (198, 58, 58, 198)],
+)
 
 
 async def update_chat_photo(is_down: bool):
