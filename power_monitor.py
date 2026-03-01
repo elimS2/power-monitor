@@ -498,7 +498,11 @@ async def serve_icon(name: str):
     if name not in _ALLOWED_ICONS:
         raise HTTPException(404)
     data = (_ICONS_DIR / name).read_bytes()
-    return Response(content=data, media_type="image/png")
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
