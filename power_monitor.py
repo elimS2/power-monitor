@@ -587,6 +587,7 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .ver {{ text-align: center; color: #475569; font-size: 0.75rem; margin-top: 2rem; }}
 h2 {{ color: var(--muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;
      margin: 1.2rem 0 0.5rem; }}
+summary h2 {{ margin: 0; }}
 table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }}
 th, td {{ padding: 0.5rem 0.75rem; text-align: left; font-size: 0.9rem; }}
 th {{ background: var(--border); color: var(--muted); font-weight: 500; }}
@@ -600,8 +601,8 @@ td.down {{ color: #fca5a5; }}
 .btn-row {{ text-align: center; margin-bottom: 1rem; }}
 .clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }}
 .clocks span {{ white-space: nowrap; }}
-details {{ margin-bottom: 0.5rem; }}
-summary {{ cursor: pointer; list-style: none; }}
+details {{ margin: 1.2rem 0 0.5rem; }}
+summary {{ cursor: pointer; list-style: none; padding: 0.3rem 0; }}
 summary::-webkit-details-marker {{ display: none; }}
 summary::before {{ content: '▶ '; font-size: 0.7rem; color: var(--muted); }}
 details[open] summary::before {{ content: '▼ '; }}
