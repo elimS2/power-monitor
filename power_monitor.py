@@ -624,12 +624,19 @@ updClocks(); setInterval(updClocks,1000);
 </script>
 <div class="mk {mk_cls}">{mk_text}</div>
 
-<details>
+<details id="hb_details">
 <summary><h2 style="display:inline">Heartbeats</h2></summary>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
 {hb_rows}</table>
 </details>
+<script>
+(function(){{
+  var d=document.getElementById('hb_details');
+  if(localStorage.getItem('hb_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('hb_open',d.open?'1':'0'); }});
+}})();
+</script>
 
 <h2>Події</h2>
 <table>
