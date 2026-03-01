@@ -568,7 +568,7 @@ async def dashboard(key: str = Query("")):
   document.head.appendChild(link);
 }})();
 </script>
-<title>Power Monitor</title>
+<title>{"❌ Світло нема" if is_down else "✅ Світло є"} — Power Monitor</title>
 <style>
 :root {{ --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
