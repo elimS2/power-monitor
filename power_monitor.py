@@ -221,7 +221,7 @@ async def tg_send(text: str, chat_id: str = "") -> int:
 
 _ICONS_DIR = Path(__file__).parent
 _PHOTO_ON = (_ICONS_DIR / "icon_on.png").read_bytes()
-_PHOTO_OFF = (_ICONS_DIR / "icon_off_v3.png").read_bytes()
+_PHOTO_OFF = (_ICONS_DIR / "icon_off.png").read_bytes()
 
 
 async def _delete_service_msg(client: httpx.AsyncClient, api: str):
@@ -564,7 +564,7 @@ async def dashboard(key: str = Query("")):
   if(old) old.remove();
   var link=document.createElement('link');
   link.rel='icon';link.type='image/png';
-  link.href='/icons/{"icon_off_v3.png" if is_down else "icon_on.png"}?t='+Date.now();
+  link.href='/icons/{"icon_off.png" if is_down else "icon_on.png"}?t='+Date.now();
   document.head.appendChild(link);
 }})();
 </script>
@@ -681,8 +681,8 @@ updClocks(); setInterval(updClocks,1000);
 <table>
 <tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr>
 <tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr>
-<tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr>
-<tr><td>Світло нема (v1)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr>
+<tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr>
+<tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr>
 <tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr>
 <tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr>
 <tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr>
