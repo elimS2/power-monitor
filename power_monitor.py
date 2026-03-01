@@ -543,11 +543,12 @@ async def dashboard(key: str = Query("")):
     for t in recent_tg_log(15):
         ok = "up" if t["status"] == 200 else "down"
         short_chat = "test" if t["chat_id"] == TG_TEST_CHAT_ID else "prod"
+        safe_text = t["text"].replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
         tg_rows += (
             f'<tr><td>{_ts_fmt_full(t["ts"])}</td>'
             f'<td class="{ok}">{t["status"]}</td>'
             f'<td>{short_chat}</td>'
-            f'<td>{t["text"][:40]}</td></tr>\n'
+            f'<td>{safe_text}</td></tr>\n'
         )
 
     status_cls = "down" if is_down else "up"
