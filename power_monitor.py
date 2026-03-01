@@ -31,6 +31,7 @@ TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
 TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")
+DELETE_PHOTO_MSG = os.getenv("DELETE_PHOTO_MSG", "0") == "1"
 TG_WEBHOOK_SECRET = hashlib.sha256(TG_BOT_TOKEN.encode()).hexdigest()[:32]
 def _parse_keys(raw: str) -> dict:
     """Parse 'label:key,label2:key2' or plain 'key1,key2' into {key: label}."""
@@ -222,17 +223,30 @@ _PHOTO_ON = (_ICONS_DIR / "icon_on.png").read_bytes()
 _PHOTO_OFF = (_ICONS_DIR / "icon_off_v3.png").read_bytes()
 
 
+async def _delete_service_msg(client: httpx.AsyncClient, api: str):
+    """Send temp message, delete it and the service message before it."""
+    r = await client.post(f"{api}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": "."})
+    if r.status_code == 200:
+        tid = r.json().get("result", {}).get("message_id", 0)
+        if tid:
+            await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid - 1})
+            await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
+
+
 async def update_chat_photo(is_down: bool):
     photo = _PHOTO_OFF if is_down else _PHOTO_ON
-    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/setChatPhoto"
+    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
-                api,
+                f"{api}/setChatPhoto",
                 data={"chat_id": TG_CHAT_ID},
                 files={"photo": ("status.png", photo, "image/png")},
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
+            if DELETE_PHOTO_MSG and r.status_code == 200:
+                await asyncio.sleep(2)
+                await _delete_service_msg(client, api)
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
