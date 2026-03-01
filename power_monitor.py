@@ -196,7 +196,8 @@ def recent_tg_log(n: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def tg_send(text: str, chat_id: str = ""):
+async def tg_send(text: str, chat_id: str = "") -> int:
+    """Send message, return message_id (0 on failure)."""
     target = chat_id or TG_CHAT_ID
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": target, "text": text}
@@ -205,9 +206,21 @@ async def tg_send(text: str, chat_id: str = ""):
             r = await client.post(url, json=payload)
             save_tg_log(target, text, r.status_code)
             log.info("TG [%s] to %s: %s", r.status_code, target, text.replace("\n", " | "))
+            if r.status_code == 200:
+                return r.json().get("result", {}).get("message_id", 0)
     except Exception as e:
         save_tg_log(target, text, 0)
         log.error("TG send failed: %s", e)
+    return 0
+
+
+async def tg_delete(message_id: int):
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/deleteMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, json={"chat_id": TG_CHAT_ID, "message_id": message_id})
+    except Exception:
+        pass
 
 
 # ─── Channel photo ───────────────────────────────────────────
@@ -217,17 +230,28 @@ _PHOTO_ON = (_ICONS_DIR / "icon_on.png").read_bytes()
 _PHOTO_OFF = (_ICONS_DIR / "icon_off_v3.png").read_bytes()
 
 
-async def update_chat_photo(is_down: bool):
+async def update_chat_photo(is_down: bool, cleanup: bool = True):
+    """Change channel photo. If cleanup=True, delete the service message."""
     photo = _PHOTO_OFF if is_down else _PHOTO_ON
-    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/setChatPhoto"
+    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
-                api,
+                f"{api}/setChatPhoto",
                 data={"chat_id": TG_CHAT_ID},
                 files={"photo": ("status.png", photo, "image/png")},
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
+            if cleanup and r.status_code == 200:
+                r2 = await client.post(
+                    f"{api}/sendMessage",
+                    json={"chat_id": TG_CHAT_ID, "text": "\u200b"},
+                )
+                if r2.status_code == 200:
+                    temp_id = r2.json().get("result", {}).get("message_id", 0)
+                    if temp_id:
+                        await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id - 1})
+                        await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id})
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
@@ -290,8 +314,10 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            await update_chat_photo(True)
-            await tg_send(msg)
+            await update_chat_photo(True, cleanup=False)
+            mid = await tg_send(msg)
+            if mid:
+                await tg_delete(mid - 1)
 
         elif latest_alive and is_down:
             now = time.time()
@@ -304,8 +330,10 @@ async def analyze():
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            await update_chat_photo(False)
-            await tg_send(msg)
+            await update_chat_photo(False, cleanup=False)
+            mid = await tg_send(msg)
+            if mid:
+                await tg_delete(mid - 1)
 
 
 async def watchdog():
@@ -402,23 +430,6 @@ async def tg_webhook(request: Request):
     if secret != TG_WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
     data = await request.json()
-    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
-
-    cp = data.get("channel_post") or {}
-    if cp.get("new_chat_photo"):
-        cid = cp["chat"]["id"]
-        mid = cp["message_id"]
-        log.info("Deleting photo service msg chat=%s msg=%s", cid, mid)
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.post(
-                    f"{api}/deleteMessage",
-                    json={"chat_id": cid, "message_id": mid},
-                )
-                log.info("deleteMessage result: %s", r.text[:200])
-        except Exception as e:
-            log.error("deleteMessage failed: %s", e)
-        return {"ok": True}
 
     msg = data.get("message") or {}
     text = (msg.get("text") or "").strip()
