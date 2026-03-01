@@ -252,6 +252,17 @@ async def update_chat_photo(is_down: bool, cleanup: bool = True):
                 log.info("temp sendMessage [%s]: %s", r2.status_code, r2.text[:200])
                 if r2.status_code == 200:
                     temp_id = r2.json().get("result", {}).get("message_id", 0)
+                    log.info("temp_id=%d, probing IDs %d..%d", temp_id, max(temp_id - 5, 1), temp_id + 2)
+                    for mid in range(max(temp_id - 5, 1), temp_id + 3):
+                        p = await client.post(
+                            f"{api}/copyMessage",
+                            json={"chat_id": TG_CHAT_ID, "from_chat_id": TG_CHAT_ID, "message_id": mid},
+                        )
+                        log.info("probe id=%d [%s]: %s", mid, p.status_code, p.text[:200])
+                        if p.status_code == 200:
+                            copy_id = p.json().get("result", {}).get("message_id", 0)
+                            if copy_id:
+                                await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": copy_id})
                     for mid in range(temp_id - 1, max(temp_id - 4, 0), -1):
                         d = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": mid})
                         log.info("delete id=%d [%s]: %s", mid, d.status_code, d.text[:200])
