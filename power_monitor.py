@@ -218,9 +218,10 @@ async def tg_delete(message_id: int):
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/deleteMessage"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, json={"chat_id": TG_CHAT_ID, "message_id": message_id})
-    except Exception:
-        pass
+            r = await client.post(url, json={"chat_id": TG_CHAT_ID, "message_id": message_id})
+            log.info("tg_delete msg=%d [%s]: %s", message_id, r.status_code, r.text[:200])
+    except Exception as e:
+        log.error("tg_delete msg=%d failed: %s", message_id, e)
 
 
 # ─── Channel photo ───────────────────────────────────────────
@@ -241,17 +242,20 @@ async def update_chat_photo(is_down: bool, cleanup: bool = True):
                 data={"chat_id": TG_CHAT_ID},
                 files={"photo": ("status.png", photo, "image/png")},
             )
-            log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
+            log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:200])
             if cleanup and r.status_code == 200:
                 r2 = await client.post(
                     f"{api}/sendMessage",
-                    json={"chat_id": TG_CHAT_ID, "text": "\u200b"},
+                    json={"chat_id": TG_CHAT_ID, "text": "."},
                 )
+                log.info("temp sendMessage [%s]: %s", r2.status_code, r2.text[:200])
                 if r2.status_code == 200:
                     temp_id = r2.json().get("result", {}).get("message_id", 0)
-                    if temp_id:
-                        await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id - 1})
-                        await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id})
+                    log.info("temp_id=%d, deleting service msg id=%d", temp_id, temp_id - 1)
+                    d1 = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id - 1})
+                    log.info("delete service [%s]: %s", d1.status_code, d1.text[:200])
+                    d2 = await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": temp_id})
+                    log.info("delete temp [%s]: %s", d2.status_code, d2.text[:200])
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
