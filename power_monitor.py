@@ -662,10 +662,19 @@ updClocks(); setInterval(updClocks,1000);
 <tr><th>Час</th><th>Подія</th></tr>
 {ev_rows}</table>
 
-<h2>Telegram</h2>
+<details id="tg_details">
+<summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
 <table>
 <tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
 {tg_rows}</table>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('tg_details');
+  if(localStorage.getItem('tg_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('tg_open',d.open?'1':'0'); }});
+}})();
+</script>
 
 <h2>Посилання</h2>
 <table>
