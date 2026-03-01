@@ -600,6 +600,11 @@ td.down {{ color: #fca5a5; }}
 .btn-row {{ text-align: center; margin-bottom: 1rem; }}
 .clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }}
 .clocks span {{ white-space: nowrap; }}
+details {{ margin-bottom: 0.5rem; }}
+summary {{ cursor: pointer; list-style: none; }}
+summary::-webkit-details-marker {{ display: none; }}
+summary::before {{ content: '▶ '; font-size: 0.7rem; color: var(--muted); }}
+details[open] summary::before {{ content: '▼ '; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
@@ -619,10 +624,12 @@ updClocks(); setInterval(updClocks,1000);
 </script>
 <div class="mk {mk_cls}">{mk_text}</div>
 
-<h2>Heartbeats</h2>
+<details>
+<summary><h2 style="display:inline">Heartbeats</h2></summary>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
 {hb_rows}</table>
+</details>
 
 <h2>Події</h2>
 <table>
