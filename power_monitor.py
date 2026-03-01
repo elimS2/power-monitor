@@ -608,7 +608,7 @@ details[open] summary::before {{ content: '▼ '; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
-<div class="status {status_cls}">{status_text}</div>
+<div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
 <div class="duration">{duration_text}</div>
 <div class="clocks" id="clocks"></div>
 <script>
