@@ -214,7 +214,7 @@ async def tg_send(text: str, chat_id: str = ""):
 
 _ICONS_DIR = Path(__file__).parent
 _PHOTO_ON = (_ICONS_DIR / "icon_on.png").read_bytes()
-_PHOTO_OFF = (_ICONS_DIR / "icon_off_v2.png").read_bytes()
+_PHOTO_OFF = (_ICONS_DIR / "icon_off_v3.png").read_bytes()
 
 
 async def update_chat_photo(is_down: bool):
