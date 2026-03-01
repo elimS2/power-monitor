@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import struct
 import subprocess
 import logging
 import os
 import sqlite3
 import time
+import zlib
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -210,6 +212,39 @@ async def tg_send(text: str, chat_id: str = ""):
         log.error("TG send failed: %s", e)
 
 
+# ─── Channel photo ───────────────────────────────────────────
+
+def _solid_png(w: int, h: int, r: int, g: int, b: int) -> bytes:
+    def _chunk(ctype: bytes, data: bytes) -> bytes:
+        c = ctype + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+    raw = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(raw))
+        + _chunk(b"IEND", b"")
+    )
+
+_PHOTO_GREEN = _solid_png(512, 512, 34, 197, 94)
+_PHOTO_RED = _solid_png(512, 512, 239, 68, 68)
+
+
+async def update_chat_photo(is_down: bool):
+    photo = _PHOTO_RED if is_down else _PHOTO_GREEN
+    api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/setChatPhoto"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                api,
+                data={"chat_id": TG_CHAT_ID},
+                files={"photo": ("status.png", photo, "image/png")},
+            )
+            log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
+    except Exception as e:
+        log.error("setChatPhoto failed: %s", e)
+
+
 # ─── Telegram bot (webhook for /status command) ──────────────
 
 async def setup_tg_bot():
@@ -265,6 +300,7 @@ async def analyze():
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
             await tg_send(msg)
+            await update_chat_photo(True)
 
         elif latest_alive and is_down:
             now = time.time()
@@ -278,6 +314,7 @@ async def analyze():
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
             await tg_send(msg)
+            await update_chat_photo(False)
 
 
 async def watchdog():
