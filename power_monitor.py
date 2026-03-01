@@ -685,7 +685,8 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr>
 </table>
 
-<h2>Легенда повідомлень</h2>
+<details id="legend_details">
+<summary><h2 style="display:inline">Легенда повідомлень</h2></summary>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
 <tr><td>Світло зникло</td><td>\u274c 23:31 Світло зникло / \U0001f553 Воно було 3год 30хв (20:01 - 23:31)</td><td>prod</td></tr>
@@ -694,8 +695,10 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
 <tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ вже 15хв (з 23:31)</td><td>приват</td></tr>
 </table>
+</details>
 
-<h2>Аватарки каналу</h2>
+<details id="avatars_details">
+<summary><h2 style="display:inline">Аватарки каналу</h2></summary>
 <table>
 <tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr>
 <tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr>
@@ -707,6 +710,16 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr>
 <tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr>
 </table>
+</details>
+<script>
+(function(){{
+  ['legend','avatars'].forEach(function(k){{
+    var d=document.getElementById(k+'_details');
+    if(localStorage.getItem(k+'_open')==='1') d.open=true;
+    d.addEventListener('toggle',function(){{ localStorage.setItem(k+'_open',d.open?'1':'0'); }});
+  }});
+}})();
+</script>
 
 <div class="ver">v {GIT_COMMIT}</div>
 </body></html>"""
