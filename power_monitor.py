@@ -558,7 +558,7 @@ async def dashboard(key: str = Query("")):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="10">
-<link rel="icon" type="image/png" href="/icons/{"icon_off_v3.png" if is_down else "icon_on.png"}">
+<link rel="icon" type="image/png" href="/icons/{"icon_off_v3.png" if is_down else "icon_on.png"}?v={GIT_COMMIT}">
 <title>Power Monitor</title>
 <style>
 :root {{ --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; }}
