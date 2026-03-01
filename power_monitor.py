@@ -589,11 +589,25 @@ td.down {{ color: #fca5a5; }}
 .btn:hover {{ background: #475569; }}
 .btn:active {{ background: #1e293b; }}
 .btn-row {{ text-align: center; margin-bottom: 1rem; }}
+.clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }}
+.clocks span {{ white-space: nowrap; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
 <div class="status {status_cls}">{status_text}</div>
 <div class="duration">{duration_text}</div>
+<div class="clocks" id="clocks"></div>
+<script>
+function updClocks(){{
+  var now=new Date();
+  var fmt=function(tz){{return now.toLocaleTimeString('uk-UA',{{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}})}};
+  document.getElementById('clocks').innerHTML=
+    '<span>Київ '+fmt('Europe/Kyiv')+'</span>'+
+    '<span>UTC '+fmt('UTC')+'</span>'+
+    '<span>New York '+fmt('America/New_York')+'</span>';
+}}
+updClocks(); setInterval(updClocks,1000);
+</script>
 <div class="mk {mk_cls}">{mk_text}</div>
 
 <h2>Heartbeats</h2>
