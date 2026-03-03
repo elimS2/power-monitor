@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import subprocess
 import logging
 import os
@@ -128,6 +129,14 @@ def init_db():
                 status  INTEGER NOT NULL,
                 ts      REAL    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS schedule_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_date TEXT NOT NULL,
+                grid_json   TEXT NOT NULL,
+                fetched_at  REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
         """)
 
 
@@ -204,6 +213,32 @@ def recent_tg_log(n: int = 20) -> list[dict]:
             "SELECT chat_id, text, status, ts FROM tg_log ORDER BY id DESC LIMIT ?", (n,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _save_schedule_if_changed(target_date: str, grid: list[str]):
+    """Save grid to schedule_history only if it differs from the latest entry for that date."""
+    grid_json = json.dumps(grid)
+    with _conn() as db:
+        row = db.execute(
+            "SELECT grid_json FROM schedule_history WHERE target_date=? ORDER BY id DESC LIMIT 1",
+            (target_date,),
+        ).fetchone()
+        if row and row["grid_json"] == grid_json:
+            return
+        db.execute(
+            "INSERT INTO schedule_history(target_date, grid_json, fetched_at) VALUES(?,?,?)",
+            (target_date, grid_json, time.time()),
+        )
+        log.info("Schedule changed for %s — saved to history", target_date)
+
+
+def schedule_history_for_date(target_date: str) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT grid_json, fetched_at FROM schedule_history WHERE target_date=? ORDER BY id ASC",
+            (target_date,),
+        ).fetchall()
+    return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
 
 
 async def tg_send(text: str, chat_id: str = "") -> int:
@@ -422,6 +457,31 @@ def _grid_text_summary(grid: list[str], date_str: str, day_label: str) -> str:
     return '<div class="sg-text">' + "<br>".join(lines) + "</div>"
 
 
+def _slot_time(i: int) -> str:
+    h, m = divmod(i * 30, 60)
+    return f"{h:02d}:{m:02d}"
+
+_GRID_LABEL = {"ok": "світло", "maybe": "можливе", "off": "відключення"}
+
+
+def _describe_grid_diff(old: list[str], new: list[str]) -> str:
+    """Describe what changed between two 48-slot grids."""
+    added = []
+    removed = []
+    for i in range(48):
+        if old[i] == new[i]:
+            continue
+        t = f"{_slot_time(i)}-{_slot_time(i + 1)}"
+        if old[i] == "ok" and new[i] != "ok":
+            added.append(f"+{t} ({_GRID_LABEL[new[i]]})")
+        elif old[i] != "ok" and new[i] == "ok":
+            removed.append(f"−{t}")
+        else:
+            added.append(f"{t}: {_GRID_LABEL[old[i]]}→{_GRID_LABEL[new[i]]}")
+    parts = added + removed
+    return ", ".join(parts) if parts else "Без змін"
+
+
 async def fetch_dtek_schedule():
     """Fetch planned outages from DTEK proxy API and cache parsed grids."""
     global _schedule_cache, _schedule_fetched_at
@@ -439,11 +499,10 @@ async def fetch_dtek_schedule():
         log.warning("DTEK API fetch failed: %s", e)
         return
 
-    import json as _json
     if "body" in raw and isinstance(raw["body"], str):
         try:
-            raw = _json.loads(raw["body"])
-        except _json.JSONDecodeError:
+            raw = json.loads(raw["body"])
+        except json.JSONDecodeError:
             log.warning("DTEK API: failed to parse body")
             return
 
@@ -469,10 +528,9 @@ async def fetch_dtek_schedule():
             continue
         date_str = dates[idx]
         day_slots = queue_data[date_str]
-        result[day_key] = {
-            "date": date_str,
-            "grid": _day_slots_to_48(day_slots),
-        }
+        grid = _day_slots_to_48(day_slots)
+        result[day_key] = {"date": date_str, "grid": grid}
+        _save_schedule_if_changed(date_str, grid)
 
     _schedule_cache = result
     _schedule_fetched_at = now
@@ -743,6 +801,7 @@ async def dashboard(key: str = Query("")):
         current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
         sched_rows = ""
         text_blocks = ""
+        today_date = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
             day = _schedule_cache.get(day_key)
             if not day:
@@ -757,10 +816,41 @@ async def dashboard(key: str = Query("")):
                 cells += f'<td class="{cls}"></td>'
             sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
             text_blocks += _grid_text_summary(grid, date_str, day_label)
+            if day_key == "today":
+                today_date = date_str
 
         hour_headers = ""
         for h in range(24):
             hour_headers += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
+
+        history_html = ""
+        if today_date:
+            history = schedule_history_for_date(today_date)
+            if len(history) > 1:
+                hist_rows = ""
+                prev_grid = None
+                for h in history:
+                    ts_str = _ts_fmt_full(h["ts"])
+                    if prev_grid is None:
+                        diff_text = "Перший графік"
+                    else:
+                        diff_text = _describe_grid_diff(prev_grid, h["grid"])
+                    prev_grid = h["grid"]
+                    hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
+                history_html = f"""
+<details id="sched_hist_details" style="margin-top:0.8rem">
+<summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на сьогодні ({len(history)})</summary>
+<table>
+<tr><th>Час</th><th>Що змінилось</th></tr>
+{hist_rows}</table>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('sched_hist_details');
+  if(localStorage.getItem('sched_hist_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_hist_open',d.open?'1':'0'); }});
+}})();
+</script>"""
 
         schedule_html = f"""
 <details id="sched_details" open>
@@ -778,6 +868,7 @@ async def dashboard(key: str = Query("")):
 <span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
 </div>
 {text_blocks}
+{history_html}
 </details>
 <script>
 (function(){{
@@ -889,6 +980,8 @@ updClocks(); setInterval(updClocks,1000);
 
 {schedule_html}
 
+<details id="hb_details">
+<summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
 <div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>
 <script>
 (function(){{
@@ -909,9 +1002,6 @@ updClocks(); setInterval(updClocks,1000);
   }},1000);
 }})();
 </script>
-
-<details id="hb_details">
-<summary><h2 style="display:inline">Heartbeats</h2></summary>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
 {hb_rows}</table>
