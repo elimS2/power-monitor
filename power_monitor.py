@@ -215,6 +215,13 @@ def init_db():
                 ts          REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_wl_ts ON weather_log(ts);
+
+            CREATE TABLE IF NOT EXISTS alert_events (
+                id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                event TEXT    NOT NULL,
+                ts    REAL   NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ae_ts ON alert_events(ts);
         """)
 
 
@@ -257,6 +264,19 @@ def recent_events(n: int = 50) -> list[dict]:
     with _conn() as db:
         rows = db.execute(
             "SELECT event, ts FROM power_events ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_alert_event(event: str):
+    with _conn() as db:
+        db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))
+
+
+def recent_alert_events(n: int = 30) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT event, ts FROM alert_events ORDER BY id DESC LIMIT ?", (n,)
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -752,6 +772,12 @@ async def fetch_alert():
             changed = s.get("changed", "")
             break
 
+    was_active = _alert_cache.get("active") if _alert_cache else None
+    if was_active is not None and active != was_active:
+        event = "alert_on" if active else "alert_off"
+        save_alert_event(event)
+        log.info("Alert status changed: %s", event)
+
     _alert_cache = {"active": active, "changed": changed}
     _alert_fetched_at = now
 
@@ -1107,6 +1133,29 @@ async def dashboard(key: str = Query("")):
             f'<td>{safe_text}</td></tr>\n'
         )
 
+    # ─── Alert events ───
+    alert_ev = recent_alert_events(20)
+    alert_ev_rows = ""
+    for i, ae in enumerate(alert_ev):
+        cls = "down" if ae["event"] == "alert_on" else "up"
+        label = "\U0001f534 Тривога" if ae["event"] == "alert_on" else "\U0001f7e2 Відбій"
+        if i == 0:
+            dur_sec = int(time.time() - ae["ts"])
+            dur_fmt = _format_duration(dur_sec)
+            if ae["event"] == "alert_on" and _alert_cache.get("active"):
+                dur_str = f"вже {dur_fmt} \u25b8"
+            elif ae["event"] == "alert_off" and not _alert_cache.get("active"):
+                dur_str = f"вже {dur_fmt} \u25b8"
+            else:
+                dur_str = dur_fmt
+        else:
+            dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
+            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
+        alert_ev_rows += (
+            f'<tr><td>{_ts_fmt_full(ae["ts"])}</td><td class="{cls}">{label}</td>'
+            f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
+        )
+
     # ─── DTEK schedule grid ───
     schedule_html = ""
     if _schedule_cache:
@@ -1418,6 +1467,20 @@ updClocks(); setInterval(updClocks,1000);
 <table>
 <tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
 {ev_rows}</table>
+
+<details id="alert_ev_details">
+<summary><h2 style="display:inline">Тривоги</h2></summary>
+<table>
+<tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
+{alert_ev_rows}</table>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('alert_ev_details');
+  if(localStorage.getItem('alert_ev_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('alert_ev_open',d.open?'1':'0'); }});
+}})();
+</script>
 
 <details id="tg_details">
 <summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
