@@ -1366,16 +1366,16 @@ async def dashboard(key: str = Query("")):
                 continue
             mob_grids.append((day_key, day_label, day["date"][:10], day["grid"]))
 
-        sched_rows_mob = ""
+        sched_mob_html = ""
         for day_key, day_label, date_str, grid in mob_grids:
+            sched_mob_html += f'<div class="sg-mob-day">{day_label} <span style="font-size:0.8rem;color:var(--muted)">{date_str}</span></div>\n'
+            sched_mob_html += '<table class="sg-table"><colgroup><col span="24"></colgroup>\n'
             for half in range(2):
                 start_h = half * 12
                 mob_hdr = ""
                 for h in range(start_h, start_h + 12):
                     mob_hdr += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
-                lbl = day_label if half == 0 else ""
-                lbl_date = f'<br><span style="font-size:0.65rem;color:var(--muted)">{date_str}</span>' if half == 0 else ""
-                sched_rows_mob += f'<tr><th class="sg-label">{lbl}{lbl_date}</th>{mob_hdr}</tr>\n'
+                sched_mob_html += f'<tr>{mob_hdr}</tr>\n'
                 cells = ""
                 for i in range(half * 24, half * 24 + 24):
                     cls = "sg-" + grid[i]
@@ -1384,7 +1384,8 @@ async def dashboard(key: str = Query("")):
                     if day_key == "today" and i == current_slot:
                         cls += " sg-now"
                     cells += f'<td class="{cls}"></td>'
-                sched_rows_mob += f'<tr><td class="sg-label"></td>{cells}</tr>\n'
+                sched_mob_html += f'<tr>{cells}</tr>\n'
+            sched_mob_html += '</table>\n'
 
         history_html = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
@@ -1431,11 +1432,8 @@ async def dashboard(key: str = Query("")):
 <tr><th class="sg-label"></th>{hour_headers}</tr>
 {sched_rows}</table>
 </div>
-<div class="sg-wrap sg-mobile">
-<table class="sg-table">
-<colgroup><col class="sg-col-label"><col span="24"></colgroup>
-{sched_rows_mob}</table>
-</div>
+<div class="sg-mobile">
+{sched_mob_html}</div>
 <div class="sg-legend">
 <span class="sg-leg-item"><span class="sg-swatch sg-ok"></span> Світло є</span>
 <span class="sg-leg-item"><span class="sg-swatch sg-off"></span> Відключення</span>
@@ -1599,10 +1597,11 @@ summary::before {{ content: '▶ '; font-size: 0.7rem; color: var(--muted); }}
 details[open] summary::before {{ content: '▼ '; }}
 .sg-wrap {{ overflow-x: auto; }}
 .sg-mobile {{ display: none; }}
+.sg-mob-day {{ font-size: 0.85rem; font-weight: 600; color: var(--text); margin: 0.6rem 0 0.3rem; }}
+.sg-mob-day:first-child {{ margin-top: 0; }}
 @media (max-width: 768px) {{
   .sg-desktop {{ display: none; }}
   .sg-mobile {{ display: block; }}
-  .sg-col-label {{ width: 70px; }}
 }}
 .sg-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; background: var(--card); border-radius: 8px; overflow: hidden; }}
 .sg-col-label {{ width: 90px; }}
