@@ -523,7 +523,7 @@ async def analyze():
             if on_sched is True:
                 sched_label = " (\U0001f4c5 За графіком)"
             elif on_sched is False:
-                sched_label = " (\u26a1 Позапланове)"
+                sched_label = " (\u26a1Позапланове)"
             msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
@@ -545,7 +545,7 @@ async def analyze():
             if on_sched is True:
                 sched_label = " (\U0001f4c5 За графіком)"
             elif on_sched is False:
-                sched_label = " (\u26a1 Позапланове)"
+                sched_label = " (\u26a1Позапланове)"
             msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
             if prev:
                 since_ts = prev[0]["ts"]
@@ -1183,7 +1183,7 @@ async def dashboard(key: str = Query("")):
             elif slot_val == "maybe":
                 schedule_note = "\U0001f4c5 Можливе відключення (за графіком)"
             else:
-                schedule_note = "\u26a1 Позапланове відключення"
+                schedule_note = "\u26a1Позапланове відключення"
         else:
             if slot_val == "off":
                 schedule_note = "\U0001f389 Світло є (всупереч графіку)"
@@ -1642,7 +1642,7 @@ updClocks(); setInterval(updClocks,1000);
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
 <tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
-<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1 Позапланове)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
+<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
 <tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
