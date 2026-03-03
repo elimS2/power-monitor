@@ -518,15 +518,16 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло"
+            on_sched = _is_on_schedule(is_down_event=True)
+            sched_label = ""
+            if on_sched is True:
+                sched_label = " (\U0001f4c5 За графіком)"
+            elif on_sched is False:
+                sched_label = " (\u26a1 Позапланове)"
+            msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            on_sched = _is_on_schedule(is_down_event=True)
-            if on_sched is True:
-                msg += f"\n\U0001f4c5 За графіком"
-            elif on_sched is False:
-                msg += f"\n\u26a1 Позапланове"
             nxt = _next_schedule_transition(looking_for_on=True)
             if nxt:
                 msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
@@ -539,16 +540,17 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось"
+            on_sched = _is_on_schedule(is_down_event=False)
+            sched_label = ""
+            if on_sched is True:
+                sched_label = " (\U0001f4c5 За графіком)"
+            elif on_sched is False:
+                sched_label = " (\u26a1 Позапланове)"
+            msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
             if prev:
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            on_sched = _is_on_schedule(is_down_event=False)
-            if on_sched is True:
-                msg += f"\n\U0001f4c5 За графіком"
-            elif on_sched is False:
-                msg += f"\n\u26a1 Позапланове"
             nxt = _next_schedule_transition(looking_for_on=False)
             if nxt:
                 msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
@@ -620,10 +622,16 @@ def _is_on_schedule(is_down_event: bool) -> bool | None:
     return False
 
 
-def _next_schedule_transition(looking_for_on: bool) -> str | None:
-    """Find next scheduled power-ON (True) or power-OFF (False) transition.
+def _fmt_slot(slot_idx: int) -> str:
+    h, m = divmod((slot_idx % 48) * 30, 60)
+    ts = f"{h:02d}:{m:02d}"
+    return f"завтра {ts}" if slot_idx >= 48 else ts
 
-    Returns a string like '~16:30' or '~завтра 10:00', or None if unknown.
+
+def _next_schedule_transition(looking_for_on: bool) -> str | None:
+    """Find next scheduled power-ON (True) or power-OFF (False) block.
+
+    Returns '~16:30 - 21:30' (with end) or '~06:00' (no end), or None.
     """
     if not _schedule_cache:
         return None
@@ -651,11 +659,16 @@ def _next_schedule_transition(looking_for_on: bool) -> str | None:
     if i >= len(combined):
         return None
 
-    h, m = divmod((i % 48) * 30, 60)
-    time_str = f"{h:02d}:{m:02d}"
-    if i >= 48:
-        return f"~завтра {time_str}"
-    return f"~{time_str}"
+    start = i
+    while i < len(combined):
+        if (combined[i] == "ok") != target_ok:
+            break
+        i += 1
+
+    start_str = _fmt_slot(start)
+    if i < len(combined):
+        return f"~{start_str} - {_fmt_slot(i)}"
+    return f"~{start_str}"
 
 
 _UA_WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
