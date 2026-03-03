@@ -1112,8 +1112,8 @@ def _power_status_text() -> str:
 
     dur = _format_duration(int(now - since_ts))
     if is_down:
-        return f"\u274c Світло ВІДСУТНЄ вже {dur} (з {_ts_fmt_hm(since_ts)})"
-    return f"\u2705 Світло є вже {dur} (з {_ts_fmt_hm(since_ts)})"
+        return f"\u274c Світло ВІДСУТНЄ {dur} (з {_ts_fmt_hm(since_ts)})"
+    return f"\u2705 Світло є {dur} (з {_ts_fmt_hm(since_ts)})"
 
 
 def _ts_fmt_hm(ts: float) -> str:
@@ -1244,9 +1244,9 @@ async def dashboard(key: str = Query("")):
             dur_sec = int(time.time() - e["ts"])
             dur_fmt = _format_duration(dur_sec)
             if e["event"] == "down" and is_down:
-                dur_str = f"нема вже {dur_fmt} ▸"
+                dur_str = f"нема {dur_fmt} ▸"
             elif e["event"] == "up" and not is_down:
-                dur_str = f"є вже {dur_fmt} ▸"
+                dur_str = f"є {dur_fmt} ▸"
             else:
                 dur_str = dur_fmt
         elif i < len(ev):
@@ -1315,9 +1315,9 @@ async def dashboard(key: str = Query("")):
             dur_sec = int(time.time() - ae["ts"])
             dur_fmt = _format_duration(dur_sec)
             if ae["event"] == "alert_on" and _alert_cache.get("active"):
-                dur_str = f"вже {dur_fmt} \u25b8"
+                dur_str = f"{dur_fmt} \u25b8"
             elif ae["event"] == "alert_off" and not _alert_cache.get("active"):
-                dur_str = f"вже {dur_fmt} \u25b8"
+                dur_str = f"{dur_fmt} \u25b8"
             else:
                 dur_str = dur_fmt
         else:
@@ -1746,8 +1746,8 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
 <tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
-<tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
-<tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ вже 15хв (з 23:31)</td><td>приват</td></tr>
+<tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr>
+<tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr>
 </table>
 </details>
 
