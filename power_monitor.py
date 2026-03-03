@@ -1147,7 +1147,7 @@ async def dashboard(key: str = Query("")):
             t_hi = w["t_max"]
             s_lo = "+" if t_lo > 0 else ""
             s_hi = "+" if t_hi > 0 else ""
-            minmax = f' &nbsp; \u2193{s_lo}{t_lo:.0f}\u00b0\u2191{s_hi}{t_hi:.0f}\u00b0'
+            minmax = f' ({s_lo}{t_lo:.0f}..{s_hi}{t_hi:.0f}\u00b0)'
         weather_html = f'<div class="weather">{emoji} {sign}{temp:.0f}\u00b0C{minmax} &nbsp; \U0001f4a8 {wind:.0f} \u043a\u043c/\u0433 &nbsp; \U0001f4a7 {hum:.0f}%</div>'
 
     now_kyiv = datetime.now(UA_TZ)
