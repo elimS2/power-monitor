@@ -1510,8 +1510,7 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .status.up {{ background: #064e3b; color: #6ee7b7; }}
 .status.down {{ background: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }}
 @keyframes pulse {{ 0%,100% {{ opacity:1 }} 50% {{ opacity:.7 }} }}
-.duration {{ text-align: center; font-size: 1rem; color: var(--muted); margin-bottom: 0.3rem; }}
-.schedule-note {{ text-align: center; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }}
+.duration {{ text-align: center; font-size: 1rem; color: var(--muted); margin-bottom: 0.5rem; }}
 .mk {{ text-align: center; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem; }}
 .mk.up {{ background: #1e293b; color: #6ee7b7; }}
 .mk.down {{ background: #7f1d1d; color: #fca5a5; }}
@@ -1562,8 +1561,7 @@ details[open] summary::before {{ content: '▼ '; }}
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
 <div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
-<div class="duration">{duration_text}</div>
-<div class="schedule-note">{schedule_note}</div>
+<div class="duration">{duration_text}{f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""}</div>
 <div class="clocks" id="clocks"></div>
 <script>
 function updClocks(){{
