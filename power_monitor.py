@@ -634,21 +634,26 @@ _GRID_LABEL = {"ok": "світло", "maybe": "можливе", "off": "відк
 
 
 def _describe_grid_diff(old: list[str], new: list[str]) -> str:
-    """Describe what changed between two 48-slot grids."""
-    added = []
-    removed = []
-    for i in range(48):
+    """Describe what changed between two 48-slot grids, merging consecutive ranges."""
+    changes = []
+    i = 0
+    while i < 48:
         if old[i] == new[i]:
+            i += 1
             continue
-        t = f"{_slot_time(i)}-{_slot_time(i + 1)}"
-        if old[i] == "ok" and new[i] != "ok":
-            added.append(f"+{t} ({_GRID_LABEL[new[i]]})")
-        elif old[i] != "ok" and new[i] == "ok":
-            removed.append(f"−{t}")
+        kind = (old[i], new[i])
+        start = i
+        while i < 48 and (old[i], new[i]) == kind:
+            i += 1
+        t = f"{_slot_time(start)}-{_slot_time(i)}"
+        o, n = kind
+        if o == "ok" and n != "ok":
+            changes.append(f"+{t} ({_GRID_LABEL[n]})")
+        elif o != "ok" and n == "ok":
+            changes.append(f"\u2212{t}")
         else:
-            added.append(f"{t}: {_GRID_LABEL[old[i]]}→{_GRID_LABEL[new[i]]}")
-    parts = added + removed
-    return ", ".join(parts) if parts else "Без змін"
+            changes.append(f"{t}: {_GRID_LABEL[o]}\u2192{_GRID_LABEL[n]}")
+    return ", ".join(changes) if changes else "Без змін"
 
 
 async def fetch_dtek_schedule():
