@@ -800,14 +800,18 @@ async def dashboard(key: str = Query("")):
     for i, e in enumerate(ev):
         cls = "down" if e["event"] == "down" else "up"
         label = "Пропало" if e["event"] == "down" else "З'явилось"
-        if i > 0:
+        if i == 0:
+            dur_sec = int(time.time() - e["ts"])
+            dur_fmt = _format_duration(dur_sec)
+            if e["event"] == "down" and is_down:
+                dur_str = f"нема вже {dur_fmt} ▸"
+            elif e["event"] == "up" and not is_down:
+                dur_str = f"є вже {dur_fmt} ▸"
+            else:
+                dur_str = dur_fmt
+        elif i < len(ev):
             dur_sec = int(ev[i - 1]["ts"] - e["ts"])
             dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
-        elif ev[0]["event"] != ("down" if is_down else "up"):
-            dur_sec = int(time.time() - e["ts"])
-            dur_str = _format_duration(dur_sec) + " ▸"
-        else:
-            dur_str = ""
         sched_tag = ""
         if _schedule_cache and _schedule_cache.get("today"):
             ev_kyiv = datetime.fromtimestamp(e["ts"], tz=UA_TZ)
@@ -853,6 +857,8 @@ async def dashboard(key: str = Query("")):
             grid = day["grid"]
             for i in range(48):
                 cls = "sg-" + grid[i]
+                if i % 2 == 0:
+                    cls += " sg-hr"
                 if day_key == "today" and i == current_slot:
                     cls += " sg-now"
                 cells += f'<td class="{cls}"></td>'
@@ -994,6 +1000,7 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-hdr {{ font-size: 0.6rem; color: var(--muted); font-weight: 400; padding: 2px 0; }}
 .sg-label {{ white-space: nowrap; font-size: 0.75rem; padding: 4px 6px !important; text-align: left; overflow: hidden; }}
 .sg-table td:not(.sg-label) {{ height: 22px; }}
+.sg-hr {{ border-left: 2px solid #64748b !important; }}
 .sg-ok {{ background: #1a3a2a; }}
 .sg-off {{ background: #b91c1c; }}
 .sg-maybe {{ background: #a16207; }}
