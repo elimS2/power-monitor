@@ -522,6 +522,9 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            nxt = _next_schedule_transition(looking_for_on=True)
+            if nxt:
+                msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
             await update_chat_photo(True)
             await tg_send(msg)
 
@@ -536,6 +539,9 @@ async def analyze():
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            nxt = _next_schedule_transition(looking_for_on=False)
+            if nxt:
+                msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
             await update_chat_photo(False)
             await tg_send(msg)
 
@@ -574,6 +580,44 @@ def _day_slots_to_48(day_data: dict) -> list[str]:
         elif val == 2:
             grid[i] = "maybe"
     return grid
+
+
+def _next_schedule_transition(looking_for_on: bool) -> str | None:
+    """Find next scheduled power-ON (True) or power-OFF (False) transition.
+
+    Returns a string like '~16:30' or '~завтра 10:00', or None if unknown.
+    """
+    if not _schedule_cache:
+        return None
+
+    now_kyiv = datetime.now(UA_TZ)
+    cur_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+
+    combined: list[str] = []
+    for key in ("today", "tomorrow"):
+        day = _schedule_cache.get(key)
+        combined.extend(day["grid"] if day else ["ok"] * 48)
+
+    target_ok = looking_for_on
+
+    i = cur_slot
+    while i < len(combined):
+        if (combined[i] == "ok") != target_ok:
+            break
+        i += 1
+    while i < len(combined):
+        if (combined[i] == "ok") == target_ok:
+            break
+        i += 1
+
+    if i >= len(combined):
+        return None
+
+    h, m = divmod((i % 48) * 30, 60)
+    time_str = f"{h:02d}:{m:02d}"
+    if i >= 48:
+        return f"~завтра {time_str}"
+    return f"~{time_str}"
 
 
 _UA_WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
