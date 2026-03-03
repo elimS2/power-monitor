@@ -766,6 +766,26 @@ async def dashboard(key: str = Query("")):
 
     duration_text = _power_status_text() if (hb or ev) else ""
 
+    schedule_note = ""
+    if _schedule_cache and _schedule_cache.get("today"):
+        now_kyiv = datetime.now(UA_TZ)
+        slot_idx = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+        slot_val = _schedule_cache["today"]["grid"][min(slot_idx, 47)]
+        if is_down:
+            if slot_val == "off":
+                schedule_note = "\U0001f4c5 Заплановане відключення"
+            elif slot_val == "maybe":
+                schedule_note = "\U0001f4c5 Можливе відключення (за графіком)"
+            else:
+                schedule_note = "\u26a1 Позапланове відключення"
+        else:
+            if slot_val == "off":
+                schedule_note = "\U0001f389 Світло є (всупереч графіку)"
+            elif slot_val == "maybe":
+                schedule_note = "\U0001f4c5 За графіком (можливе відкл. не сталось)"
+            else:
+                schedule_note = "\U0001f4c5 За графіком"
+
     hb_rows = ""
     for r in hb:
         c204 = "down" if r["plug204"] == 0 else "up"
@@ -777,10 +797,32 @@ async def dashboard(key: str = Query("")):
         )
 
     ev_rows = ""
-    for e in ev:
+    for i, e in enumerate(ev):
         cls = "down" if e["event"] == "down" else "up"
         label = "Пропало" if e["event"] == "down" else "З'явилось"
-        ev_rows += f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}</td></tr>\n'
+        if i > 0:
+            dur_sec = int(ev[i - 1]["ts"] - e["ts"])
+            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
+        elif ev[0]["event"] != ("down" if is_down else "up"):
+            dur_sec = int(time.time() - e["ts"])
+            dur_str = _format_duration(dur_sec) + " ▸"
+        else:
+            dur_str = ""
+        sched_tag = ""
+        if _schedule_cache and _schedule_cache.get("today"):
+            ev_kyiv = datetime.fromtimestamp(e["ts"], tz=UA_TZ)
+            today_date = _schedule_cache["today"]["date"]
+            if ev_kyiv.strftime("%Y-%m-%d") == today_date:
+                ev_slot = ev_kyiv.hour * 2 + (1 if ev_kyiv.minute >= 30 else 0)
+                sv = _schedule_cache["today"]["grid"][min(ev_slot, 47)]
+                if e["event"] == "down" and sv == "ok":
+                    sched_tag = ' <span style="color:#fbbf24">⚡позапл.</span>'
+                elif e["event"] == "down" and sv != "ok":
+                    sched_tag = ' <span style="color:var(--muted)">📅</span>'
+        ev_rows += (
+            f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}{sched_tag}</td>'
+            f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
+        )
 
     tg_rows = ""
     for t in recent_tg_log(15):
@@ -918,7 +960,8 @@ h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom:
 .status.up {{ background: #064e3b; color: #6ee7b7; }}
 .status.down {{ background: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }}
 @keyframes pulse {{ 0%,100% {{ opacity:1 }} 50% {{ opacity:.7 }} }}
-.duration {{ text-align: center; font-size: 1rem; color: var(--muted); margin-bottom: 0.5rem; }}
+.duration {{ text-align: center; font-size: 1rem; color: var(--muted); margin-bottom: 0.3rem; }}
+.schedule-note {{ text-align: center; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }}
 .mk {{ text-align: center; font-size: 0.9rem; padding: 0.6rem; border-radius: 8px; margin-bottom: 1.5rem; }}
 .mk.up {{ background: #1e293b; color: #6ee7b7; }}
 .mk.down {{ background: #7f1d1d; color: #fca5a5; }}
@@ -965,6 +1008,7 @@ details[open] summary::before {{ content: '▼ '; }}
 <h1>Power Monitor — ЗК 6</h1>
 <div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
 <div class="duration">{duration_text}</div>
+<div class="schedule-note">{schedule_note}</div>
 <div class="clocks" id="clocks"></div>
 <script>
 function updClocks(){{
@@ -1016,7 +1060,7 @@ updClocks(); setInterval(updClocks,1000);
 
 <h2>Події</h2>
 <table>
-<tr><th>Час</th><th>Подія</th></tr>
+<tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
 {ev_rows}</table>
 
 <details id="tg_details">
