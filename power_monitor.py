@@ -1253,16 +1253,40 @@ async def dashboard(key: str = Query("")):
             dur_sec = int(ev[i - 1]["ts"] - e["ts"])
             dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
         sched_tag = ""
-        if _schedule_cache and _schedule_cache.get("today"):
-            ev_kyiv = datetime.fromtimestamp(e["ts"], tz=UA_TZ)
-            today_date = _schedule_cache["today"]["date"]
-            if ev_kyiv.strftime("%Y-%m-%d") == today_date:
-                ev_slot = ev_kyiv.hour * 2 + (1 if ev_kyiv.minute >= 30 else 0)
-                sv = _schedule_cache["today"]["grid"][min(ev_slot, 47)]
-                if e["event"] == "down" and sv == "ok":
-                    sched_tag = ' <span style="color:#fbbf24">⚡позапл.</span>'
-                elif e["event"] == "down" and sv != "ok":
-                    sched_tag = ' <span style="color:var(--muted)">📅</span>'
+        ev_kyiv = datetime.fromtimestamp(e["ts"], tz=UA_TZ)
+        ev_date_str = ev_kyiv.strftime("%Y-%m-%d")
+        ev_grid = None
+        for dk in ("today", "tomorrow"):
+            d = _schedule_cache.get(dk) if _schedule_cache else None
+            if d and d["date"] == ev_date_str:
+                ev_grid = d["grid"]
+                break
+        if ev_grid is None:
+            sh = schedule_history_for_date(ev_date_str)
+            if sh:
+                ev_grid = sh[-1]["grid"]
+        if ev_grid:
+            is_down_ev = e["event"] == "down"
+            ev_min = ev_kyiv.hour * 60 + ev_kyiv.minute
+            best_dev: int | None = None
+            for si in range(1, 48):
+                p_ok = ev_grid[si - 1] == "ok"
+                c_ok = ev_grid[si] == "ok"
+                t_min = si * 30
+                if is_down_ev and p_ok and not c_ok:
+                    d2 = ev_min - t_min
+                    if best_dev is None or abs(d2) < abs(best_dev):
+                        best_dev = d2
+                elif not is_down_ev and not p_ok and c_ok:
+                    d2 = ev_min - t_min
+                    if best_dev is None or abs(d2) < abs(best_dev):
+                        best_dev = d2
+            if best_dev is not None and abs(best_dev) <= 30:
+                sched_tag = f' <span style="color:var(--muted)">\U0001f4c5{_fmt_deviation(best_dev)}</span>'
+            elif best_dev is not None:
+                sched_tag = ' <span style="color:#fbbf24">\u26a1позапл.</span>'
+            elif is_down_ev:
+                sched_tag = ' <span style="color:#fbbf24">\u26a1позапл.</span>'
         ev_rows += (
             f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}{sched_tag}</td>'
             f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
