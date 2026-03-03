@@ -63,14 +63,10 @@ CLEANUP_KEEP_DAYS = 90
 # Kyiv timezone offset for display (UTC+2 / UTC+3 summer)
 UA_TZ = timezone(timedelta(hours=2))
 
-# ─── Yasno (DTEK) schedule config ────────────────────────────
-YASNO_REGION_ID = int(os.getenv("YASNO_REGION_ID", "25"))
-YASNO_DSO_ID = int(os.getenv("YASNO_DSO_ID", "902"))
-YASNO_GROUP = os.getenv("YASNO_GROUP", "5.1")
-YASNO_API_URL = (
-    f"https://app.yasno.ua/api/blackout-service/public/shutdowns"
-    f"/regions/{YASNO_REGION_ID}/dsos/{YASNO_DSO_ID}/planned-outages"
-)
+# ─── DTEK schedule config ─────────────────────────────────────
+DTEK_API_URL = os.getenv("DTEK_API_URL", "https://dtek-api.svitlo-proxy.workers.dev/")
+DTEK_REGION = os.getenv("DTEK_REGION", "kiivska-oblast")
+DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
 
 _schedule_cache: dict = {}
 _schedule_fetched_at: float = 0
@@ -358,29 +354,26 @@ async def watchdog():
         kv_set("stale_alerted", "0")
 
 
-# ─── Yasno schedule ──────────────────────────────────────────
+# ─── DTEK schedule ────────────────────────────────────────────
 
-def _slots_to_48(slots: list[dict]) -> list[str]:
-    """Convert Yasno API slots (minutes from midnight) to 48 half-hour cells.
+def _day_slots_to_48(day_data: dict) -> list[str]:
+    """Convert DTEK API {HH:MM: 1|2|3} dict to 48-element grid.
 
-    Each cell is 'ok', 'off' (Definite outage) or 'maybe' (NotPlanned).
+    1 = ok, 2 = maybe, 3 = off.
     """
     grid = ["ok"] * 48
-    for s in slots:
-        t = s.get("type", "")
-        cell_val = "off" if t == "Definite" else ("maybe" if t == "NotPlanned" else "ok")
-        if cell_val == "ok":
-            continue
-        i_start = max(0, s["start"] // 30)
-        i_end = min(48, (s["end"] + 29) // 30)
-        for i in range(i_start, i_end):
-            if grid[i] == "ok" or cell_val == "off":
-                grid[i] = cell_val
+    for i in range(48):
+        key = f"{i // 2:02d}:{'30' if i % 2 else '00'}"
+        val = day_data.get(key, 1)
+        if val == 3:
+            grid[i] = "off"
+        elif val == 2:
+            grid[i] = "maybe"
     return grid
 
 
-async def fetch_yasno_schedule():
-    """Fetch planned outages from Yasno API and cache parsed grids."""
+async def fetch_dtek_schedule():
+    """Fetch planned outages from DTEK proxy API and cache parsed grids."""
     global _schedule_cache, _schedule_fetched_at
 
     now = time.time()
@@ -388,33 +381,52 @@ async def fetch_yasno_schedule():
         return
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(YASNO_API_URL)
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(DTEK_API_URL)
             r.raise_for_status()
-            data = r.json()
+            raw = r.json()
     except Exception as e:
-        log.warning("Yasno API fetch failed: %s", e)
+        log.warning("DTEK API fetch failed: %s", e)
         return
 
-    group_data = data.get(YASNO_GROUP)
-    if not group_data:
-        log.warning("Yasno: group %s not found in response", YASNO_GROUP)
+    import json as _json
+    if "body" in raw and isinstance(raw["body"], str):
+        try:
+            raw = _json.loads(raw["body"])
+        except _json.JSONDecodeError:
+            log.warning("DTEK API: failed to parse body")
+            return
+
+    region_data = None
+    for reg in raw.get("regions", []):
+        if reg.get("cpu") == DTEK_REGION:
+            region_data = reg
+            break
+    if not region_data:
+        log.warning("DTEK: region %s not found", DTEK_REGION)
         return
 
+    queue_data = region_data.get("schedule", {}).get(DTEK_QUEUE)
+    if not queue_data:
+        log.warning("DTEK: queue %s not found in %s", DTEK_QUEUE, DTEK_REGION)
+        return
+
+    dates = sorted(queue_data.keys())
     result = {}
-    for day_key in ("today", "tomorrow"):
-        day = group_data.get(day_key)
-        if not day:
+    labels = [("today", 0), ("tomorrow", 1)]
+    for day_key, idx in labels:
+        if idx >= len(dates):
             continue
+        date_str = dates[idx]
+        day_slots = queue_data[date_str]
         result[day_key] = {
-            "date": day.get("date", ""),
-            "status": day.get("status", ""),
-            "grid": _slots_to_48(day.get("slots", [])),
+            "date": date_str,
+            "grid": _day_slots_to_48(day_slots),
         }
 
     _schedule_cache = result
     _schedule_fetched_at = now
-    log.info("Yasno schedule updated for group %s", YASNO_GROUP)
+    log.info("DTEK schedule updated for %s queue %s", DTEK_REGION, DTEK_QUEUE)
 
 
 # ─── Background loop ─────────────────────────────────────────
@@ -431,7 +443,7 @@ async def bg_loop():
                 cleanup_tick = 0
             schedule_tick += 1
             if schedule_tick >= 60:  # ~30min at 30s interval
-                await fetch_yasno_schedule()
+                await fetch_dtek_schedule()
                 schedule_tick = 0
         except Exception as e:
             log.error("bg_loop: %s", e)
@@ -443,7 +455,7 @@ async def bg_loop():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    await fetch_yasno_schedule()
+    await fetch_dtek_schedule()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
@@ -674,7 +686,7 @@ async def dashboard(key: str = Query("")):
             f'<td>{safe_text}</td></tr>\n'
         )
 
-    # ─── Yasno schedule grid ───
+    # ─── DTEK schedule grid ───
     schedule_html = ""
     if _schedule_cache:
         now_kyiv = datetime.now(UA_TZ)
@@ -692,10 +704,7 @@ async def dashboard(key: str = Query("")):
                 if day_key == "today" and i == current_slot:
                     cls += " sg-now"
                 cells += f'<td class="{cls}"></td>'
-            status_label = ""
-            if day["status"] == "WaitingForSchedule":
-                status_label = ' <span style="color:var(--muted);font-size:0.7rem">(очікується)</span>'
-            sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span>{status_label}</td>{cells}</tr>\n'
+            sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
 
         hour_headers = ""
         for h in range(24):
@@ -703,7 +712,7 @@ async def dashboard(key: str = Query("")):
 
         schedule_html = f"""
 <details id="sched_details" open>
-<summary><h2 style="display:inline">Графік відключень (черга {YASNO_GROUP})</h2></summary>
+<summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
 <div class="sg-wrap">
 <table class="sg-table">
 <tr><th class="sg-label"></th>{hour_headers}</tr>
