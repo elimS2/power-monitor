@@ -73,6 +73,47 @@ DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
 _schedule_cache: dict = {}
 _schedule_fetched_at: float = 0
 
+_weather_cache: dict = {}
+_weather_fetched_at: float = 0
+
+WEATHER_LAT = 50.5114
+WEATHER_LON = 30.7911
+WEATHER_URL = (
+    f"https://api.open-meteo.com/v1/forecast"
+    f"?latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
+    f"&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
+    f"&timezone=Europe%2FKyiv"
+)
+
+_WMO_EMOJI = {
+    0: "\u2600\ufe0f",     # clear sky
+    1: "\U0001f324\ufe0f", # mainly clear
+    2: "\u26c5",            # partly cloudy
+    3: "\u2601\ufe0f",     # overcast
+    45: "\U0001f32b\ufe0f", # fog
+    48: "\U0001f32b\ufe0f", # depositing rime fog
+    51: "\U0001f326\ufe0f", # light drizzle
+    53: "\U0001f326\ufe0f", # moderate drizzle
+    55: "\U0001f326\ufe0f", # dense drizzle
+    61: "\U0001f327\ufe0f", # slight rain
+    63: "\U0001f327\ufe0f", # moderate rain
+    65: "\U0001f327\ufe0f", # heavy rain
+    66: "\U0001f327\ufe0f", # light freezing rain
+    67: "\U0001f327\ufe0f", # heavy freezing rain
+    71: "\U0001f328\ufe0f", # slight snow
+    73: "\U0001f328\ufe0f", # moderate snow
+    75: "\U0001f328\ufe0f", # heavy snow
+    77: "\U0001f328\ufe0f", # snow grains
+    80: "\U0001f326\ufe0f", # slight rain showers
+    81: "\U0001f327\ufe0f", # moderate rain showers
+    82: "\U0001f327\ufe0f", # violent rain showers
+    85: "\U0001f328\ufe0f", # slight snow showers
+    86: "\U0001f328\ufe0f", # heavy snow showers
+    95: "\u26c8\ufe0f",     # thunderstorm
+    96: "\u26c8\ufe0f",     # thunderstorm with slight hail
+    99: "\u26c8\ufe0f",     # thunderstorm with heavy hail
+}
+
 def _git_version() -> str:
     try:
         return subprocess.check_output(
@@ -626,6 +667,33 @@ async def fetch_dtek_schedule():
     log.info("DTEK schedule updated for %s queue %s", DTEK_REGION, DTEK_QUEUE)
 
 
+async def fetch_weather():
+    global _weather_cache, _weather_fetched_at
+
+    now = time.time()
+    if now - _weather_fetched_at < 1800:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(WEATHER_URL)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning("Weather fetch failed: %s", e)
+        return
+
+    cur = data.get("current", {})
+    _weather_cache = {
+        "temp": cur.get("temperature_2m"),
+        "humidity": cur.get("relative_humidity_2m"),
+        "wind": cur.get("wind_speed_10m"),
+        "code": cur.get("weather_code", -1),
+    }
+    _weather_fetched_at = now
+    log.info("Weather updated: %s", _weather_cache)
+
+
 # ─── Background loop ─────────────────────────────────────────
 
 async def bg_loop():
@@ -641,6 +709,7 @@ async def bg_loop():
             schedule_tick += 1
             if schedule_tick >= 60:  # ~30min at 30s interval
                 await fetch_dtek_schedule()
+                await fetch_weather()
                 schedule_tick = 0
         except Exception as e:
             log.error("bg_loop: %s", e)
@@ -653,6 +722,7 @@ async def bg_loop():
 async def lifespan(_app: FastAPI):
     init_db()
     await fetch_dtek_schedule()
+    await fetch_weather()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
@@ -1057,6 +1127,16 @@ async def dashboard(key: str = Query("")):
 """
 
     # ─── Boiler schedule ───
+    weather_html = ""
+    if _weather_cache and _weather_cache.get("temp") is not None:
+        w = _weather_cache
+        temp = w["temp"]
+        sign = "+" if temp > 0 else ""
+        emoji = _WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
+        wind = w.get("wind", 0) or 0
+        hum = w.get("humidity", 0) or 0
+        weather_html = f'<div class="weather">{emoji} {sign}{temp:.0f}\u00b0C &nbsp; \U0001f4a8 {wind:.0f} \u043a\u043c/\u0433 &nbsp; \U0001f4a7 {hum:.0f}%</div>'
+
     now_kyiv = datetime.now(UA_TZ)
     today_str = now_kyiv.strftime("%Y-%m-%d")
     tomorrow_str = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1165,8 +1245,9 @@ td.down {{ color: #fca5a5; }}
 .btn:hover {{ background: #475569; }}
 .btn:active {{ background: #1e293b; }}
 .btn-row {{ text-align: center; margin-bottom: 1rem; }}
-.clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }}
+.clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.3rem; }}
 .clocks span {{ white-space: nowrap; }}
+.weather {{ text-align: center; font-size: 0.9rem; color: var(--muted); margin-bottom: 1rem; }}
 details {{ margin: 1.2rem 0 0.5rem; }}
 summary {{ cursor: pointer; list-style: none; padding: 0.3rem 0; }}
 summary::-webkit-details-marker {{ display: none; }}
@@ -1207,6 +1288,7 @@ function updClocks(){{
 }}
 updClocks(); setInterval(updClocks,1000);
 </script>
+{weather_html}
 
 {schedule_html}
 
