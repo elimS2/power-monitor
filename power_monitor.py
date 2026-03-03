@@ -518,12 +518,13 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            on_sched = _is_on_schedule(is_down_event=True)
+            dev = _schedule_deviation(is_down_event=True)
             sched_label = ""
-            if on_sched is True:
-                sched_label = " (\U0001f4c5 За графіком)"
-            elif on_sched is False:
-                sched_label = " (\u26a1Позапланове)"
+            if dev is not None:
+                if abs(dev) <= 30:
+                    sched_label = f" (\U0001f4c5 За графіком, відхилення {_fmt_deviation(dev)})"
+                else:
+                    sched_label = f" (\u26a1Позапланове, відхилення {_fmt_deviation(dev, signed=False)})"
             msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
@@ -540,12 +541,13 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            on_sched = _is_on_schedule(is_down_event=False)
+            dev = _schedule_deviation(is_down_event=False)
             sched_label = ""
-            if on_sched is True:
-                sched_label = " (\U0001f4c5 За графіком)"
-            elif on_sched is False:
-                sched_label = " (\u26a1Позапланове)"
+            if dev is not None:
+                if abs(dev) <= 30:
+                    sched_label = f" (\U0001f4c5 За графіком, відхилення {_fmt_deviation(dev)})"
+                else:
+                    sched_label = f" (\u26a1Позапланове, відхилення {_fmt_deviation(dev, signed=False)})"
             msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
             if prev:
                 since_ts = prev[0]["ts"]
@@ -594,11 +596,11 @@ def _day_slots_to_48(day_data: dict) -> list[str]:
     return grid
 
 
-def _is_on_schedule(is_down_event: bool) -> bool | None:
-    """Check if a power event aligns with the DTEK schedule (±30 min tolerance).
+def _schedule_deviation(is_down_event: bool) -> int | None:
+    """Find signed deviation (minutes) from the nearest matching DTEK transition.
 
-    Looks for the nearest transition of the matching type in today's grid.
-    Returns True (on schedule), False (unscheduled), or None (no data).
+    Positive = event happened after the scheduled time.
+    Returns None when no schedule data or no matching transitions exist.
     """
     if not _schedule_cache or not _schedule_cache.get("today"):
         return None
@@ -606,20 +608,36 @@ def _is_on_schedule(is_down_event: bool) -> bool | None:
     grid = _schedule_cache["today"]["grid"]
     now_kyiv = datetime.now(UA_TZ)
     event_min = now_kyiv.hour * 60 + now_kyiv.minute
-    TOLERANCE = 30
+    best: int | None = None
 
     for i in range(1, 48):
         prev_ok = grid[i - 1] == "ok"
         curr_ok = grid[i] == "ok"
         transition_min = i * 30
         if is_down_event and prev_ok and not curr_ok:
-            if abs(event_min - transition_min) <= TOLERANCE:
-                return True
+            dev = event_min - transition_min
+            if best is None or abs(dev) < abs(best):
+                best = dev
         elif not is_down_event and not prev_ok and curr_ok:
-            if abs(event_min - transition_min) <= TOLERANCE:
-                return True
+            dev = event_min - transition_min
+            if best is None or abs(dev) < abs(best):
+                best = dev
 
-    return False
+    return best
+
+
+def _fmt_deviation(minutes: int, signed: bool = True) -> str:
+    """Format deviation as readable string: '+3хв', '-10хв', '1год 30хв'."""
+    a = abs(minutes)
+    if a < 60:
+        if signed and minutes != 0:
+            return f"{'+' if minutes > 0 else '-'}{a}хв"
+        return f"{a}хв"
+    h, m = divmod(a, 60)
+    parts = f"{h}год" + (f" {m}хв" if m else "")
+    if signed and minutes != 0:
+        return f"{'+' if minutes > 0 else '-'}{parts}"
+    return parts
 
 
 def _fmt_slot(slot_idx: int) -> str:
@@ -1641,9 +1659,9 @@ updClocks(); setInterval(updClocks,1000);
 <summary><h2 style="display:inline">Легенда повідомлень</h2></summary>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
-<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
+<tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
+<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>/status (є)</td><td>\u2705 Світло є вже 3год 30хв (з 01:15)</td><td>приват</td></tr>
 <tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ вже 15хв (з 23:31)</td><td>приват</td></tr>
