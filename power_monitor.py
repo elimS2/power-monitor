@@ -1367,13 +1367,15 @@ async def dashboard(key: str = Query("")):
             mob_grids.append((day_key, day_label, day["date"][:10], day["grid"]))
 
         sched_rows_mob = ""
-        for half in range(2):
-            start_h = half * 12
-            mob_hdr = ""
-            for h in range(start_h, start_h + 12):
-                mob_hdr += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
-            sched_rows_mob += f'<tr><th class="sg-label"></th>{mob_hdr}</tr>\n'
-            for day_key, day_label, date_str, grid in mob_grids:
+        for day_key, day_label, date_str, grid in mob_grids:
+            for half in range(2):
+                start_h = half * 12
+                mob_hdr = ""
+                for h in range(start_h, start_h + 12):
+                    mob_hdr += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
+                lbl = day_label if half == 0 else ""
+                lbl_date = f'<br><span style="font-size:0.65rem;color:var(--muted)">{date_str}</span>' if half == 0 else ""
+                sched_rows_mob += f'<tr><th class="sg-label">{lbl}{lbl_date}</th>{mob_hdr}</tr>\n'
                 cells = ""
                 for i in range(half * 24, half * 24 + 24):
                     cls = "sg-" + grid[i]
@@ -1382,7 +1384,7 @@ async def dashboard(key: str = Query("")):
                     if day_key == "today" and i == current_slot:
                         cls += " sg-now"
                     cells += f'<td class="{cls}"></td>'
-                sched_rows_mob += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.65rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
+                sched_rows_mob += f'<tr><td class="sg-label"></td>{cells}</tr>\n'
 
         history_html = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
