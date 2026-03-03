@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import subprocess
 import logging
 import os
@@ -137,6 +138,15 @@ def init_db():
                 fetched_at  REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
+
+            CREATE TABLE IF NOT EXISTS boiler_schedule (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_date TEXT NOT NULL,
+                intervals   TEXT NOT NULL,
+                source_text TEXT NOT NULL,
+                parsed_at   REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_bs_date ON boiler_schedule(target_date);
         """)
 
 
@@ -215,6 +225,36 @@ def recent_tg_log(n: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def save_boiler_schedule(target_date: str, intervals: list, source_text: str):
+    intervals_json = json.dumps(intervals, ensure_ascii=False)
+    with _conn() as db:
+        row = db.execute(
+            "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
+            (target_date,),
+        ).fetchone()
+        if row and row["intervals"] == intervals_json:
+            return
+        db.execute(
+            "INSERT INTO boiler_schedule(target_date, intervals, source_text, parsed_at) VALUES(?,?,?,?)",
+            (target_date, intervals_json, source_text, time.time()),
+        )
+        log.info("Boiler schedule saved for %s: %s", target_date, intervals_json)
+
+
+def boiler_schedule_for_dates(dates: list[str]) -> dict[str, list]:
+    """Return {date: [[start,end], ...]} for the given dates."""
+    result: dict[str, list] = {}
+    with _conn() as db:
+        for d in dates:
+            row = db.execute(
+                "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
+                (d,),
+            ).fetchone()
+            if row:
+                result[d] = json.loads(row["intervals"])
+    return result
+
+
 def _save_schedule_if_changed(target_date: str, grid: list[str]):
     """Save grid to schedule_history only if it differs from the latest entry for that date."""
     grid_json = json.dumps(grid)
@@ -239,6 +279,43 @@ def schedule_history_for_date(target_date: str) -> list[dict]:
             (target_date,),
         ).fetchall()
     return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
+
+
+_UA_MONTHS = {
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
+    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
+    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
+}
+
+_BOILER_RE = re.compile(
+    r"[🔵⚫🟡●]\s*(\d{1,2})\s+(\w+):\s*([\d:,\s\-–]+)",
+)
+_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
+
+
+def parse_boiler_schedule(text: str) -> list[dict]:
+    """Parse Oselya Service boiler/generator schedule from message text.
+
+    Returns [{"date": "2026-03-02", "intervals": [["16:00","20:00"], ...]}]
+    """
+    lower = text.lower()
+    if "котельн" not in lower and "генератор" not in lower:
+        return []
+    year = datetime.now(UA_TZ).year
+    results = []
+    for m in _BOILER_RE.finditer(text):
+        day = int(m.group(1))
+        month_name = m.group(2).lower().rstrip(":")
+        month = _UA_MONTHS.get(month_name)
+        if not month:
+            continue
+        ranges_str = m.group(3)
+        intervals = _TIME_RANGE_RE.findall(ranges_str)
+        if not intervals:
+            continue
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
+    return results
 
 
 async def tg_send(text: str, chat_id: str = "") -> int:
@@ -624,13 +701,23 @@ async def tg_webhook(request: Request):
         raise HTTPException(403, "forbidden")
     data = await request.json()
 
-    msg = data.get("message") or {}
+    msg = data.get("message") or data.get("channel_post") or {}
     text = (msg.get("text") or "").strip()
     chat = msg.get("chat") or {}
     chat_id = chat.get("id")
     if not chat_id:
         return {"ok": True}
     cid = str(chat_id)
+
+    fwd = msg.get("forward_origin") or msg.get("forward_from_chat") or {}
+    fwd_text = text
+
+    boiler_parsed = parse_boiler_schedule(fwd_text)
+    if boiler_parsed:
+        for entry in boiler_parsed:
+            save_boiler_schedule(entry["date"], entry["intervals"], fwd_text)
+        log.info("Boiler schedule parsed: %d day(s) from chat %s", len(boiler_parsed), cid)
+        return {"ok": True}
 
     if text == "/start":
         await tg_send(
@@ -927,6 +1014,56 @@ async def dashboard(key: str = Query("")):
 </script>
 """
 
+    # ─── Boiler schedule ───
+    now_kyiv = datetime.now(UA_TZ)
+    today_str = now_kyiv.strftime("%Y-%m-%d")
+    tomorrow_str = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
+    boiler_data = boiler_schedule_for_dates([today_str, tomorrow_str])
+    boiler_html = ""
+    if boiler_data:
+        boiler_lines = ""
+        for d, label in [(today_str, "Сьогодні"), (tomorrow_str, "Завтра")]:
+            intervals = boiler_data.get(d)
+            if not intervals:
+                continue
+            try:
+                dt = datetime.strptime(d, "%Y-%m-%d")
+                date_fmt = dt.strftime("%d.%m.%Y")
+                weekday = _UA_WEEKDAYS[dt.weekday()]
+            except Exception:
+                date_fmt = d
+                weekday = ""
+            ranges = ", ".join(f"{s}-{e}" for s, e in intervals)
+            boiler_lines += f'<div style="margin-bottom:0.3rem">\U0001f535 {label}, {date_fmt} ({weekday}): <b>{ranges}</b></div>\n'
+        if boiler_lines:
+            boiler_html = f"""
+<details id="boiler_details" open>
+<summary><h2 style="display:inline">Графік котельні (генератор)</h2></summary>
+{boiler_lines}
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('boiler_details');
+  if(localStorage.getItem('boiler_open')==='0') d.open=false;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('boiler_open',d.open?'1':'0'); }});
+}})();
+</script>
+"""
+    elif not boiler_data:
+        boiler_html = """
+<details id="boiler_details">
+<summary><h2 style="display:inline">Графік котельні (генератор)</h2></summary>
+<div style="color:var(--muted);font-size:0.85rem">Немає даних</div>
+</details>
+<script>
+(function(){
+  var d=document.getElementById('boiler_details');
+  if(localStorage.getItem('boiler_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){ localStorage.setItem('boiler_open',d.open?'1':'0'); });
+})();
+</script>
+"""
+
     status_cls = "down" if is_down else "up"
     status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
 
@@ -1031,6 +1168,8 @@ updClocks(); setInterval(updClocks,1000);
 
 {schedule_html}
 
+{boiler_html}
+
 <details id="hb_details">
 <summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
 <div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>
@@ -1091,6 +1230,7 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr>
 <tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr>
 <tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr>
+<tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr>
 </table>
 
 <details id="legend_details">
