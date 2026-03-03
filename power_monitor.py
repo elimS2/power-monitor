@@ -63,6 +63,18 @@ CLEANUP_KEEP_DAYS = 90
 # Kyiv timezone offset for display (UTC+2 / UTC+3 summer)
 UA_TZ = timezone(timedelta(hours=2))
 
+# ─── Yasno (DTEK) schedule config ────────────────────────────
+YASNO_REGION_ID = int(os.getenv("YASNO_REGION_ID", "25"))
+YASNO_DSO_ID = int(os.getenv("YASNO_DSO_ID", "902"))
+YASNO_GROUP = os.getenv("YASNO_GROUP", "5.1")
+YASNO_API_URL = (
+    f"https://app.yasno.ua/api/blackout-service/public/shutdowns"
+    f"/regions/{YASNO_REGION_ID}/dsos/{YASNO_DSO_ID}/planned-outages"
+)
+
+_schedule_cache: dict = {}
+_schedule_fetched_at: float = 0
+
 def _git_version() -> str:
     try:
         return subprocess.check_output(
@@ -346,10 +358,70 @@ async def watchdog():
         kv_set("stale_alerted", "0")
 
 
+# ─── Yasno schedule ──────────────────────────────────────────
+
+def _slots_to_48(slots: list[dict]) -> list[str]:
+    """Convert Yasno API slots (minutes from midnight) to 48 half-hour cells.
+
+    Each cell is 'ok', 'off' (Definite outage) or 'maybe' (NotPlanned).
+    """
+    grid = ["ok"] * 48
+    for s in slots:
+        t = s.get("type", "")
+        cell_val = "off" if t == "Definite" else ("maybe" if t == "NotPlanned" else "ok")
+        if cell_val == "ok":
+            continue
+        i_start = max(0, s["start"] // 30)
+        i_end = min(48, (s["end"] + 29) // 30)
+        for i in range(i_start, i_end):
+            if grid[i] == "ok" or cell_val == "off":
+                grid[i] = cell_val
+    return grid
+
+
+async def fetch_yasno_schedule():
+    """Fetch planned outages from Yasno API and cache parsed grids."""
+    global _schedule_cache, _schedule_fetched_at
+
+    now = time.time()
+    if now - _schedule_fetched_at < 1800:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(YASNO_API_URL)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning("Yasno API fetch failed: %s", e)
+        return
+
+    group_data = data.get(YASNO_GROUP)
+    if not group_data:
+        log.warning("Yasno: group %s not found in response", YASNO_GROUP)
+        return
+
+    result = {}
+    for day_key in ("today", "tomorrow"):
+        day = group_data.get(day_key)
+        if not day:
+            continue
+        result[day_key] = {
+            "date": day.get("date", ""),
+            "status": day.get("status", ""),
+            "grid": _slots_to_48(day.get("slots", [])),
+        }
+
+    _schedule_cache = result
+    _schedule_fetched_at = now
+    log.info("Yasno schedule updated for group %s", YASNO_GROUP)
+
+
 # ─── Background loop ─────────────────────────────────────────
 
 async def bg_loop():
     cleanup_tick = 0
+    schedule_tick = 0
     while True:
         try:
             await watchdog()
@@ -357,6 +429,10 @@ async def bg_loop():
             if cleanup_tick >= 2880:  # ~24h at 30s interval
                 cleanup_old()
                 cleanup_tick = 0
+            schedule_tick += 1
+            if schedule_tick >= 60:  # ~30min at 30s interval
+                await fetch_yasno_schedule()
+                schedule_tick = 0
         except Exception as e:
             log.error("bg_loop: %s", e)
         await asyncio.sleep(30)
@@ -367,6 +443,7 @@ async def bg_loop():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    await fetch_yasno_schedule()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
@@ -597,6 +674,57 @@ async def dashboard(key: str = Query("")):
             f'<td>{safe_text}</td></tr>\n'
         )
 
+    # ─── Yasno schedule grid ───
+    schedule_html = ""
+    if _schedule_cache:
+        now_kyiv = datetime.now(UA_TZ)
+        current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+        sched_rows = ""
+        for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
+            day = _schedule_cache.get(day_key)
+            if not day:
+                continue
+            date_str = day["date"][:10] if day["date"] else ""
+            cells = ""
+            grid = day["grid"]
+            for i in range(48):
+                cls = "sg-" + grid[i]
+                if day_key == "today" and i == current_slot:
+                    cls += " sg-now"
+                cells += f'<td class="{cls}"></td>'
+            status_label = ""
+            if day["status"] == "WaitingForSchedule":
+                status_label = ' <span style="color:var(--muted);font-size:0.7rem">(очікується)</span>'
+            sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span>{status_label}</td>{cells}</tr>\n'
+
+        hour_headers = ""
+        for h in range(24):
+            hour_headers += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
+
+        schedule_html = f"""
+<details id="sched_details" open>
+<summary><h2 style="display:inline">Графік відключень (черга {YASNO_GROUP})</h2></summary>
+<div class="sg-wrap">
+<table class="sg-table">
+<tr><th class="sg-label"></th>{hour_headers}</tr>
+{sched_rows}</table>
+</div>
+<div class="sg-legend">
+<span class="sg-leg-item"><span class="sg-swatch sg-ok"></span> Світло є</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-off"></span> Відключення</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
+</div>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('sched_details');
+  if(localStorage.getItem('sched_open')==='0') d.open=false;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_open',d.open?'1':'0'); }});
+}})();
+</script>
+"""
+
     status_cls = "down" if is_down else "up"
     status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
 
@@ -662,6 +790,20 @@ summary {{ cursor: pointer; list-style: none; padding: 0.3rem 0; }}
 summary::-webkit-details-marker {{ display: none; }}
 summary::before {{ content: '▶ '; font-size: 0.7rem; color: var(--muted); }}
 details[open] summary::before {{ content: '▼ '; }}
+.sg-wrap {{ overflow-x: auto; }}
+.sg-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; background: var(--card); border-radius: 8px; overflow: hidden; }}
+.sg-table th, .sg-table td {{ padding: 0; text-align: center; border: 1px solid var(--border); }}
+.sg-hdr {{ font-size: 0.6rem; color: var(--muted); font-weight: 400; padding: 2px 0; }}
+.sg-label {{ white-space: nowrap; font-size: 0.75rem; padding: 4px 6px !important; text-align: left; min-width: 70px; }}
+.sg-table td:not(.sg-label) {{ height: 22px; min-width: 6px; }}
+.sg-ok {{ background: #1a3a2a; }}
+.sg-off {{ background: #b91c1c; }}
+.sg-maybe {{ background: #a16207; }}
+.sg-now {{ outline: 2px solid #38bdf8; outline-offset: -2px; z-index: 1; position: relative; }}
+.sg-legend {{ display: flex; gap: 1rem; justify-content: center; margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }}
+.sg-leg-item {{ display: flex; align-items: center; gap: 4px; }}
+.sg-swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
+.sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); outline: 2px solid #38bdf8; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
@@ -679,6 +821,9 @@ function updClocks(){{
 }}
 updClocks(); setInterval(updClocks,1000);
 </script>
+
+{schedule_html}
+
 <div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>
 <script>
 (function(){{
