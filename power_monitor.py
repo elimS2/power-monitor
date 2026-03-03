@@ -1635,8 +1635,8 @@ function updClocks(){{
 }}
 updClocks(); setInterval(updClocks,1000);
 </script>
-{alert_html}
 {weather_html}
+{alert_html}
 
 {schedule_html}
 
