@@ -197,6 +197,18 @@ def init_db():
                 raw_json TEXT   NOT NULL,
                 ts      REAL   NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS weather_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                temp        REAL,
+                humidity    REAL,
+                wind        REAL,
+                code        INTEGER,
+                t_min       REAL,
+                t_max       REAL,
+                ts          REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_wl_ts ON weather_log(ts);
         """)
 
 
@@ -698,6 +710,13 @@ async def fetch_weather():
     }
     _weather_fetched_at = now
     log.info("Weather updated: %s", _weather_cache)
+
+    w = _weather_cache
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO weather_log(temp, humidity, wind, code, t_min, t_max, ts) VALUES(?,?,?,?,?,?,?)",
+            (w["temp"], w["humidity"], w["wind"], w["code"], w["t_min"], w["t_max"], now),
+        )
 
 
 # ─── Background loop ─────────────────────────────────────────
