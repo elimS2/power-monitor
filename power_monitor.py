@@ -147,6 +147,14 @@ def init_db():
                 parsed_at   REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_bs_date ON boiler_schedule(target_date);
+
+            CREATE TABLE IF NOT EXISTS webhook_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT    NOT NULL,
+                text    TEXT    NOT NULL,
+                raw_json TEXT   NOT NULL,
+                ts      REAL   NOT NULL
+            );
         """)
 
 
@@ -289,7 +297,6 @@ _UA_MONTHS = {
 
 _BOILER_LINE_RE = re.compile(
     r"(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s*:\s*([\d:,\s\-–]+)",
-    re.IGNORECASE,
 )
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
 
@@ -301,19 +308,21 @@ def parse_boiler_schedule(text: str) -> list[dict]:
     """
     lower = text.lower()
     if "котельн" not in lower and "генератор" not in lower:
-        log.debug("Boiler parse: keywords not found")
+        log.info("Boiler parse: keywords 'котельн/генератор' not found in: %r", text[:200])
         return []
     year = datetime.now(UA_TZ).year
     results = []
-    for m in _BOILER_LINE_RE.finditer(text):
+    for m in _BOILER_LINE_RE.finditer(lower):
         day = int(m.group(1))
-        month_name = m.group(2).lower()
+        month_name = m.group(2)
         month = _UA_MONTHS.get(month_name)
         if not month:
+            log.info("Boiler parse: unknown month %r", month_name)
             continue
         ranges_str = m.group(3)
         intervals = _TIME_RANGE_RE.findall(ranges_str)
         if not intervals:
+            log.info("Boiler parse: no time ranges in %r", ranges_str)
             continue
         date_str = f"{year}-{month:02d}-{day:02d}"
         results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
@@ -687,6 +696,28 @@ async def ep_status(key: str = Query("")):
     }
 
 
+@app.get("/api/debug-webhooks")
+def ep_debug_webhooks(key: str = Query(""), limit: int = Query(20)):
+    _check_key(key)
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT id, chat_id, text, ts FROM webhook_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [
+        {"id": r["id"], "chat_id": r["chat_id"], "text": r["text"],
+         "ts": datetime.fromtimestamp(r["ts"], UA_TZ).strftime("%Y-%m-%d %H:%M:%S")}
+        for r in rows
+    ]
+
+
+@app.get("/api/debug-boiler-parse")
+def ep_debug_boiler_parse(key: str = Query(""), text: str = Query("")):
+    _check_key(key)
+    result = parse_boiler_schedule(text)
+    return {"input_len": len(text), "parsed": result}
+
+
 @app.post("/api/test-telegram")
 async def ep_test_telegram(key: str = Query("")):
     _check_key(key)
@@ -712,7 +743,13 @@ async def tg_webhook(request: Request):
         return {"ok": True}
     cid = str(chat_id)
 
-    log.info("TG webhook: chat=%s text_len=%d text_preview=%r", cid, len(text), text[:120])
+    log.info("TG webhook: chat=%s text_len=%d text_preview=%r", cid, len(text), text[:200])
+
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO webhook_log(chat_id, text, raw_json, ts) VALUES(?,?,?,?)",
+            (cid, text, json.dumps(data, ensure_ascii=False), time.time()),
+        )
 
     fwd = msg.get("forward_origin") or msg.get("forward_from_chat") or {}
     fwd_text = text
