@@ -715,6 +715,7 @@ async def dashboard(key: str = Query("")):
 <summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
 <div class="sg-wrap">
 <table class="sg-table">
+<colgroup><col class="sg-col-label"><col span="48"></colgroup>
 <tr><th class="sg-label"></th>{hour_headers}</tr>
 {sched_rows}</table>
 </div>
@@ -801,10 +802,11 @@ summary::before {{ content: '▶ '; font-size: 0.7rem; color: var(--muted); }}
 details[open] summary::before {{ content: '▼ '; }}
 .sg-wrap {{ overflow-x: auto; }}
 .sg-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; background: var(--card); border-radius: 8px; overflow: hidden; }}
+.sg-col-label {{ width: 90px; }}
 .sg-table th, .sg-table td {{ padding: 0; text-align: center; border: 1px solid var(--border); }}
 .sg-hdr {{ font-size: 0.6rem; color: var(--muted); font-weight: 400; padding: 2px 0; }}
-.sg-label {{ white-space: nowrap; font-size: 0.75rem; padding: 4px 6px !important; text-align: left; min-width: 70px; }}
-.sg-table td:not(.sg-label) {{ height: 22px; min-width: 6px; }}
+.sg-label {{ white-space: nowrap; font-size: 0.75rem; padding: 4px 6px !important; text-align: left; overflow: hidden; }}
+.sg-table td:not(.sg-label) {{ height: 22px; }}
 .sg-ok {{ background: #1a3a2a; }}
 .sg-off {{ background: #b91c1c; }}
 .sg-maybe {{ background: #a16207; }}
