@@ -1319,31 +1319,38 @@ async def dashboard(key: str = Query("")):
             hour_headers += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
 
         history_html = ""
-        if today_date:
-            history = schedule_history_for_date(today_date)
-            if len(history) > 1:
-                hist_rows = ""
-                prev_grid = None
-                for h in history:
-                    ts_str = _ts_fmt_full(h["ts"])
-                    if prev_grid is None:
-                        diff_text = "Перший графік"
-                    else:
-                        diff_text = _describe_grid_diff(prev_grid, h["grid"])
-                    prev_grid = h["grid"]
-                    hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
-                history_html = f"""
-<details id="sched_hist_details" style="margin-top:0.8rem">
-<summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на сьогодні ({len(history)})</summary>
+        for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
+            day = _schedule_cache.get(day_key)
+            if not day:
+                continue
+            d_str = day["date"][:10]
+            history = schedule_history_for_date(d_str)
+            if len(history) < 2:
+                continue
+            hist_rows = ""
+            prev_grid = None
+            for h in history:
+                ts_str = _ts_fmt_full(h["ts"])
+                if prev_grid is None:
+                    diff_text = "Перший графік"
+                else:
+                    diff_text = _describe_grid_diff(prev_grid, h["grid"])
+                prev_grid = h["grid"]
+                hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
+            det_id = f"sched_hist_{day_key}_details"
+            ls_key = f"sched_hist_{day_key}_open"
+            history_html += f"""
+<details id="{det_id}" style="margin-top:0.8rem">
+<summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на {d_str} — {day_label} ({len(history)})</summary>
 <table>
 <tr><th>Час</th><th>Що змінилось</th></tr>
 {hist_rows}</table>
 </details>
 <script>
 (function(){{
-  var d=document.getElementById('sched_hist_details');
-  if(localStorage.getItem('sched_hist_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_hist_open',d.open?'1':'0'); }});
+  var d=document.getElementById('{det_id}');
+  if(localStorage.getItem('{ls_key}')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('{ls_key}',d.open?'1':'0'); }});
 }})();
 </script>"""
 
