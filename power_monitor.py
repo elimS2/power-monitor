@@ -1282,13 +1282,14 @@ async def dashboard(key: str = Query("")):
                     if best_dev is None or abs(d2) < abs(best_dev):
                         best_dev = d2
             if best_dev is not None and abs(best_dev) <= 30:
-                sched_tag = f' <span style="color:var(--muted)">\U0001f4c5{_fmt_deviation(best_dev)}</span>'
+                sched_tag = f'\U0001f4c5 {_fmt_deviation(best_dev)}'
             elif best_dev is not None:
-                sched_tag = ' <span style="color:#fbbf24">\u26a1позапл.</span>'
+                sched_tag = f'<span style="color:#fbbf24">\u26a1позапл.</span>'
             elif is_down_ev:
-                sched_tag = ' <span style="color:#fbbf24">\u26a1позапл.</span>'
+                sched_tag = f'<span style="color:#fbbf24">\u26a1позапл.</span>'
         ev_rows += (
-            f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}{sched_tag}</td>'
+            f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}</td>'
+            f'<td style="color:var(--muted)">{sched_tag}</td>'
             f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
         )
 
@@ -1608,7 +1609,7 @@ updClocks(); setInterval(updClocks,1000);
 <details id="ev_details" open>
 <summary><h2 style="display:inline">Події</h2></summary>
 <table>
-<tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
+<tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr>
 {ev_rows}</table>
 </details>
 <script>
