@@ -372,6 +372,56 @@ def _day_slots_to_48(day_data: dict) -> list[str]:
     return grid
 
 
+_UA_WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+
+
+def _grid_text_summary(grid: list[str], date_str: str, day_label: str) -> str:
+    """Build human-readable text summary of outage periods from 48-slot grid."""
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        weekday = _UA_WEEKDAYS[dt.weekday()]
+        date_fmt = dt.strftime("%d.%m.%Y")
+    except Exception:
+        weekday = ""
+        date_fmt = date_str
+
+    header = f"\U0001f5d3\ufe0f Графік відключень на {day_label.lower()}, {date_fmt}"
+    if weekday:
+        header += f" ({weekday})"
+    header += f", для групи {DTEK_QUEUE}:"
+
+    blocks: list[tuple[int, int, str]] = []
+    i = 0
+    while i < 48:
+        if grid[i] == "ok":
+            i += 1
+            continue
+        btype = grid[i]
+        start = i
+        while i < 48 and grid[i] == btype:
+            i += 1
+        blocks.append((start, i, btype))
+
+    if not blocks:
+        return f'<div class="sg-text">{header}<br>\u2705 Відключень не заплановано</div>'
+
+    lines = [header]
+    for start, end, btype in blocks:
+        sh, sm = divmod(start * 30, 60)
+        eh, em = divmod(end * 30, 60)
+        start_t = f"{sh:02d}:{sm:02d}"
+        end_t = f"{eh:02d}:{em:02d}" if eh < 24 else "24:00"
+        dur_min = (end - start) * 30
+        if dur_min >= 60:
+            dur_str = f"~{dur_min / 60:g} год."
+        else:
+            dur_str = f"~{dur_min} хв."
+        marker = "\u25aa\ufe0f" if btype == "off" else "\u25ab\ufe0f"
+        lines.append(f"{marker} {start_t} - {end_t} ({dur_str})")
+
+    return '<div class="sg-text">' + "<br>".join(lines) + "</div>"
+
+
 async def fetch_dtek_schedule():
     """Fetch planned outages from DTEK proxy API and cache parsed grids."""
     global _schedule_cache, _schedule_fetched_at
@@ -692,6 +742,7 @@ async def dashboard(key: str = Query("")):
         now_kyiv = datetime.now(UA_TZ)
         current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
         sched_rows = ""
+        text_blocks = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
             day = _schedule_cache.get(day_key)
             if not day:
@@ -705,6 +756,7 @@ async def dashboard(key: str = Query("")):
                     cls += " sg-now"
                 cells += f'<td class="{cls}"></td>'
             sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
+            text_blocks += _grid_text_summary(grid, date_str, day_label)
 
         hour_headers = ""
         for h in range(24):
@@ -725,6 +777,7 @@ async def dashboard(key: str = Query("")):
 <span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
 <span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
 </div>
+{text_blocks}
 </details>
 <script>
 (function(){{
@@ -815,6 +868,7 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-leg-item {{ display: flex; align-items: center; gap: 4px; }}
 .sg-swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
 .sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); outline: 2px solid #38bdf8; }}
+.sg-text {{ font-size: 0.85rem; color: var(--text); margin-top: 0.8rem; line-height: 1.6; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
