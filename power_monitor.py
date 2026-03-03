@@ -82,6 +82,7 @@ WEATHER_URL = (
     f"https://api.open-meteo.com/v1/forecast"
     f"?latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
     f"&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
+    f"&daily=temperature_2m_min,temperature_2m_max&forecast_days=1"
     f"&timezone=Europe%2FKyiv"
 )
 
@@ -684,11 +685,16 @@ async def fetch_weather():
         return
 
     cur = data.get("current", {})
+    daily = data.get("daily", {})
+    t_min_list = daily.get("temperature_2m_min", [])
+    t_max_list = daily.get("temperature_2m_max", [])
     _weather_cache = {
         "temp": cur.get("temperature_2m"),
         "humidity": cur.get("relative_humidity_2m"),
         "wind": cur.get("wind_speed_10m"),
         "code": cur.get("weather_code", -1),
+        "t_min": t_min_list[0] if t_min_list else None,
+        "t_max": t_max_list[0] if t_max_list else None,
     }
     _weather_fetched_at = now
     log.info("Weather updated: %s", _weather_cache)
@@ -1135,7 +1141,14 @@ async def dashboard(key: str = Query("")):
         emoji = _WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
         wind = w.get("wind", 0) or 0
         hum = w.get("humidity", 0) or 0
-        weather_html = f'<div class="weather">{emoji} {sign}{temp:.0f}\u00b0C &nbsp; \U0001f4a8 {wind:.0f} \u043a\u043c/\u0433 &nbsp; \U0001f4a7 {hum:.0f}%</div>'
+        minmax = ""
+        if w.get("t_min") is not None and w.get("t_max") is not None:
+            t_lo = w["t_min"]
+            t_hi = w["t_max"]
+            s_lo = "+" if t_lo > 0 else ""
+            s_hi = "+" if t_hi > 0 else ""
+            minmax = f' &nbsp; \u2193{s_lo}{t_lo:.0f}\u00b0\u2191{s_hi}{t_hi:.0f}\u00b0'
+        weather_html = f'<div class="weather">{emoji} {sign}{temp:.0f}\u00b0C{minmax} &nbsp; \U0001f4a8 {wind:.0f} \u043a\u043c/\u0433 &nbsp; \U0001f4a7 {hum:.0f}%</div>'
 
     now_kyiv = datetime.now(UA_TZ)
     today_str = now_kyiv.strftime("%Y-%m-%d")
