@@ -736,6 +736,22 @@ def _grid_text_summary(grid: list[str], date_str: str, day_label: str) -> str:
         marker = "\u25aa\ufe0f" if btype == "off" else "\u25ab\ufe0f"
         lines.append(f"{marker} {start_t} - {end_t} ({dur_str})")
 
+    off_slots = sum(1 for s in grid if s != "ok")
+    on_slots = 48 - off_slots
+    off_min = off_slots * 30
+    on_min = on_slots * 30
+
+    def _hm(minutes: int) -> str:
+        h, m = divmod(minutes, 60)
+        return f"{h}год {m}хв" if m else f"{h}год"
+
+    off_pct = round(off_slots / 48 * 100)
+    on_pct = 100 - off_pct
+    lines.append(
+        f"\U0001f4ca Зі світлом: {_hm(on_min)} ({on_pct}%) · "
+        f"Без світла: {_hm(off_min)} ({off_pct}%)"
+    )
+
     return '<div class="sg-text">' + "<br>".join(lines) + "</div>"
 
 
