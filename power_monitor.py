@@ -661,7 +661,14 @@ async def fetch_dtek_schedule():
     global _schedule_cache, _schedule_fetched_at
 
     now = time.time()
-    if now - _schedule_fetched_at < 1800:
+    cache_stale = now - _schedule_fetched_at >= 1800
+    date_changed = False
+    if _schedule_cache and _schedule_cache.get("today"):
+        cached_date = _schedule_cache["today"]["date"]
+        actual_today = datetime.now(UA_TZ).strftime("%Y-%m-%d")
+        if cached_date != actual_today:
+            date_changed = True
+    if not cache_stale and not date_changed:
         return
 
     try:
@@ -695,12 +702,18 @@ async def fetch_dtek_schedule():
         return
 
     dates = sorted(queue_data.keys())
+    now_kyiv = datetime.now(UA_TZ)
+    today_iso = now_kyiv.strftime("%Y-%m-%d")
+    tomorrow_iso = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
+
     result = {}
-    labels = [("today", 0), ("tomorrow", 1)]
-    for day_key, idx in labels:
-        if idx >= len(dates):
+    for date_str in dates:
+        if date_str == today_iso:
+            day_key = "today"
+        elif date_str == tomorrow_iso:
+            day_key = "tomorrow"
+        else:
             continue
-        date_str = dates[idx]
         day_slots = queue_data[date_str]
         grid = _day_slots_to_48(day_slots)
         result[day_key] = {"date": date_str, "grid": grid}
