@@ -287,8 +287,9 @@ _UA_MONTHS = {
     "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 
-_BOILER_RE = re.compile(
-    r"[🔵⚫🟡●]\s*(\d{1,2})\s+(\w+):\s*([\d:,\s\-–]+)",
+_BOILER_LINE_RE = re.compile(
+    r"(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s*:\s*([\d:,\s\-–]+)",
+    re.IGNORECASE,
 )
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
 
@@ -300,12 +301,13 @@ def parse_boiler_schedule(text: str) -> list[dict]:
     """
     lower = text.lower()
     if "котельн" not in lower and "генератор" not in lower:
+        log.debug("Boiler parse: keywords not found")
         return []
     year = datetime.now(UA_TZ).year
     results = []
-    for m in _BOILER_RE.finditer(text):
+    for m in _BOILER_LINE_RE.finditer(text):
         day = int(m.group(1))
-        month_name = m.group(2).lower().rstrip(":")
+        month_name = m.group(2).lower()
         month = _UA_MONTHS.get(month_name)
         if not month:
             continue
@@ -315,6 +317,7 @@ def parse_boiler_schedule(text: str) -> list[dict]:
             continue
         date_str = f"{year}-{month:02d}-{day:02d}"
         results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
+    log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
     return results
 
 
@@ -708,6 +711,8 @@ async def tg_webhook(request: Request):
     if not chat_id:
         return {"ok": True}
     cid = str(chat_id)
+
+    log.info("TG webhook: chat=%s text_len=%d text_preview=%r", cid, len(text), text[:120])
 
     fwd = msg.get("forward_origin") or msg.get("forward_from_chat") or {}
     fwd_text = text
