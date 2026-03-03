@@ -522,6 +522,11 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            on_sched = _is_on_schedule(is_down_event=True)
+            if on_sched is True:
+                msg += f"\n\U0001f4c5 За графіком"
+            elif on_sched is False:
+                msg += f"\n\u26a1 Позапланове"
             nxt = _next_schedule_transition(looking_for_on=True)
             if nxt:
                 msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
@@ -539,6 +544,11 @@ async def analyze():
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            on_sched = _is_on_schedule(is_down_event=False)
+            if on_sched is True:
+                msg += f"\n\U0001f4c5 За графіком"
+            elif on_sched is False:
+                msg += f"\n\u26a1 Позапланове"
             nxt = _next_schedule_transition(looking_for_on=False)
             if nxt:
                 msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
@@ -580,6 +590,34 @@ def _day_slots_to_48(day_data: dict) -> list[str]:
         elif val == 2:
             grid[i] = "maybe"
     return grid
+
+
+def _is_on_schedule(is_down_event: bool) -> bool | None:
+    """Check if a power event aligns with the DTEK schedule (±30 min tolerance).
+
+    Looks for the nearest transition of the matching type in today's grid.
+    Returns True (on schedule), False (unscheduled), or None (no data).
+    """
+    if not _schedule_cache or not _schedule_cache.get("today"):
+        return None
+
+    grid = _schedule_cache["today"]["grid"]
+    now_kyiv = datetime.now(UA_TZ)
+    event_min = now_kyiv.hour * 60 + now_kyiv.minute
+    TOLERANCE = 30
+
+    for i in range(1, 48):
+        prev_ok = grid[i - 1] == "ok"
+        curr_ok = grid[i] == "ok"
+        transition_min = i * 30
+        if is_down_event and prev_ok and not curr_ok:
+            if abs(event_min - transition_min) <= TOLERANCE:
+                return True
+        elif not is_down_event and not prev_ok and curr_ok:
+            if abs(event_min - transition_min) <= TOLERANCE:
+                return True
+
+    return False
 
 
 def _next_schedule_transition(looking_for_on: bool) -> str | None:
