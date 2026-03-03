@@ -76,6 +76,12 @@ _schedule_fetched_at: float = 0
 _weather_cache: dict = {}
 _weather_fetched_at: float = 0
 
+_alert_cache: dict = {}
+_alert_fetched_at: float = 0
+
+ALERT_API_URL = "https://alerts.com.ua/api/states"
+ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
+
 WEATHER_LAT = 50.5114
 WEATHER_LON = 30.7911
 WEATHER_URL = (
@@ -719,11 +725,43 @@ async def fetch_weather():
         )
 
 
+async def fetch_alert():
+    global _alert_cache, _alert_fetched_at
+
+    now = time.time()
+    if now - _alert_fetched_at < 120:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                ALERT_API_URL,
+                headers={"X-API-Key": "test"},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning("Alert fetch failed: %s", e)
+        return
+
+    active = False
+    changed = ""
+    for s in data.get("states", []):
+        if s.get("id") in ALERT_REGION_IDS and s.get("alert"):
+            active = True
+            changed = s.get("changed", "")
+            break
+
+    _alert_cache = {"active": active, "changed": changed}
+    _alert_fetched_at = now
+
+
 # ─── Background loop ─────────────────────────────────────────
 
 async def bg_loop():
     cleanup_tick = 0
     schedule_tick = 0
+    alert_tick = 0
     while True:
         try:
             await watchdog()
@@ -736,6 +774,10 @@ async def bg_loop():
                 await fetch_dtek_schedule()
                 await fetch_weather()
                 schedule_tick = 0
+            alert_tick += 1
+            if alert_tick >= 4:  # ~2min at 30s interval
+                await fetch_alert()
+                alert_tick = 0
         except Exception as e:
             log.error("bg_loop: %s", e)
         await asyncio.sleep(30)
@@ -748,6 +790,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     await fetch_dtek_schedule()
     await fetch_weather()
+    await fetch_alert()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
@@ -1151,7 +1194,14 @@ async def dashboard(key: str = Query("")):
 </script>
 """
 
-    # ─── Boiler schedule ───
+    # ─── Alert + Weather ───
+    alert_html = ""
+    if _alert_cache:
+        if _alert_cache.get("active"):
+            alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>'
+        else:
+            alert_html = '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
+
     weather_html = ""
     if _weather_cache and _weather_cache.get("temp") is not None:
         w = _weather_cache
@@ -1279,6 +1329,9 @@ td.down {{ color: #fca5a5; }}
 .btn-row {{ text-align: center; margin-bottom: 1rem; }}
 .clocks {{ display: flex; justify-content: center; gap: 1.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.3rem; }}
 .clocks span {{ white-space: nowrap; }}
+.alert-banner {{ text-align: center; font-size: 0.95rem; font-weight: 600; padding: 0.3rem 0; margin-bottom: 0.2rem; border-radius: 6px; }}
+.alert-on {{ background: rgba(220,38,38,0.15); color: #fca5a5; }}
+.alert-off {{ color: var(--muted); }}
 .weather {{ text-align: center; font-size: 0.9rem; color: var(--muted); margin-bottom: 1rem; }}
 details {{ margin: 1.2rem 0 0.5rem; }}
 summary {{ cursor: pointer; list-style: none; padding: 0.3rem 0; }}
@@ -1320,6 +1373,7 @@ function updClocks(){{
 }}
 updClocks(); setInterval(updClocks,1000);
 </script>
+{alert_html}
 {weather_html}
 
 {schedule_html}
