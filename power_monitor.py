@@ -942,8 +942,14 @@ async def bg_loop():
             if cleanup_tick >= 2880:  # ~24h at 30s interval
                 cleanup_old()
                 cleanup_tick = 0
+            date_rolled = (
+                _schedule_cache
+                and _schedule_cache.get("today")
+                and _schedule_cache["today"]["date"]
+                != datetime.now(UA_TZ).strftime("%Y-%m-%d")
+            )
             schedule_tick += 1
-            if schedule_tick >= 60:  # ~30min at 30s interval
+            if schedule_tick >= 60 or date_rolled:  # ~30min or midnight
                 await fetch_dtek_schedule()
                 await fetch_weather()
                 schedule_tick = 0
