@@ -54,7 +54,7 @@ API_KEYS = _parse_keys(os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")))
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
 # Both plugs must be dead for this many consecutive heartbeats → outage
-OUTAGE_CONFIRM_COUNT = 6  # 6 × 10s = ~60 seconds
+OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
 
 # No heartbeat for this long → router/internet alert
 STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", "300"))
@@ -1033,6 +1033,53 @@ def ep_debug_boiler_parse(key: str = Query(""), text: str = Query("")):
     _check_key(key)
     result = parse_boiler_schedule(text)
     return {"input_len": len(text), "parsed": result}
+
+
+def _check_admin(key: str):
+    _check_key(key)
+    if API_KEYS.get(key) != "admin":
+        raise HTTPException(403, "admin only")
+
+
+@app.get("/api/heartbeats")
+def ep_heartbeats(
+    key: str = Query(""),
+    from_ts: float = Query(0),
+    to_ts: float = Query(0),
+    limit: int = Query(500),
+):
+    _check_admin(key)
+    with _conn() as db:
+        if from_ts and to_ts:
+            rows = db.execute(
+                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts BETWEEN ? AND ? ORDER BY ts",
+                (from_ts, to_ts),
+            ).fetchall()
+        elif from_ts:
+            rows = db.execute(
+                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts >= ? ORDER BY ts LIMIT ?",
+                (from_ts, limit),
+            ).fetchall()
+        elif to_ts:
+            rows = db.execute(
+                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts <= ? ORDER BY ts DESC LIMIT ?",
+                (to_ts, limit),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT plug204, plug175, ts FROM heartbeats ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/events")
+def ep_events(
+    key: str = Query(""),
+    limit: int = Query(50),
+):
+    _check_admin(key)
+    return recent_events(limit)
 
 
 @app.post("/api/test-telegram")
