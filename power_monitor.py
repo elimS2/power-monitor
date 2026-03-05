@@ -1401,7 +1401,7 @@ async def dashboard(key: str = Query("")):
                 if i % 2 == 0:
                     cls += " sg-hr"
                 if day_key == "today" and i == current_slot:
-                    cls += " sg-now"
+                    cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
                 cells += f'<td class="{cls}"></td>'
             sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
             text_blocks += _grid_text_summary(grid, date_str, day_label)
@@ -1435,7 +1435,7 @@ async def dashboard(key: str = Query("")):
                     if i % 2 == 0:
                         cls += " sg-hr"
                     if day_key == "today" and i == current_slot:
-                        cls += " sg-now"
+                        cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
                     cells += f'<td class="{cls}"></td>'
                 sched_mob_html += f'<tr>{cells}</tr>\n'
             sched_mob_html += '</table>\n'
@@ -1666,14 +1666,19 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-ok {{ background: #1a3a2a; }}
 .sg-off {{ background: #b91c1c; }}
 .sg-maybe {{ background: #a16207; }}
-.sg-now {{ z-index: 1; position: relative; box-shadow: inset 0 0 0 2px #38bdf8, 0 0 8px rgba(56,189,248,0.4); animation: sg-pulse 2s ease-in-out infinite; }}
-.sg-now::after {{ content: ""; position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: #38bdf8; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 4px #38bdf8; }}
-@keyframes sg-pulse {{ 0%, 100% {{ box-shadow: inset 0 0 0 2px #38bdf8, 0 0 8px rgba(56,189,248,0.4); }} 50% {{ box-shadow: inset 0 0 0 2px #7dd3fc, 0 0 12px rgba(56,189,248,0.7); }} }}
+.sg-now {{ z-index: 1; position: relative; overflow: visible; }}
+.sg-now::after {{ content: "\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 11px; line-height: 1; z-index: 2; filter: drop-shadow(0 0 2px currentColor); }}
+.sg-now-on {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); animation: sg-glow 2s ease-in-out infinite; }}
+.sg-now-on::after {{ color: #facc15; filter: drop-shadow(0 0 3px #facc15); animation: sg-flash 2s ease-in-out infinite; }}
+.sg-now-off {{ box-shadow: inset 0 0 0 2px #64748b, 0 0 4px rgba(100,116,139,0.3); }}
+.sg-now-off::after {{ color: #475569; filter: none; opacity: 0.6; }}
+@keyframes sg-glow {{ 0%, 100% {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); }} 50% {{ box-shadow: inset 0 0 0 2px #fde047, 0 0 16px rgba(250,204,21,0.8); }} }}
+@keyframes sg-flash {{ 0%, 100% {{ filter: drop-shadow(0 0 3px #facc15); }} 50% {{ filter: drop-shadow(0 0 6px #fde047) drop-shadow(0 0 10px rgba(250,204,21,0.5)); }} }}
 .sg-legend {{ display: flex; gap: 1rem; justify-content: center; margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }}
 .sg-leg-item {{ display: flex; align-items: center; gap: 4px; }}
 .sg-swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
-.sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px #38bdf8, 0 0 6px rgba(56,189,248,0.4); position: relative; }}
-.sg-now-demo::after {{ content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #38bdf8; border-radius: 50%; transform: translate(-50%,-50%); }}
+.sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px #facc15, 0 0 6px rgba(250,204,21,0.4); position: relative; overflow: visible; }}
+.sg-now-demo::after {{ content: "\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; line-height: 1; color: #facc15; }}
 .sg-text {{ font-size: 0.85rem; color: var(--text); margin-top: 0.8rem; line-height: 1.6; }}
 </style>
 </head><body>
