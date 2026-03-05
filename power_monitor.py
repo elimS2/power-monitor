@@ -1663,14 +1663,14 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-label {{ white-space: nowrap; font-size: 0.75rem; padding: 4px 6px !important; text-align: left; overflow: hidden; }}
 .sg-table td:not(.sg-label) {{ height: 22px; }}
 .sg-hr {{ border-left: 2px solid #64748b !important; }}
-.sg-ok {{ background: #1a3a2a; }}
-.sg-off {{ background: #b91c1c; }}
-.sg-maybe {{ background: #a16207; }}
+.sg-ok {{ background: #166534; }}
+.sg-off {{ background: #000000; }}
+.sg-maybe {{ background: #4b5563; }}
 .sg-now {{ z-index: 1; position: relative; overflow: visible; }}
 .sg-now::after {{ content: "\\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 11px; line-height: 1; z-index: 2; filter: drop-shadow(0 0 2px currentColor); }}
 .sg-now-on {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); animation: sg-glow 2s ease-in-out infinite; }}
 .sg-now-on::after {{ color: #facc15; filter: drop-shadow(0 0 3px #facc15); animation: sg-flash 2s ease-in-out infinite; }}
-.sg-now-off {{ box-shadow: inset 0 0 0 3px #0f0f0f, 0 0 8px rgba(0,0,0,0.8); background: #0a0a0a !important; }}
+.sg-now-off {{ box-shadow: inset 0 0 0 3px #0f0f0f, 0 0 8px rgba(0,0,0,0.6); }}
 .sg-now-off::after {{ color: #facc15; filter: none; animation: sg-breath 3s ease-in-out infinite; }}
 @keyframes sg-breath {{ 0%, 100% {{ opacity: 0.8; }} 50% {{ opacity: 0.1; }} }}
 @keyframes sg-glow {{ 0%, 100% {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); }} 50% {{ box-shadow: inset 0 0 0 2px #fde047, 0 0 16px rgba(250,204,21,0.8); }} }}
