@@ -1671,7 +1671,8 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-now-on {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); animation: sg-glow 2s ease-in-out infinite; }}
 .sg-now-on::after {{ color: #facc15; filter: drop-shadow(0 0 3px #facc15); animation: sg-flash 2s ease-in-out infinite; }}
 .sg-now-off {{ box-shadow: inset 0 0 0 3px #0f0f0f, 0 0 8px rgba(0,0,0,0.8); background: #0a0a0a !important; }}
-.sg-now-off::after {{ color: #ca8a04; filter: none; opacity: 0.45; }}
+.sg-now-off::after {{ color: #facc15; filter: none; animation: sg-breath 3s ease-in-out infinite; }}
+@keyframes sg-breath {{ 0%, 100% {{ opacity: 0.8; }} 50% {{ opacity: 0.1; }} }}
 @keyframes sg-glow {{ 0%, 100% {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); }} 50% {{ box-shadow: inset 0 0 0 2px #fde047, 0 0 16px rgba(250,204,21,0.8); }} }}
 @keyframes sg-flash {{ 0%, 100% {{ filter: drop-shadow(0 0 3px #facc15); }} 50% {{ filter: drop-shadow(0 0 6px #fde047) drop-shadow(0 0 10px rgba(250,204,21,0.5)); }} }}
 .sg-legend {{ display: flex; gap: 1rem; justify-content: center; margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }}
