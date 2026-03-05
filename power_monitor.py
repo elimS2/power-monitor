@@ -1666,14 +1666,14 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-ok {{ background: #1a3a2a; }}
 .sg-off {{ background: #b91c1c; }}
 .sg-maybe {{ background: #a16207; }}
-.sg-now {{ outline: 2px solid #38bdf8; outline-offset: -2px; z-index: 1; position: relative; animation: sg-pulse 2s ease-in-out infinite; }}
-.sg-now::before {{ content: ""; position: absolute; top: -6px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #38bdf8; }}
-@keyframes sg-pulse {{ 0%, 100% {{ outline-color: #38bdf8; }} 50% {{ outline-color: #0ea5e9; box-shadow: 0 0 6px rgba(56,189,248,0.5); }} }}
+.sg-now {{ z-index: 1; position: relative; box-shadow: inset 0 0 0 2px #38bdf8, 0 0 8px rgba(56,189,248,0.4); animation: sg-pulse 2s ease-in-out infinite; }}
+.sg-now::after {{ content: ""; position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: #38bdf8; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 4px #38bdf8; }}
+@keyframes sg-pulse {{ 0%, 100% {{ box-shadow: inset 0 0 0 2px #38bdf8, 0 0 8px rgba(56,189,248,0.4); }} 50% {{ box-shadow: inset 0 0 0 2px #7dd3fc, 0 0 12px rgba(56,189,248,0.7); }} }}
 .sg-legend {{ display: flex; gap: 1rem; justify-content: center; margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }}
 .sg-leg-item {{ display: flex; align-items: center; gap: 4px; }}
 .sg-swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
-.sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); outline: 2px solid #38bdf8; position: relative; }}
-.sg-now-demo::before {{ content: ""; position: absolute; top: -5px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #38bdf8; }}
+.sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px #38bdf8, 0 0 6px rgba(56,189,248,0.4); position: relative; }}
+.sg-now-demo::after {{ content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #38bdf8; border-radius: 50%; transform: translate(-50%,-50%); }}
 .sg-text {{ font-size: 0.85rem; color: var(--text); margin-top: 0.8rem; line-height: 1.6; }}
 </style>
 </head><body>
