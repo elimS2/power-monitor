@@ -1667,7 +1667,7 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-off {{ background: #b91c1c; }}
 .sg-maybe {{ background: #a16207; }}
 .sg-now {{ z-index: 1; position: relative; overflow: visible; }}
-.sg-now::after {{ content: "\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 11px; line-height: 1; z-index: 2; filter: drop-shadow(0 0 2px currentColor); }}
+.sg-now::after {{ content: "\\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 11px; line-height: 1; z-index: 2; filter: drop-shadow(0 0 2px currentColor); }}
 .sg-now-on {{ box-shadow: inset 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); animation: sg-glow 2s ease-in-out infinite; }}
 .sg-now-on::after {{ color: #facc15; filter: drop-shadow(0 0 3px #facc15); animation: sg-flash 2s ease-in-out infinite; }}
 .sg-now-off {{ box-shadow: inset 0 0 0 2px #64748b, 0 0 4px rgba(100,116,139,0.3); }}
@@ -1678,7 +1678,7 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-leg-item {{ display: flex; align-items: center; gap: 4px; }}
 .sg-swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
 .sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px #facc15, 0 0 6px rgba(250,204,21,0.4); position: relative; overflow: visible; }}
-.sg-now-demo::after {{ content: "\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; line-height: 1; color: #facc15; }}
+.sg-now-demo::after {{ content: "\\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; line-height: 1; color: #facc15; }}
 .sg-text {{ font-size: 0.85rem; color: var(--text); margin-top: 0.8rem; line-height: 1.6; }}
 </style>
 </head><body>
