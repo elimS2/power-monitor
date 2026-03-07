@@ -222,6 +222,22 @@ def init_db():
                 ts    REAL   NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ae_ts ON alert_events(ts);
+
+            CREATE TABLE IF NOT EXISTS deye_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                load_power_w REAL,
+                load_l1_w    REAL,
+                load_l2_w    REAL,
+                load_l3_w    REAL,
+                grid_v_l1    REAL,
+                grid_v_l2    REAL,
+                grid_v_l3    REAL,
+                battery_soc  REAL,
+                battery_power_w REAL,
+                battery_voltage REAL,
+                ts           REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
         """)
 
 
@@ -277,6 +293,45 @@ def recent_alert_events(n: int = 30) -> list[dict]:
     with _conn() as db:
         rows = db.execute(
             "SELECT event, ts FROM alert_events ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_deye_log(
+    load_power_w: float | None = None,
+    load_l1_w: float | None = None,
+    load_l2_w: float | None = None,
+    load_l3_w: float | None = None,
+    grid_v_l1: float | None = None,
+    grid_v_l2: float | None = None,
+    grid_v_l3: float | None = None,
+    battery_soc: float | None = None,
+    battery_power_w: float | None = None,
+    battery_voltage: float | None = None,
+):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO deye_log (
+                load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_v_l1, grid_v_l2, grid_v_l3,
+                battery_soc, battery_power_w, battery_voltage, ts
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_v_l1, grid_v_l2, grid_v_l3,
+                battery_soc, battery_power_w, battery_voltage, time.time(),
+            ),
+        )
+
+
+def recent_deye_log(n: int = 100) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                      grid_v_l1, grid_v_l2, grid_v_l3,
+                      battery_soc, battery_power_w, battery_voltage, ts
+               FROM deye_log ORDER BY id DESC LIMIT ?""",
+            (n,),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1093,6 +1148,25 @@ async def ep_test_telegram(key: str = Query("")):
     return {"ok": True, "sent_to": target}
 
 
+@app.post("/api/deye-heartbeat")
+async def ep_deye_heartbeat(request: Request, key: str = Query("")):
+    """Receive Deye inverter data from local script. Requires API key."""
+    _check_key(key)
+    data = await request.json()
+    save_deye_log(
+        load_power_w=data.get("load_power_w"),
+        load_l1_w=data.get("load_l1_w"),
+        load_l2_w=data.get("load_l2_w"),
+        load_l3_w=data.get("load_l3_w"),
+        grid_v_l1=data.get("grid_v_l1"),
+        grid_v_l2=data.get("grid_v_l2"),
+        grid_v_l3=data.get("grid_v_l3"),
+        battery_soc=data.get("battery_soc"),
+        battery_power_w=data.get("battery_power_w"),
+        battery_voltage=data.get("battery_voltage"),
+    )
+    return {"ok": True}
+
 
 @app.post("/api/tg-webhook")
 async def tg_webhook(request: Request):
@@ -1291,6 +1365,50 @@ async def dashboard(key: str = Query("")):
             f'<td class="{c175}">{r["plug175"]}/3</td></tr>\n'
         )
 
+    # ─── Deye inverter ───
+    deye_log = recent_deye_log(30)
+    deye_summary = ""
+    deye_rows = ""
+    if deye_log:
+        last = deye_log[0]
+        load_w = last.get("load_power_w")
+        soc = last.get("battery_soc")
+        v_avg = None
+        if last.get("grid_v_l1") is not None or last.get("grid_v_l2") is not None or last.get("grid_v_l3") is not None:
+            vs = [last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")]
+            vs = [v for v in vs if v is not None]
+            v_avg = round(sum(vs) / len(vs), 0) if vs else None
+        age = int(time.time() - last["ts"])
+        parts = []
+        if load_w is not None:
+            parts.append(f"Споживання: {int(load_w)} Вт")
+        if soc is not None:
+            parts.append(f"АКБ: {int(soc)}%")
+        if v_avg is not None:
+            parts.append(f"Напруга: {int(v_avg)} В")
+        deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
+        for r in deye_log:
+            load_w = r.get("load_power_w")
+            soc = r.get("battery_soc")
+            v1 = r.get("grid_v_l1")
+            v2 = r.get("grid_v_l2")
+            v3 = r.get("grid_v_l3")
+            bat_w = r.get("battery_power_w")
+            load_s = str(int(load_w)) if load_w is not None else "—"
+            soc_s = f"{int(soc)}%" if soc is not None else "—"
+            v1_s = f"{v1:.0f}" if v1 is not None else "—"
+            v2_s = f"{v2:.0f}" if v2 is not None else "—"
+            v3_s = f"{v3:.0f}" if v3 is not None else "—"
+            bat_s = str(int(bat_w)) if bat_w is not None else "—"
+            deye_rows += (
+                f'<tr><td>{_ts_fmt(r["ts"])}</td>'
+                f'<td>{load_s}</td><td>{soc_s}</td>'
+                f'<td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td>'
+                f'<td>{bat_s}</td></tr>\n'
+            )
+    else:
+        deye_summary = "Немає даних"
+
     ev_rows = ""
     for i, e in enumerate(ev):
         cls = "down" if e["event"] == "down" else "up"
@@ -1359,6 +1477,48 @@ async def dashboard(key: str = Query("")):
             f'<td>{short_chat}</td>'
             f'<td>{safe_text}</td></tr>\n'
         )
+
+    # ─── Deye inverter ───
+    deye_log = recent_deye_log(30)
+    deye_summary = ""
+    deye_rows = ""
+    if deye_log:
+        last = deye_log[0]
+        load_w = last.get("load_power_w")
+        soc = last.get("battery_soc")
+        v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
+        age_sec = int(time.time() - last["ts"])
+        parts = []
+        if load_w is not None:
+            parts.append(f"Споживання: {int(load_w)} Вт")
+        if soc is not None:
+            parts.append(f"АКБ: {int(soc)}%")
+        if v1 is not None and v2 is not None and v3 is not None:
+            avg_v = (v1 + v2 + v3) / 3
+            parts.append(f"Напруга: {avg_v:.0f} В")
+        deye_summary = " | ".join(parts) if parts else "Дані отримано"
+        deye_summary += f" ({age_sec}с тому)"
+        for r in deye_log:
+            load_w = r.get("load_power_w")
+            soc = r.get("battery_soc")
+            v1 = r.get("grid_v_l1")
+            v2 = r.get("grid_v_l2")
+            v3 = r.get("grid_v_l3")
+            bat_w = r.get("battery_power_w")
+            load_s = f"{int(load_w)}" if load_w is not None else "—"
+            soc_s = f"{int(soc)}" if soc is not None else "—"
+            v1_s = f"{v1:.1f}" if v1 is not None else "—"
+            v2_s = f"{v2:.1f}" if v2 is not None else "—"
+            v3_s = f"{v3:.1f}" if v3 is not None else "—"
+            bat_s = f"{int(bat_w)}" if bat_w is not None else "—"
+            deye_rows += (
+                f'<tr><td>{_ts_fmt_full(r["ts"])}</td>'
+                f'<td>{load_s}</td><td>{soc_s}</td>'
+                f'<td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td>'
+                f'<td>{bat_s}</td></tr>\n'
+            )
+    else:
+        deye_summary = "Немає даних"
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
@@ -1765,6 +1925,21 @@ updClocks(); setInterval(updClocks,1000);
   var d=document.getElementById('tg_details');
   if(localStorage.getItem('tg_open')==='1') d.open=true;
   d.addEventListener('toggle',function(){{ localStorage.setItem('tg_open',d.open?'1':'0'); }});
+}})();
+</script>
+
+<details id="deye_details">
+<summary><h2 style="display:inline">Deye інвертор</h2></summary>
+<div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}</div>
+<table>
+<tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
+{deye_rows}</table>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('deye_details');
+  if(localStorage.getItem('deye_open')==='1') d.open=true;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('deye_open',d.open?'1':'0'); }});
 }})();
 </script>
 
