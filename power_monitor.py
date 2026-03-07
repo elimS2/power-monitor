@@ -82,6 +82,19 @@ _alert_fetched_at: float = 0
 ALERT_API_URL = "https://alerts.com.ua/api/states"
 ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
 
+# Default order of dashboard sections (user can reorder via drag-and-drop)
+DASHBOARD_SECTION_ORDER = [
+    "sched_details", "boiler_details", "ev_details", "links_details",
+    "alert_ev_details", "tg_details", "deye_details", "hb_details",
+    "legend_details", "avatars_details",
+]
+
+def _wrap_dashboard_section(section_id: str, content: str) -> str:
+    """Wrap section HTML in draggable container. Returns empty string if content empty."""
+    if not content or not content.strip():
+        return ""
+    return f'<div class="dashboard-section" data-section-id="{section_id}"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>{content}</div>'
+
 WEATHER_LAT = 50.5114
 WEATHER_LON = 30.7911
 WEATHER_URL = (
@@ -1843,6 +1856,13 @@ details[open] summary::before {{ content: '▼ '; }}
 .sg-now-demo {{ width: 14px; height: 14px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px #facc15, 0 0 6px rgba(250,204,21,0.4); position: relative; overflow: visible; }}
 .sg-now-demo::after {{ content: "\\26A1"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; line-height: 1; color: #facc15; }}
 .sg-text {{ font-size: 0.85rem; color: var(--text); margin-top: 0.8rem; line-height: 1.6; }}
+.dashboard-section {{ position: relative; margin: 1.2rem 0 0.5rem; padding-left: 1.2rem; }}
+.dashboard-section .drag-handle {{ position: absolute; left: 0; top: 0.4rem; cursor: grab; color: var(--muted); font-size: 0.8rem;
+  user-select: none; opacity: 0.5; padding: 0.2rem; line-height: 1; }}
+.dashboard-section .drag-handle:hover {{ opacity: 1; }}
+.dashboard-section .drag-handle:active {{ cursor: grabbing; }}
+.dashboard-section.dragging {{ opacity: 0.5; }}
+.dashboard-section.drag-over {{ border-top: 2px dashed var(--muted); margin-top: -2px; }}
 </style>
 </head><body>
 <h1>Power Monitor — ЗК 6</h1>
@@ -1863,10 +1883,10 @@ updClocks(); setInterval(updClocks,1000);
 {weather_html}
 {alert_html}
 
-{schedule_html}
-
-{boiler_html}
-
+<div id="dashboard-sections">
+{_wrap_dashboard_section("sched_details", schedule_html) if schedule_html else ""}
+{_wrap_dashboard_section("boiler_details", boiler_html) if boiler_html else ""}
+<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="ev_details" open>
 <summary><h2 style="display:inline">Події</h2></summary>
 <table>
@@ -1880,7 +1900,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('ev_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="links_details" open>
 <summary><h2 style="display:inline">Посилання</h2></summary>
 <table>
@@ -1899,7 +1921,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('links_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="alert_ev_details">
 <summary><h2 style="display:inline">Тривоги</h2></summary>
 <table>
@@ -1913,7 +1937,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('alert_ev_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="tg_details">
 <summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
 <table>
@@ -1927,7 +1953,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('tg_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="deye_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="deye_details">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
 <div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}</div>
@@ -1942,7 +1970,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('deye_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="hb_details">
 <summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
 <div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>
@@ -1976,7 +2006,9 @@ updClocks(); setInterval(updClocks,1000);
   d.addEventListener('toggle',function(){{ localStorage.setItem('hb_open',d.open?'1':'0'); }});
 }})();
 </script>
+</div>
 
+<div class="dashboard-section" data-section-id="legend_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="legend_details">
 <summary><h2 style="display:inline">Легенда повідомлень</h2></summary>
 <table>
@@ -1989,7 +2021,9 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr>
 </table>
 </details>
+</div>
 
+<div class="dashboard-section" data-section-id="avatars_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="avatars_details">
 <summary><h2 style="display:inline">Аватарки каналу</h2></summary>
 <table>
@@ -2004,8 +2038,67 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr>
 </table>
 </details>
+</div>
+</div>
 <script>
 (function(){{
+  var ORDER_KEY='pm_section_order';
+  var DEFAULT_ORDER={json.dumps(DASHBOARD_SECTION_ORDER)};
+  var container=document.getElementById('dashboard-sections');
+  if(container){{
+    var sections=Array.from(container.querySelectorAll('.dashboard-section'));
+    var order=JSON.parse(localStorage.getItem(ORDER_KEY)||'null');
+    if(order){{
+      var byId={{}};
+      sections.forEach(function(s){{ byId[s.dataset.sectionId]=s; }});
+      order.forEach(function(id){{
+        var el=byId[id];
+        if(el){{ container.appendChild(el); }}
+      }});
+      sections.forEach(function(s){{
+        if(!order.includes(s.dataset.sectionId)) container.appendChild(s);
+      }});
+    }}
+    var handle=null;
+    container.addEventListener('dragstart',function(e){{
+      if(!e.target.classList.contains('drag-handle')) return;
+      handle=e.target.closest('.dashboard-section');
+      if(!handle) return;
+      e.dataTransfer.setData('text/plain',handle.dataset.sectionId);
+      e.dataTransfer.effectAllowed='move';
+      handle.classList.add('dragging');
+    }});
+    container.addEventListener('dragend',function(e){{
+      if(handle){{ handle.classList.remove('dragging'); handle=null; }}
+      container.querySelectorAll('.dashboard-section').forEach(function(s){{ s.classList.remove('drag-over'); }});
+    }});
+    container.addEventListener('dragover',function(e){{
+      e.preventDefault();
+      container.querySelectorAll('.dashboard-section').forEach(function(s){{ s.classList.remove('drag-over'); }});
+      var t=e.target.closest('.dashboard-section');
+      if(t&&t!==handle){{ t.classList.add('drag-over'); e.dataTransfer.dropEffect='move'; }}
+    }});
+    container.addEventListener('dragleave',function(e){{
+      var t=e.target.closest('.dashboard-section');
+      if(t) t.classList.remove('drag-over');
+    }});
+    container.addEventListener('drop',function(e){{
+      e.preventDefault();
+      var t=e.target.closest('.dashboard-section');
+      if(!t||t===handle) return;
+      t.classList.remove('drag-over');
+      var id=e.dataTransfer.getData('text/plain');
+      var dragged=container.querySelector('[data-section-id="'+id+'"]');
+      if(dragged&&dragged!==t){{
+        var all=Array.from(container.querySelectorAll('.dashboard-section'));
+        var idx=all.indexOf(t);
+        if(idx>=0) container.insertBefore(dragged,all[idx]);
+        else container.appendChild(dragged);
+        var newOrder=Array.from(container.querySelectorAll('.dashboard-section')).map(function(s){{ return s.dataset.sectionId; }});
+        localStorage.setItem(ORDER_KEY,JSON.stringify(newOrder));
+      }}
+    }});
+  }}
   ['legend','avatars'].forEach(function(k){{
     var d=document.getElementById(k+'_details');
     if(localStorage.getItem(k+'_open')==='1') d.open=true;
