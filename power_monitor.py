@@ -1668,7 +1668,17 @@ async def dashboard(key: str = Query("")):
 <span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
 <span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
 </div>
+<details id="sched_text_details" open>
+<summary style="font-size:0.85rem;color:var(--muted)">Текстовий графік відключень</summary>
 {text_blocks}
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('sched_text_details');
+  if(localStorage.getItem('sched_text_open')==='0') d.open=false;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_text_open',d.open?'1':'0'); }});
+}})();
+</script>
 {history_html}
 </details>
 <script>
@@ -1959,9 +1969,19 @@ updClocks(); setInterval(updClocks,1000);
 <details id="deye_details">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
 <div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}</div>
+<details id="deye_table_details">
+<summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
 <tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
 {deye_rows}</table>
+</details>
+<script>
+(function(){{
+  var d=document.getElementById('deye_table_details');
+  if(localStorage.getItem('deye_table_open')==='0') d.open=false;
+  d.addEventListener('toggle',function(){{ localStorage.setItem('deye_table_open',d.open?'1':'0'); }});
+}})();
+</script>
 </details>
 <script>
 (function(){{
