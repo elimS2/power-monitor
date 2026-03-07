@@ -529,9 +529,11 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            nxt = _next_schedule_transition(looking_for_on=True)
-            if nxt:
-                msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
+            # Для позапланових відключень не показуємо наступне включення за графіком
+            if dev is None or abs(dev) <= 30:
+                nxt = _next_schedule_transition(looking_for_on=True)
+                if nxt:
+                    msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
             await update_chat_photo(True)
             await tg_send(msg)
 
