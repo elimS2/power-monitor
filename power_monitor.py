@@ -1497,6 +1497,7 @@ async def dashboard(key: str = Query("")):
     # ─── Deye inverter ───
     deye_log = recent_deye_log(30)
     deye_summary = ""
+    deye_summary_line2 = ""
     deye_rows = ""
     if deye_log:
         last = deye_log[0]
@@ -1504,19 +1505,21 @@ async def dashboard(key: str = Query("")):
         soc = last.get("battery_soc")
         v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
         age_sec = int(time.time() - last["ts"])
-        parts = []
+        parts1 = []
         if load_w is not None:
-            parts.append(f"Споживання: {int(load_w)} Вт")
+            parts1.append(f"Споживання: {int(load_w)} Вт")
         if soc is not None:
-            parts.append(f"АКБ: {int(soc)}%")
+            parts1.append(f"АКБ: {int(soc)}%")
         if v1 is not None and v2 is not None and v3 is not None:
             avg_v = (v1 + v2 + v3) / 3
-            parts.append(f"Напруга: {avg_v:.0f} В")
+            parts1.append(f"Напруга: {avg_v:.0f} В")
+        deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
+        deye_summary += f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
             consumed_kwh = cap_kwh * (100 - soc) / 100
             remaining_kwh = cap_kwh * soc / 100
-            parts.append(f"{cap_kwh:.0f} кВт·год | спожито {consumed_kwh:.1f} | залиш. {remaining_kwh:.1f}")
+            parts2 = [f"{cap_kwh:.0f} кВт·год", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
             if load_w is not None and load_w > 0 and remaining_kwh > 0:
                 hrs = remaining_kwh / (load_w / 1000)
                 if hrs >= 24:
@@ -1528,9 +1531,8 @@ async def dashboard(key: str = Query("")):
                 else:
                     m = int(hrs * 60)
                     time_str = f"{m}хв"
-                parts.append(f"~{time_str} до 0")
-        deye_summary = " | ".join(parts) if parts else "Дані отримано"
-        deye_summary += f" ({age_sec}с тому)"
+                parts2.append(f"~{time_str} до 0")
+            deye_summary_line2 = " | ".join(parts2)
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")
@@ -1988,7 +1990,7 @@ updClocks(); setInterval(updClocks,1000);
 <div class="dashboard-section" data-section-id="deye_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="deye_details">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
-<div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}</div>
+<div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
 <details id="deye_table_details">
 <summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
