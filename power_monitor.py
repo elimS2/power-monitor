@@ -70,6 +70,9 @@ DTEK_API_URL = os.getenv("DTEK_API_URL", "https://dtek-api.svitlo-proxy.workers.
 DTEK_REGION = os.getenv("DTEK_REGION", "kiivska-oblast")
 DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
 
+# Deye battery capacity (kWh) for energy stats in summary. 0 = disabled.
+DEYE_BATTERY_KWH = float(os.getenv("DEYE_BATTERY_KWH", "0") or "0")
+
 _schedule_cache: dict = {}
 _schedule_fetched_at: float = 0
 
@@ -1509,6 +1512,23 @@ async def dashboard(key: str = Query("")):
         if v1 is not None and v2 is not None and v3 is not None:
             avg_v = (v1 + v2 + v3) / 3
             parts.append(f"Напруга: {avg_v:.0f} В")
+        if DEYE_BATTERY_KWH > 0 and soc is not None:
+            cap_kwh = DEYE_BATTERY_KWH
+            consumed_kwh = cap_kwh * (100 - soc) / 100
+            remaining_kwh = cap_kwh * soc / 100
+            parts.append(f"{cap_kwh:.0f} кВт·год | спожито {consumed_kwh:.1f} | залиш. {remaining_kwh:.1f}")
+            if load_w is not None and load_w > 0 and remaining_kwh > 0:
+                hrs = remaining_kwh / (load_w / 1000)
+                if hrs >= 24:
+                    d, h = int(hrs // 24), int(hrs % 24)
+                    time_str = f"{d}д {h}год" if h else f"{d}д"
+                elif hrs >= 1:
+                    h, m = int(hrs), int((hrs % 1) * 60)
+                    time_str = f"{h}год {m}хв" if m else f"{h}год"
+                else:
+                    m = int(hrs * 60)
+                    time_str = f"{m}хв"
+                parts.append(f"~{time_str} до 0")
         deye_summary = " | ".join(parts) if parts else "Дані отримано"
         deye_summary += f" ({age_sec}с тому)"
         for r in deye_log:
