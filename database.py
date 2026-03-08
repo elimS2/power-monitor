@@ -123,6 +123,11 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
         """)
+        # Migration: add ts_kyiv (readable datetime Kyiv)
+        try:
+            db.execute("ALTER TABLE deye_log ADD COLUMN ts_kyiv TEXT")
+        except sqlite3.OperationalError:
+            pass  # column exists
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -203,17 +208,19 @@ def save_deye_log(
     battery_power_w: float | None = None,
     battery_voltage: float | None = None,
 ):
+    ts = time.time()
+    ts_kyiv = datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as db:
         db.execute(
             """INSERT INTO deye_log (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, ts
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                battery_soc, battery_power_w, battery_voltage, ts, ts_kyiv
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, time.time(),
+                battery_soc, battery_power_w, battery_voltage, ts, ts_kyiv,
             ),
         )
 
@@ -305,16 +312,16 @@ def deye_daily_load_kwh() -> list[dict]:
 
 
 def _integrate_battery_power(rows: list, positive_only: bool) -> float:
-    """Integrate battery_power_w. positive_only=True → charge kWh, False → discharge kWh."""
+    """Integrate battery_power_w. Deye: negative=charge, positive=discharge. positive_only=True → charge kWh, False → discharge kWh."""
     total = 0.0
     for i in range(1, len(rows)):
         p_prev = rows[i - 1].get("battery_power_w") or 0
         p_curr = rows[i].get("battery_power_w") or 0
         dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
         if positive_only:
-            avg = max(0, (p_prev + p_curr) / 2)
+            avg = min(0, (p_prev + p_curr) / 2)  # charge = negative (battery consuming)
         else:
-            avg = min(0, (p_prev + p_curr) / 2)
+            avg = max(0, (p_prev + p_curr) / 2)  # discharge = positive (battery feeding)
         total += abs(avg) * dt_h / 1000  # W -> kWh
     return total
 
