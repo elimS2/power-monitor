@@ -309,6 +309,15 @@ def _save_schedule_if_changed(target_date: str, grid: list[str]):
         log.info("Schedule changed for %s — saved to history", target_date)
 
 
+def save_weather_log(temp, humidity, wind, code, t_min, t_max, ts: float):
+    """Log weather snapshot for history."""
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO weather_log(temp, humidity, wind, code, t_min, t_max, ts) VALUES(?,?,?,?,?,?,?)",
+            (temp, humidity, wind, code, t_min, t_max, ts),
+        )
+
+
 def schedule_history_for_date(target_date: str) -> list[dict]:
     with _conn() as db:
         rows = db.execute(

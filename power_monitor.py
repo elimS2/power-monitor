@@ -25,15 +25,11 @@ from fastapi import FastAPI, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from config import (
-    ALERT_API_URL,
-    ALERT_REGION_IDS,
     API_KEYS,
     AVATAR_ON_START,
     DASHBOARD_SECTION_ORDER,
     DELETE_PHOTO_MSG,
-    DTEK_API_URL,
     DTEK_QUEUE,
-    DTEK_REGION,
     DB_PATH,
     DEYE_BATTERY_KWH,
     GIT_COMMIT,
@@ -45,7 +41,6 @@ from config import (
     TG_WEBHOOK_SECRET,
     UA_TZ,
     WEBHOOK_HOST,
-    WEATHER_URL,
     WMO_EMOJI,
 )
 from database import (
@@ -70,19 +65,9 @@ from database import (
     save_tg_log,
     schedule_history_for_date,
     _conn,
-    _save_schedule_if_changed,
 )
 
-# ─── Runtime caches ────────────────────────────────────────────
-
-_schedule_cache: dict = {}
-_schedule_fetched_at: float = 0
-
-_weather_cache: dict = {}
-_weather_fetched_at: float = 0
-
-_alert_cache: dict = {}
-_alert_fetched_at: float = 0
+import dtek
 
 
 def _wrap_dashboard_section(section_id: str, content: str) -> str:
@@ -209,13 +194,13 @@ async def analyze():
             kv_set("power_down", "1")
             save_event("down")
             log.warning("POWER OUTAGE detected")
-            dev = _schedule_deviation(is_down_event=True)
+            dev = dtek.schedule_deviation(is_down_event=True)
             sched_label = ""
             if dev is not None:
                 if abs(dev) <= 30:
-                    sched_label = f" (\U0001f4c5 За графіком, відхилення {_fmt_deviation(dev)})"
+                    sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})"
                 else:
-                    sched_label = f" (\u26a1Позапланове, відхилення {_fmt_deviation(dev, signed=False)})"
+                    sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
             msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
@@ -234,7 +219,7 @@ async def analyze():
                     msg += f"\n\U0001f4a0 Остання напруга: {', '.join(parts)}"
             # Для позапланових відключень не показуємо наступне включення за графіком
             if dev is None or abs(dev) <= 30:
-                nxt = _next_schedule_transition(looking_for_on=True)
+                nxt = dtek.next_schedule_transition(looking_for_on=True)
                 if nxt:
                     msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
             await update_chat_photo(True)
@@ -246,20 +231,20 @@ async def analyze():
             kv_set("power_down", "0")
             save_event("up")
             log.info("POWER RESTORED")
-            dev = _schedule_deviation(is_down_event=False)
+            dev = dtek.schedule_deviation(is_down_event=False)
             sched_label = ""
             if dev is not None:
                 if abs(dev) <= 30:
-                    sched_label = f" (\U0001f4c5 За графіком, відхилення {_fmt_deviation(dev)})"
+                    sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})"
                 else:
-                    sched_label = f" (\u26a1Позапланове, відхилення {_fmt_deviation(dev, signed=False)})"
+                    sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
             msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
             if prev:
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
             # Планове відключення — завжди показуємо (корисно навіть якщо включення було позаплановим)
-            nxt = _next_schedule_transition(looking_for_on=False)
+            nxt = dtek.next_schedule_transition(looking_for_on=False)
             if nxt:
                 msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
             await update_chat_photo(False)
@@ -284,356 +269,6 @@ async def watchdog():
         kv_set("stale_alerted", "0")
 
 
-# ─── DTEK schedule ────────────────────────────────────────────
-
-def _day_slots_to_48(day_data: dict) -> list[str]:
-    """Convert DTEK API {HH:MM: 1|2|3} dict to 48-element grid.
-
-    1 = ok, 2 = maybe, 3 = off.
-    """
-    grid = ["ok"] * 48
-    for i in range(48):
-        key = f"{i // 2:02d}:{'30' if i % 2 else '00'}"
-        val = day_data.get(key, 1)
-        if val == 3:
-            grid[i] = "off"
-        elif val == 2:
-            grid[i] = "maybe"
-    return grid
-
-
-def _schedule_deviation(is_down_event: bool) -> int | None:
-    """Find signed deviation (minutes) from the nearest matching DTEK transition.
-
-    Positive = event happened after the scheduled time.
-    Returns None when no schedule data or no matching transitions exist.
-    """
-    if not _schedule_cache or not _schedule_cache.get("today"):
-        return None
-
-    grid = _schedule_cache["today"]["grid"]
-    now_kyiv = datetime.now(UA_TZ)
-    event_min = now_kyiv.hour * 60 + now_kyiv.minute
-    best: int | None = None
-
-    for i in range(1, 48):
-        prev_ok = grid[i - 1] == "ok"
-        curr_ok = grid[i] == "ok"
-        transition_min = i * 30
-        if is_down_event and prev_ok and not curr_ok:
-            dev = event_min - transition_min
-            if best is None or abs(dev) < abs(best):
-                best = dev
-        elif not is_down_event and not prev_ok and curr_ok:
-            dev = event_min - transition_min
-            if best is None or abs(dev) < abs(best):
-                best = dev
-
-    return best
-
-
-def _fmt_deviation(minutes: int, signed: bool = True) -> str:
-    """Format deviation as readable string: '+3хв', '-10хв', '1год 30хв'."""
-    a = abs(minutes)
-    if a < 60:
-        if signed and minutes != 0:
-            return f"{'+' if minutes > 0 else '-'}{a}хв"
-        return f"{a}хв"
-    h, m = divmod(a, 60)
-    parts = f"{h}год" + (f" {m}хв" if m else "")
-    if signed and minutes != 0:
-        return f"{'+' if minutes > 0 else '-'}{parts}"
-    return parts
-
-
-def _fmt_slot(slot_idx: int) -> str:
-    h, m = divmod((slot_idx % 48) * 30, 60)
-    ts = f"{h:02d}:{m:02d}"
-    return f"завтра {ts}" if slot_idx >= 48 else ts
-
-
-def _next_schedule_transition(looking_for_on: bool) -> str | None:
-    """Find next scheduled power-ON (True) or power-OFF (False) block.
-
-    Returns '~16:30 - 21:30' (with end) or '~06:00' (no end), or None.
-    """
-    if not _schedule_cache:
-        return None
-
-    now_kyiv = datetime.now(UA_TZ)
-    cur_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
-
-    combined: list[str] = []
-    for key in ("today", "tomorrow"):
-        day = _schedule_cache.get(key)
-        combined.extend(day["grid"] if day else ["ok"] * 48)
-
-    target_ok = looking_for_on
-
-    i = cur_slot
-    while i < len(combined):
-        if (combined[i] == "ok") != target_ok:
-            break
-        i += 1
-    while i < len(combined):
-        if (combined[i] == "ok") == target_ok:
-            break
-        i += 1
-
-    if i >= len(combined):
-        return None
-
-    start = i
-    while i < len(combined):
-        if (combined[i] == "ok") != target_ok:
-            break
-        i += 1
-
-    start_str = _fmt_slot(start)
-    if i < len(combined):
-        return f"~{start_str} - {_fmt_slot(i)}"
-    return f"~{start_str}"
-
-
-_UA_WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
-
-
-def _grid_text_summary(grid: list[str], date_str: str, day_label: str) -> str:
-    """Build human-readable text summary of outage periods from 48-slot grid."""
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        weekday = _UA_WEEKDAYS[dt.weekday()]
-        date_fmt = dt.strftime("%d.%m.%Y")
-    except Exception:
-        weekday = ""
-        date_fmt = date_str
-
-    header = f"\U0001f5d3\ufe0f Графік відключень на {day_label.lower()}, {date_fmt}"
-    if weekday:
-        header += f" ({weekday})"
-    header += f", для групи {DTEK_QUEUE}:"
-
-    blocks: list[tuple[int, int, str]] = []
-    i = 0
-    while i < 48:
-        if grid[i] == "ok":
-            i += 1
-            continue
-        btype = grid[i]
-        start = i
-        while i < 48 and grid[i] == btype:
-            i += 1
-        blocks.append((start, i, btype))
-
-    if not blocks:
-        return f'<div class="sg-text">{header}<br>\u2705 Відключень не заплановано</div>'
-
-    lines = [header]
-    for start, end, btype in blocks:
-        sh, sm = divmod(start * 30, 60)
-        eh, em = divmod(end * 30, 60)
-        start_t = f"{sh:02d}:{sm:02d}"
-        end_t = f"{eh:02d}:{em:02d}" if eh < 24 else "24:00"
-        dur_min = (end - start) * 30
-        if dur_min >= 60:
-            dur_str = f"~{dur_min / 60:g} год."
-        else:
-            dur_str = f"~{dur_min} хв."
-        marker = "\u25aa\ufe0f" if btype == "off" else "\u25ab\ufe0f"
-        lines.append(f"{marker} {start_t} - {end_t} ({dur_str})")
-
-    off_slots = sum(1 for s in grid if s != "ok")
-    on_slots = 48 - off_slots
-    off_min = off_slots * 30
-    on_min = on_slots * 30
-
-    def _hm(minutes: int) -> str:
-        h, m = divmod(minutes, 60)
-        return f"{h}год {m}хв" if m else f"{h}год"
-
-    off_pct = round(off_slots / 48 * 100)
-    on_pct = 100 - off_pct
-    lines.append(
-        f"\U0001f4ca Зі світлом: {_hm(on_min)} ({on_pct}%) · "
-        f"Без світла: {_hm(off_min)} ({off_pct}%)"
-    )
-
-    return '<div class="sg-text">' + "<br>".join(lines) + "</div>"
-
-
-def _slot_time(i: int) -> str:
-    h, m = divmod(i * 30, 60)
-    return f"{h:02d}:{m:02d}"
-
-_GRID_LABEL = {"ok": "світло", "maybe": "можливе", "off": "відключення"}
-
-
-def _describe_grid_diff(old: list[str], new: list[str]) -> str:
-    """Describe what changed between two 48-slot grids, merging consecutive ranges."""
-    changes = []
-    i = 0
-    while i < 48:
-        if old[i] == new[i]:
-            i += 1
-            continue
-        kind = (old[i], new[i])
-        start = i
-        while i < 48 and (old[i], new[i]) == kind:
-            i += 1
-        t = f"{_slot_time(start)}-{_slot_time(i)}"
-        o, n = kind
-        if o == "ok" and n != "ok":
-            changes.append(f"+{t} ({_GRID_LABEL[n]})")
-        elif o != "ok" and n == "ok":
-            changes.append(f"\u2212{t}")
-        else:
-            changes.append(f"{t}: {_GRID_LABEL[o]}\u2192{_GRID_LABEL[n]}")
-    return ", ".join(changes) if changes else "Без змін"
-
-
-async def fetch_dtek_schedule():
-    """Fetch planned outages from DTEK proxy API and cache parsed grids."""
-    global _schedule_cache, _schedule_fetched_at
-
-    now = time.time()
-    cache_stale = now - _schedule_fetched_at >= 1800
-    date_changed = False
-    if _schedule_cache and _schedule_cache.get("today"):
-        cached_date = _schedule_cache["today"]["date"]
-        actual_today = datetime.now(UA_TZ).strftime("%Y-%m-%d")
-        if cached_date != actual_today:
-            date_changed = True
-    if not cache_stale and not date_changed:
-        return
-
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(DTEK_API_URL)
-            r.raise_for_status()
-            raw = r.json()
-    except Exception as e:
-        log.warning("DTEK API fetch failed: %s", e)
-        return
-
-    if "body" in raw and isinstance(raw["body"], str):
-        try:
-            raw = json.loads(raw["body"])
-        except json.JSONDecodeError:
-            log.warning("DTEK API: failed to parse body")
-            return
-
-    region_data = None
-    for reg in raw.get("regions", []):
-        if reg.get("cpu") == DTEK_REGION:
-            region_data = reg
-            break
-    if not region_data:
-        log.warning("DTEK: region %s not found", DTEK_REGION)
-        return
-
-    queue_data = region_data.get("schedule", {}).get(DTEK_QUEUE)
-    if not queue_data:
-        log.warning("DTEK: queue %s not found in %s", DTEK_QUEUE, DTEK_REGION)
-        return
-
-    dates = sorted(queue_data.keys())
-    now_kyiv = datetime.now(UA_TZ)
-    today_iso = now_kyiv.strftime("%Y-%m-%d")
-    tomorrow_iso = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    result = {}
-    for date_str in dates:
-        if date_str == today_iso:
-            day_key = "today"
-        elif date_str == tomorrow_iso:
-            day_key = "tomorrow"
-        else:
-            continue
-        day_slots = queue_data[date_str]
-        grid = _day_slots_to_48(day_slots)
-        result[day_key] = {"date": date_str, "grid": grid}
-        _save_schedule_if_changed(date_str, grid)
-
-    _schedule_cache = result
-    _schedule_fetched_at = now
-    log.info("DTEK schedule updated for %s queue %s", DTEK_REGION, DTEK_QUEUE)
-
-
-async def fetch_weather():
-    global _weather_cache, _weather_fetched_at
-
-    now = time.time()
-    if now - _weather_fetched_at < 1800:
-        return
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(WEATHER_URL)
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning("Weather fetch failed: %s", e)
-        return
-
-    cur = data.get("current", {})
-    daily = data.get("daily", {})
-    t_min_list = daily.get("temperature_2m_min", [])
-    t_max_list = daily.get("temperature_2m_max", [])
-    _weather_cache = {
-        "temp": cur.get("temperature_2m"),
-        "humidity": cur.get("relative_humidity_2m"),
-        "wind": cur.get("wind_speed_10m"),
-        "code": cur.get("weather_code", -1),
-        "t_min": t_min_list[0] if t_min_list else None,
-        "t_max": t_max_list[0] if t_max_list else None,
-    }
-    _weather_fetched_at = now
-    log.info("Weather updated: %s", _weather_cache)
-
-    w = _weather_cache
-    with _conn() as db:
-        db.execute(
-            "INSERT INTO weather_log(temp, humidity, wind, code, t_min, t_max, ts) VALUES(?,?,?,?,?,?,?)",
-            (w["temp"], w["humidity"], w["wind"], w["code"], w["t_min"], w["t_max"], now),
-        )
-
-
-async def fetch_alert():
-    global _alert_cache, _alert_fetched_at
-
-    now = time.time()
-    if now - _alert_fetched_at < 120:
-        return
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                ALERT_API_URL,
-                headers={"X-API-Key": "test"},
-            )
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning("Alert fetch failed: %s", e)
-        return
-
-    active = False
-    changed = ""
-    for s in data.get("states", []):
-        if s.get("id") in ALERT_REGION_IDS and s.get("alert"):
-            active = True
-            changed = s.get("changed", "")
-            break
-
-    was_active = _alert_cache.get("active") if _alert_cache else None
-    if was_active is not None and active != was_active:
-        event = "alert_on" if active else "alert_off"
-        save_alert_event(event)
-        log.info("Alert status changed: %s", event)
-
-    _alert_cache = {"active": active, "changed": changed}
-    _alert_fetched_at = now
-
 
 # ─── Background loop ─────────────────────────────────────────
 
@@ -649,19 +284,19 @@ async def bg_loop():
                 cleanup_old()
                 cleanup_tick = 0
             date_rolled = (
-                _schedule_cache
-                and _schedule_cache.get("today")
-                and _schedule_cache["today"]["date"]
+                dtek.schedule_cache
+                and dtek.schedule_cache.get("today")
+                and dtek.schedule_cache["today"]["date"]
                 != datetime.now(UA_TZ).strftime("%Y-%m-%d")
             )
             schedule_tick += 1
             if schedule_tick >= 60 or date_rolled:  # ~30min or midnight
-                await fetch_dtek_schedule()
-                await fetch_weather()
+                await dtek.fetch_dtek_schedule()
+                await dtek.fetch_weather()
                 schedule_tick = 0
             alert_tick += 1
             if alert_tick >= 4:  # ~2min at 30s interval
-                await fetch_alert()
+                await dtek.fetch_alert()
                 alert_tick = 0
         except Exception as e:
             log.error("bg_loop: %s", e)
@@ -673,9 +308,9 @@ async def bg_loop():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    await fetch_dtek_schedule()
-    await fetch_weather()
-    await fetch_alert()
+    await dtek.fetch_dtek_schedule()
+    await dtek.fetch_weather()
+    await dtek.fetch_alert()
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
@@ -737,10 +372,10 @@ def _build_update_fragments() -> dict:
 
     duration_text = _power_status_text() if (hb or ev) else ""
     schedule_note = ""
-    if _schedule_cache and _schedule_cache.get("today"):
+    if dtek.schedule_cache and dtek.schedule_cache.get("today"):
         now_kyiv = datetime.now(UA_TZ)
         slot_idx = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
-        slot_val = _schedule_cache["today"]["grid"][min(slot_idx, 47)]
+        slot_val = dtek.schedule_cache["today"]["grid"][min(slot_idx, 47)]
         if is_down:
             schedule_note = "\U0001f4c5 Заплановане відключення" if slot_val == "off" else "\U0001f4c5 Можливе відключення (за графіком)" if slot_val == "maybe" else "\u26a1Позапланове відключення"
         else:
@@ -772,7 +407,7 @@ def _build_update_fragments() -> dict:
         ev_date_str = ev_kyiv.strftime("%Y-%m-%d")
         ev_grid = None
         for dk in ("today", "tomorrow"):
-            d = _schedule_cache.get(dk) if _schedule_cache else None
+            d = dtek.schedule_cache.get(dk) if dtek.schedule_cache else None
             if d and d["date"] == ev_date_str:
                 ev_grid = d["grid"]
                 break
@@ -797,7 +432,7 @@ def _build_update_fragments() -> dict:
                     if best_dev is None or abs(d2) < abs(best_dev):
                         best_dev = d2
             if best_dev is not None and abs(best_dev) <= 30:
-                sched_tag = f'\U0001f4c5 {_fmt_deviation(best_dev)}'
+                sched_tag = f'\U0001f4c5 {dtek.fmt_deviation(best_dev)}'
             else:
                 sched_tag = '<span style="color:#fbbf24">\u26a1позапл.</span>'
         ev_rows += f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}</td><td style="color:var(--muted)">{sched_tag}</td><td style="color:var(--muted)">{dur_str}</td></tr>\n'
@@ -816,7 +451,7 @@ def _build_update_fragments() -> dict:
         label = "\U0001f534 Тривога" if ae["event"] == "alert_on" else "\U0001f7e2 Відбій"
         if i == 0:
             dur_sec = int(time.time() - ae["ts"])
-            dur_str = f"{_format_duration(dur_sec)} \u25b8" if ((ae["event"] == "alert_on" and _alert_cache.get("active")) or (ae["event"] == "alert_off" and not _alert_cache.get("active"))) else _format_duration(dur_sec)
+            dur_str = f"{_format_duration(dur_sec)} \u25b8" if ((ae["event"] == "alert_on" and dtek.alert_cache.get("active")) or (ae["event"] == "alert_off" and not dtek.alert_cache.get("active"))) else _format_duration(dur_sec)
         else:
             dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
             dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
@@ -866,12 +501,12 @@ def _build_update_fragments() -> dict:
             deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
 
     alert_html = ""
-    if _alert_cache:
-        alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if _alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
+    if dtek.alert_cache:
+        alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
 
     weather_html = ""
-    if _weather_cache and _weather_cache.get("temp") is not None:
-        w = _weather_cache
+    if dtek.weather_cache and dtek.weather_cache.get("temp") is not None:
+        w = dtek.weather_cache
         temp = w["temp"]
         sign = "+" if temp > 0 else ""
         emoji = WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
@@ -1178,10 +813,10 @@ async def dashboard(key: str = Query("")):
     duration_text = _power_status_text() if (hb or ev) else ""
 
     schedule_note = ""
-    if _schedule_cache and _schedule_cache.get("today"):
+    if dtek.schedule_cache and dtek.schedule_cache.get("today"):
         now_kyiv = datetime.now(UA_TZ)
         slot_idx = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
-        slot_val = _schedule_cache["today"]["grid"][min(slot_idx, 47)]
+        slot_val = dtek.schedule_cache["today"]["grid"][min(slot_idx, 47)]
         if is_down:
             if slot_val == "off":
                 schedule_note = "\U0001f4c5 Заплановане відключення"
@@ -1272,7 +907,7 @@ async def dashboard(key: str = Query("")):
         ev_date_str = ev_kyiv.strftime("%Y-%m-%d")
         ev_grid = None
         for dk in ("today", "tomorrow"):
-            d = _schedule_cache.get(dk) if _schedule_cache else None
+            d = dtek.schedule_cache.get(dk) if dtek.schedule_cache else None
             if d and d["date"] == ev_date_str:
                 ev_grid = d["grid"]
                 break
@@ -1297,7 +932,7 @@ async def dashboard(key: str = Query("")):
                     if best_dev is None or abs(d2) < abs(best_dev):
                         best_dev = d2
             if best_dev is not None and abs(best_dev) <= 30:
-                sched_tag = f'\U0001f4c5 {_fmt_deviation(best_dev)}'
+                sched_tag = f'\U0001f4c5 {dtek.fmt_deviation(best_dev)}'
             elif best_dev is not None:
                 sched_tag = f'<span style="color:#fbbf24">\u26a1позапл.</span>'
             elif is_down_ev:
@@ -1390,9 +1025,9 @@ async def dashboard(key: str = Query("")):
         if i == 0:
             dur_sec = int(time.time() - ae["ts"])
             dur_fmt = _format_duration(dur_sec)
-            if ae["event"] == "alert_on" and _alert_cache.get("active"):
+            if ae["event"] == "alert_on" and dtek.alert_cache.get("active"):
                 dur_str = f"{dur_fmt} \u25b8"
-            elif ae["event"] == "alert_off" and not _alert_cache.get("active"):
+            elif ae["event"] == "alert_off" and not dtek.alert_cache.get("active"):
                 dur_str = f"{dur_fmt} \u25b8"
             else:
                 dur_str = dur_fmt
@@ -1406,14 +1041,14 @@ async def dashboard(key: str = Query("")):
 
     # ─── DTEK schedule grid ───
     schedule_html = ""
-    if _schedule_cache:
+    if dtek.schedule_cache:
         now_kyiv = datetime.now(UA_TZ)
         current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
         sched_rows = ""
         text_blocks = ""
         today_date = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = _schedule_cache.get(day_key)
+            day = dtek.schedule_cache.get(day_key)
             if not day:
                 continue
             date_str = day["date"][:10] if day["date"] else ""
@@ -1427,7 +1062,7 @@ async def dashboard(key: str = Query("")):
                     cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
                 cells += f'<td class="{cls}"></td>'
             sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
-            text_blocks += _grid_text_summary(grid, date_str, day_label)
+            text_blocks += dtek.grid_text_summary(grid, date_str, day_label)
             if day_key == "today":
                 today_date = date_str
 
@@ -1437,7 +1072,7 @@ async def dashboard(key: str = Query("")):
 
         mob_grids = []
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = _schedule_cache.get(day_key)
+            day = dtek.schedule_cache.get(day_key)
             if not day:
                 continue
             mob_grids.append((day_key, day_label, day["date"][:10], day["grid"]))
@@ -1465,7 +1100,7 @@ async def dashboard(key: str = Query("")):
 
         history_html = ""
         for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = _schedule_cache.get(day_key)
+            day = dtek.schedule_cache.get(day_key)
             if not day:
                 continue
             d_str = day["date"][:10]
@@ -1479,7 +1114,7 @@ async def dashboard(key: str = Query("")):
                 if prev_grid is None:
                     diff_text = "Перший графік"
                 else:
-                    diff_text = _describe_grid_diff(prev_grid, h["grid"])
+                    diff_text = dtek.describe_grid_diff(prev_grid, h["grid"])
                 prev_grid = h["grid"]
                 hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
             det_id = f"sched_hist_{day_key}_details"
@@ -1540,15 +1175,15 @@ async def dashboard(key: str = Query("")):
 
     # ─── Alert + Weather ───
     alert_html = ""
-    if _alert_cache:
-        if _alert_cache.get("active"):
+    if dtek.alert_cache:
+        if dtek.alert_cache.get("active"):
             alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>'
         else:
             alert_html = '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
 
     weather_html = ""
-    if _weather_cache and _weather_cache.get("temp") is not None:
-        w = _weather_cache
+    if dtek.weather_cache and dtek.weather_cache.get("temp") is not None:
+        w = dtek.weather_cache
         temp = w["temp"]
         sign = "+" if temp > 0 else ""
         emoji = WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
@@ -1577,7 +1212,7 @@ async def dashboard(key: str = Query("")):
             try:
                 dt = datetime.strptime(d, "%Y-%m-%d")
                 date_fmt = dt.strftime("%d.%m.%Y")
-                weekday = _UA_WEEKDAYS[dt.weekday()]
+                weekday = dtek.UA_WEEKDAYS[dt.weekday()]
             except Exception:
                 date_fmt = d
                 weekday = ""
