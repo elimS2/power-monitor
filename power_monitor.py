@@ -1125,7 +1125,9 @@ def _build_update_fragments() -> dict:
         last_hb_age = int(time.time() - hb[0]["ts"])
         mk_online = last_hb_age < STALE_THRESHOLD_SEC
         mk_cls = "up" if mk_online else "down"
-        mk_text = f"Роутер: online ({last_hb_age}с тому)" if mk_online else f"Роутер: OFFLINE ({last_hb_age // 60} хв тому)"
+        ts_abs = datetime.fromtimestamp(hb[0]["ts"], tz=UA_TZ).strftime("%Y.%m.%d %H:%M:%S")
+        age_str = f"{last_hb_age}с тому" if mk_online else f"{last_hb_age // 60} хв тому"
+        mk_text = f"Роутер: online ({age_str}, {ts_abs})" if mk_online else f"Роутер: OFFLINE ({age_str}, {ts_abs})"
 
     duration_text = _power_status_text() if (hb or ev) else ""
     schedule_note = ""
@@ -1560,7 +1562,9 @@ async def dashboard(key: str = Query("")):
         last_hb_age = int(time.time() - hb[0]["ts"])
         mk_online = last_hb_age < STALE_THRESHOLD_SEC
         mk_cls = "up" if mk_online else "down"
-        mk_text = f"Роутер: online ({last_hb_age}с тому)" if mk_online else f"Роутер: OFFLINE ({last_hb_age // 60} хв тому)"
+        ts_abs = datetime.fromtimestamp(hb[0]["ts"], tz=UA_TZ).strftime("%Y.%m.%d %H:%M:%S")
+        age_str = f"{last_hb_age}с тому" if mk_online else f"{last_hb_age // 60} хв тому"
+        mk_text = f"Роутер: online ({age_str}, {ts_abs})" if mk_online else f"Роутер: OFFLINE ({age_str}, {ts_abs})"
     else:
         mk_cls = "down"
         mk_text = "Роутер: немає даних"
