@@ -2233,25 +2233,6 @@ updClocks(); setInterval(updClocks,1000);
 <details id="hb_details">
 <summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
 <div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div>
-<script>
-(function(){{
-  var age0={last_hb_age if hb else -1};
-  if(age0<0) return;
-  var stale={STALE_THRESHOLD_SEC};
-  var t0=Date.now();
-  setInterval(function(){{
-    var age=age0+Math.floor((Date.now()-t0)/1000);
-    var el=document.getElementById('mkStatus');
-    if(age<stale){{
-      el.className='mk up';
-      el.textContent='Роутер: online ('+age+'с тому)';
-    }}else{{
-      el.className='mk down';
-      el.textContent='Роутер: OFFLINE ('+Math.floor(age/60)+' хв тому)';
-    }}
-  }},1000);
-}})();
-</script>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
 <tbody id="pm-hb-tbody">{hb_rows}</tbody></table>
