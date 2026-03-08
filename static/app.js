@@ -76,6 +76,9 @@
   updScheduleNow();
   setInterval(updScheduleNow, 10000);
 
+  var schedDetails = document.getElementById('sched_details');
+  if (schedDetails) schedDetails.addEventListener('toggle', updScheduleNow);
+
   // Details localStorage persistence
   document.querySelectorAll('details[data-ls-key]').forEach(function(d) {
     var key = d.getAttribute('data-ls-key');
@@ -159,6 +162,7 @@
             el.innerHTML = d.pm_status_block;
             var isDown = !!el.querySelector('.status.down');
             document.body.setAttribute('data-pm-down', isDown ? '1' : '0');
+            updScheduleNow();
           }
         }
         if (d.pm_weather !== undefined) { el = document.getElementById('pm-weather'); if (el) el.innerHTML = d.pm_weather; }

@@ -1117,5 +1117,5 @@ async def dashboard(key: str = Query("")):
 </div>
 
 <div class="ver">v {GIT_COMMIT}</div>
-<script src="/app.js"></script>
+<script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
