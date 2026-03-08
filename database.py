@@ -168,6 +168,16 @@ def recent_events(n: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def events_in_range(ts_start: float, ts_end: float) -> list[dict]:
+    """Get power_events in [ts_start, ts_end] ordered by ts ascending."""
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT event, ts FROM power_events WHERE ts >= ? AND ts <= ? ORDER BY ts",
+            (ts_start, ts_end),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def save_alert_event(event: str):
     with _conn() as db:
         db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))
@@ -292,6 +302,119 @@ def deye_daily_load_kwh() -> list[dict]:
 
         result.append({"date": date_str, "kwh": kwh, "samples": len(day_rows), "hours": hours_data})
     return result
+
+
+def _integrate_battery_power(rows: list, positive_only: bool) -> float:
+    """Integrate battery_power_w. positive_only=True → charge kWh, False → discharge kWh."""
+    total = 0.0
+    for i in range(1, len(rows)):
+        p_prev = rows[i - 1].get("battery_power_w") or 0
+        p_curr = rows[i].get("battery_power_w") or 0
+        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
+        if positive_only:
+            avg = max(0, (p_prev + p_curr) / 2)
+        else:
+            avg = min(0, (p_prev + p_curr) / 2)
+        total += abs(avg) * dt_h / 1000  # W -> kWh
+    return total
+
+
+def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
+    """
+    Compute discharge (during outage) and charge (after power returns) episodes.
+    Returns (daily_list, monthly_summary).
+    daily_list: [{"date": str, "discharges": [{"soc_from", "soc_to", "kwh"}], "charges": [...], "cycles": int}]
+    monthly_summary: {"cycles": int, "charge_kwh": float, "discharge_kwh": float}
+    """
+    now = datetime.now(UA_TZ)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ts_start = month_start.timestamp()
+    ts_end = time.time()
+    CHARGE_WINDOW_H = 6  # hours after "up" to capture charging
+
+    events = events_in_range(ts_start, ts_end)
+    if not events:
+        return [], {"cycles": 0, "charge_kwh": 0.0, "discharge_kwh": 0.0}
+
+    with _conn() as db:
+        deye_rows = db.execute(
+            """SELECT battery_soc, battery_power_w, ts FROM deye_log
+               WHERE ts >= ? AND ts <= ? ORDER BY ts""",
+            (ts_start, ts_end + CHARGE_WINDOW_H * 3600),
+        ).fetchall()
+    deye_rows = [dict(r) for r in deye_rows]
+
+    by_date: dict[str, list] = {"discharges": [], "charges": []}
+
+    i = 0
+    while i < len(events):
+        if events[i]["event"] != "down":
+            i += 1
+            continue
+        down_ts = events[i]["ts"]
+        # find next "up"
+        up_ts = None
+        j = i + 1
+        while j < len(events):
+            if events[j]["event"] == "up":
+                up_ts = events[j]["ts"]
+                break
+            if events[j]["event"] == "down":
+                break
+            j += 1
+        i = j
+
+        if up_ts is None:
+            continue
+
+        # Discharge episode: deye_log between down_ts and up_ts
+        ep_rows = [r for r in deye_rows if down_ts <= r["ts"] <= up_ts]
+        if len(ep_rows) >= 2:
+            soc_from = ep_rows[0].get("battery_soc")
+            soc_to = ep_rows[-1].get("battery_soc")
+            kwh = round(_integrate_battery_power(ep_rows, positive_only=False), 2)
+            date_str = datetime.fromtimestamp(down_ts, tz=UA_TZ).strftime("%Y-%m-%d")
+            by_date["discharges"].append({
+                "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
+                "ts_start": down_ts, "ts_end": up_ts,
+            })
+
+        # Charge episode: deye_log from up_ts for CHARGE_WINDOW_H
+        charge_end = min(up_ts + CHARGE_WINDOW_H * 3600, ts_end + 3600)
+        ch_rows = [r for r in deye_rows if up_ts <= r["ts"] <= charge_end]
+        if len(ch_rows) >= 2:
+            soc_from = ch_rows[0].get("battery_soc")
+            soc_to = ch_rows[-1].get("battery_soc")
+            kwh = round(_integrate_battery_power(ch_rows, positive_only=True), 2)
+            if kwh > 0:
+                date_str = datetime.fromtimestamp(up_ts, tz=UA_TZ).strftime("%Y-%m-%d")
+                by_date["charges"].append({
+                    "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
+                    "ts_start": up_ts, "ts_end": ch_rows[-1]["ts"],
+                })
+
+    # Group by date
+    all_dates = set(
+        [d["date"] for d in by_date["discharges"]] + [d["date"] for d in by_date["charges"]]
+    )
+    daily = []
+    for date_str in sorted(all_dates):
+        discharges = [d for d in by_date["discharges"] if d["date"] == date_str]
+        charges = [d for d in by_date["charges"] if d["date"] == date_str]
+        cycles = max(len(discharges), len(charges))
+        daily.append({
+            "date": date_str,
+            "discharges": discharges,
+            "charges": charges,
+            "cycles": cycles,
+        })
+
+    monthly = {
+        "cycles": sum(d["cycles"] for d in daily),
+        "charge_kwh": round(sum(c["kwh"] for c in by_date["charges"]), 1),
+        "discharge_kwh": round(sum(d["kwh"] for d in by_date["discharges"]), 1),
+    }
+    return daily, monthly
 
 
 def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
