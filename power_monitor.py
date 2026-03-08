@@ -2191,11 +2191,14 @@ updClocks(); setInterval(updClocks,1000);
     }});
   }}
   document.body.classList.add('pm-ready');
-  setInterval(function(){{
-    sessionStorage.setItem(RESTORE_KEY,String(window.scrollY));
-    document.body.classList.remove('pm-ready');
-    setTimeout(function(){{ location.reload(); }},150);
-  }},10000);
+  var isMobile=window.matchMedia('(max-width:768px)').matches;
+  if(isMobile){{
+    setInterval(function(){{
+      sessionStorage.setItem(RESTORE_KEY,String(window.scrollY));
+      document.body.classList.remove('pm-ready');
+      setTimeout(function(){{ location.reload(); }},150);
+    }},10000);
+  }}
 }})();
 </script>
 
