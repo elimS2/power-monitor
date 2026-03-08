@@ -325,51 +325,27 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Power Monitor", lifespan=lifespan)
 
 
-@app.get("/style.css")
-async def serve_css():
-    return FileResponse(
-        _STATIC_DIR / "style.css",
-        media_type="text/css",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
-
-
-@app.get("/app.js")
-async def serve_js():
-    return FileResponse(
-        _STATIC_DIR / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
-
-
 def _check_key(key: str):
     if key not in API_KEYS:
         raise HTTPException(403, "forbidden")
 
 
-@app.get("/api/heartbeat")
-async def ep_heartbeat(
-    plug204: int = Query(0),
-    plug175: int = Query(0),
-    key: str = Query(""),
-):
-    _check_key(key)
-    save_heartbeat(plug204, plug175)
-    kv_set("stale_alerted", "0")
-    log.debug("HB plug204=%d plug175=%d", plug204, plug175)
-    await analyze()
-    return {"ok": True}
+# Include API routers
+from api import (
+    dashboard_router,
+    deye_router,
+    debug_router,
+    heartbeat_router,
+    static_router,
+    telegram_router,
+)
 
-
-@app.get("/api/status")
-async def ep_status(key: str = Query("")):
-    _check_key(key)
-    return {
-        "power_down": kv_get("power_down") == "1",
-        "heartbeats": recent_heartbeats(20),
-        "events": recent_events(30),
-    }
+app.include_router(heartbeat_router)
+app.include_router(dashboard_router)
+app.include_router(debug_router)
+app.include_router(telegram_router)
+app.include_router(deye_router)
+app.include_router(static_router)
 
 
 def _build_update_fragments() -> dict:
@@ -553,158 +529,6 @@ def _build_update_fragments() -> dict:
     }
 
 
-@app.get("/api/dashboard-fragments")
-def ep_dashboard_fragments(key: str = Query("")):
-    _check_key(key)
-    return JSONResponse(
-        _build_update_fragments(),
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/api/debug-webhooks")
-def ep_debug_webhooks(key: str = Query(""), limit: int = Query(20)):
-    _check_key(key)
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT id, chat_id, text, ts FROM webhook_log ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return [
-        {"id": r["id"], "chat_id": r["chat_id"], "text": r["text"],
-         "ts": datetime.fromtimestamp(r["ts"], UA_TZ).strftime("%Y-%m-%d %H:%M:%S")}
-        for r in rows
-    ]
-
-
-@app.get("/api/debug-boiler-parse")
-def ep_debug_boiler_parse(key: str = Query(""), text: str = Query("")):
-    _check_key(key)
-    result = parse_boiler_schedule(text)
-    return {"input_len": len(text), "parsed": result}
-
-
-def _check_admin(key: str):
-    _check_key(key)
-    if API_KEYS.get(key) != "admin":
-        raise HTTPException(403, "admin only")
-
-
-@app.get("/api/heartbeats")
-def ep_heartbeats(
-    key: str = Query(""),
-    from_ts: float = Query(0),
-    to_ts: float = Query(0),
-    limit: int = Query(500),
-):
-    _check_admin(key)
-    with _conn() as db:
-        if from_ts and to_ts:
-            rows = db.execute(
-                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts BETWEEN ? AND ? ORDER BY ts",
-                (from_ts, to_ts),
-            ).fetchall()
-        elif from_ts:
-            rows = db.execute(
-                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts >= ? ORDER BY ts LIMIT ?",
-                (from_ts, limit),
-            ).fetchall()
-        elif to_ts:
-            rows = db.execute(
-                "SELECT plug204, plug175, ts FROM heartbeats WHERE ts <= ? ORDER BY ts DESC LIMIT ?",
-                (to_ts, limit),
-            ).fetchall()
-        else:
-            rows = db.execute(
-                "SELECT plug204, plug175, ts FROM heartbeats ORDER BY ts DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-    return [dict(r) for r in rows]
-
-
-@app.get("/api/events")
-def ep_events(
-    key: str = Query(""),
-    limit: int = Query(50),
-):
-    _check_admin(key)
-    return recent_events(limit)
-
-
-@app.post("/api/test-telegram")
-async def ep_test_telegram(key: str = Query("")):
-    _check_key(key)
-    target = TG_TEST_CHAT_ID or TG_CHAT_ID
-    status = _power_status_text()
-    await tg_send(status, chat_id=target)
-    return {"ok": True, "sent_to": target}
-
-
-@app.post("/api/deye-heartbeat")
-async def ep_deye_heartbeat(request: Request, key: str = Query("")):
-    """Receive Deye inverter data from local script. Requires API key."""
-    _check_key(key)
-    data = await request.json()
-    save_deye_log(
-        load_power_w=data.get("load_power_w"),
-        load_l1_w=data.get("load_l1_w"),
-        load_l2_w=data.get("load_l2_w"),
-        load_l3_w=data.get("load_l3_w"),
-        grid_v_l1=data.get("grid_v_l1"),
-        grid_v_l2=data.get("grid_v_l2"),
-        grid_v_l3=data.get("grid_v_l3"),
-        battery_soc=data.get("battery_soc"),
-        battery_power_w=data.get("battery_power_w"),
-        battery_voltage=data.get("battery_voltage"),
-    )
-    return {"ok": True}
-
-
-@app.post("/api/tg-webhook")
-async def tg_webhook(request: Request):
-    secret = request.headers.get("x-telegram-bot-api-secret-token", "")
-    if secret != TG_WEBHOOK_SECRET:
-        raise HTTPException(403, "forbidden")
-    data = await request.json()
-
-    msg = data.get("message") or data.get("channel_post") or {}
-    text = (msg.get("text") or "").strip()
-    chat = msg.get("chat") or {}
-    chat_id = chat.get("id")
-    if not chat_id:
-        return {"ok": True}
-    cid = str(chat_id)
-
-    log.info("TG webhook: chat=%s text_len=%d text_preview=%r", cid, len(text), text[:200])
-
-    with _conn() as db:
-        db.execute(
-            "INSERT INTO webhook_log(chat_id, text, raw_json, ts) VALUES(?,?,?,?)",
-            (cid, text, json.dumps(data, ensure_ascii=False), time.time()),
-        )
-
-    fwd = msg.get("forward_origin") or msg.get("forward_from_chat") or {}
-    fwd_text = text
-
-    boiler_parsed = parse_boiler_schedule(fwd_text)
-    if boiler_parsed:
-        for entry in boiler_parsed:
-            save_boiler_schedule(entry["date"], entry["intervals"], fwd_text)
-        log.info("Boiler schedule parsed: %d day(s) from chat %s", len(boiler_parsed), cid)
-        return {"ok": True}
-
-    if text == "/start":
-        await tg_send(
-            "Привіт! Натисни /status або скористайся меню, щоб дізнатися чи є світло.",
-            chat_id=cid,
-        )
-    elif text == "/status":
-        status = _power_status_text()
-        await tg_send(status, chat_id=cid)
-
-    return {"ok": True}
-
-
 def _format_duration(seconds: int) -> str:
     days, rem = divmod(seconds, 86400)
     hours, rem = divmod(rem, 3600)
@@ -747,67 +571,6 @@ def _ts_fmt(ts: float) -> str:
 
 def _ts_fmt_full(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-
-_ALLOWED_ICONS = {p.name for p in _ICONS_DIR.glob("icon_*.png")}
-
-@app.get("/icons/{name}")
-async def serve_icon(name: str):
-    if name not in _ALLOWED_ICONS:
-        raise HTTPException(404)
-    data = (_ICONS_DIR / name).read_bytes()
-    return Response(
-        content=data,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
-
-
-@app.get("/manifest.json")
-async def pwa_manifest(key: str = Query("")):
-    _check_key(key)
-    return JSONResponse(
-        {
-            "name": "Power Monitor — ЗК 6",
-            "short_name": "Світло ЗК6",
-            "start_url": f"/?key={key}",
-            "scope": "/",
-            "display": "standalone",
-            "background_color": "#0f172a",
-            "theme_color": "#0f172a",
-            "icons": [
-                {"src": "/icons/icon_on.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
-            ],
-        },
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.get("/sw.js")
-async def service_worker():
-    sw_code = """\
-const CACHE = 'pm-v2';
-const PRECACHE = ['/icons/icon_on.png', '/icons/icon_off.png'];
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
-  self.skipWaiting();
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(self.clients.claim());
-});
-self.addEventListener('fetch', e => {
-  if (e.request.mode === 'navigate') return;
-  if (e.request.url.includes('dashboard-fragments')) return;
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
-});
-"""
-    return Response(
-        content=sw_code,
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
-    )
 
 
 @app.get("/", response_class=HTMLResponse)
