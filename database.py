@@ -1,0 +1,347 @@
+"""
+Power Monitor — database operations (SQLite).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+import sqlite3
+import time
+from datetime import datetime
+
+from config import CLEANUP_KEEP_DAYS, DB_PATH, UA_TZ
+
+log = logging.getLogger("power_monitor")
+
+# Boiler schedule parser constants
+_UA_MONTHS = {
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
+    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
+    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
+}
+_BOILER_LINE_RE = re.compile(
+    r"(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s*:\s*([\d:,\s\-–]+)",
+)
+_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
+
+
+def _conn() -> sqlite3.Connection:
+    c = sqlite3.connect(str(DB_PATH))
+    c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
+    return c
+
+
+def init_db():
+    with _conn() as db:
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS heartbeats (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                plug204 INTEGER NOT NULL,
+                plug175 INTEGER NOT NULL,
+                ts      REAL    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hb_ts ON heartbeats(ts);
+
+            CREATE TABLE IF NOT EXISTS power_events (
+                id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                event TEXT    NOT NULL,
+                ts    REAL   NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS kv (
+                key TEXT PRIMARY KEY,
+                val TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tg_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT    NOT NULL,
+                text    TEXT    NOT NULL,
+                status  INTEGER NOT NULL,
+                ts      REAL    NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS schedule_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_date TEXT NOT NULL,
+                grid_json   TEXT NOT NULL,
+                fetched_at  REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
+
+            CREATE TABLE IF NOT EXISTS boiler_schedule (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_date TEXT NOT NULL,
+                intervals   TEXT NOT NULL,
+                source_text TEXT NOT NULL,
+                parsed_at   REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_bs_date ON boiler_schedule(target_date);
+
+            CREATE TABLE IF NOT EXISTS webhook_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT    NOT NULL,
+                text    TEXT    NOT NULL,
+                raw_json TEXT   NOT NULL,
+                ts      REAL   NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS weather_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                temp        REAL,
+                humidity    REAL,
+                wind        REAL,
+                code        INTEGER,
+                t_min       REAL,
+                t_max       REAL,
+                ts          REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_wl_ts ON weather_log(ts);
+
+            CREATE TABLE IF NOT EXISTS alert_events (
+                id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                event TEXT    NOT NULL,
+                ts    REAL   NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ae_ts ON alert_events(ts);
+
+            CREATE TABLE IF NOT EXISTS deye_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                load_power_w REAL,
+                load_l1_w    REAL,
+                load_l2_w    REAL,
+                load_l3_w    REAL,
+                grid_v_l1    REAL,
+                grid_v_l2    REAL,
+                grid_v_l3    REAL,
+                battery_soc  REAL,
+                battery_power_w REAL,
+                battery_voltage REAL,
+                ts           REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
+        """)
+
+
+def kv_get(key: str, default: str = "") -> str:
+    with _conn() as db:
+        row = db.execute("SELECT val FROM kv WHERE key=?", (key,)).fetchone()
+        return row["val"] if row else default
+
+
+def kv_set(key: str, val: str):
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
+            (key, val),
+        )
+
+
+def save_heartbeat(p204: int, p175: int):
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO heartbeats(plug204, plug175, ts) VALUES(?,?,?)",
+            (p204, p175, time.time()),
+        )
+
+
+def recent_heartbeats(n: int) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT plug204, plug175, ts FROM heartbeats ORDER BY ts DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_event(event: str):
+    with _conn() as db:
+        db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", (event, time.time()))
+
+
+def recent_events(n: int = 50) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT event, ts FROM power_events ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_alert_event(event: str):
+    with _conn() as db:
+        db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))
+
+
+def recent_alert_events(n: int = 30) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT event, ts FROM alert_events ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_deye_log(
+    load_power_w: float | None = None,
+    load_l1_w: float | None = None,
+    load_l2_w: float | None = None,
+    load_l3_w: float | None = None,
+    grid_v_l1: float | None = None,
+    grid_v_l2: float | None = None,
+    grid_v_l3: float | None = None,
+    battery_soc: float | None = None,
+    battery_power_w: float | None = None,
+    battery_voltage: float | None = None,
+):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO deye_log (
+                load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_v_l1, grid_v_l2, grid_v_l3,
+                battery_soc, battery_power_w, battery_voltage, ts
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_v_l1, grid_v_l2, grid_v_l3,
+                battery_soc, battery_power_w, battery_voltage, time.time(),
+            ),
+        )
+
+
+def recent_deye_log(n: int = 100) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                      grid_v_l1, grid_v_l2, grid_v_l3,
+                      battery_soc, battery_power_w, battery_voltage, ts
+               FROM deye_log ORDER BY id DESC LIMIT ?""",
+            (n,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
+    """Get most recent deye_log entry where at least one phase has non-zero voltage."""
+    rows = recent_deye_log(limit)
+    for r in rows:
+        v1 = r.get("grid_v_l1")
+        v2 = r.get("grid_v_l2")
+        v3 = r.get("grid_v_l3")
+        if (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0):
+            return {"grid_v_l1": v1, "grid_v_l2": v2, "grid_v_l3": v3}
+    return None
+
+
+def first_heartbeat_ts() -> float:
+    with _conn() as db:
+        row = db.execute("SELECT ts FROM heartbeats ORDER BY id ASC LIMIT 1").fetchone()
+        return row["ts"] if row else 0.0
+
+
+def cleanup_old():
+    cutoff = time.time() - CLEANUP_KEEP_DAYS * 86400
+    with _conn() as db:
+        deleted = db.execute("DELETE FROM heartbeats WHERE ts < ?", (cutoff,)).rowcount
+    if deleted:
+        log.info("Cleaned up %d old heartbeats", deleted)
+
+
+def save_tg_log(chat_id: str, text: str, status: int):
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO tg_log(chat_id, text, status, ts) VALUES(?,?,?,?)",
+            (chat_id, text, status, time.time()),
+        )
+
+
+def recent_tg_log(n: int = 20) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT chat_id, text, status, ts FROM tg_log ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_boiler_schedule(target_date: str, intervals: list, source_text: str):
+    intervals_json = json.dumps(intervals, ensure_ascii=False)
+    with _conn() as db:
+        row = db.execute(
+            "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
+            (target_date,),
+        ).fetchone()
+        if row and row["intervals"] == intervals_json:
+            return
+        db.execute(
+            "INSERT INTO boiler_schedule(target_date, intervals, source_text, parsed_at) VALUES(?,?,?,?)",
+            (target_date, intervals_json, source_text, time.time()),
+        )
+        log.info("Boiler schedule saved for %s: %s", target_date, intervals_json)
+
+
+def boiler_schedule_for_dates(dates: list[str]) -> dict[str, list]:
+    """Return {date: [[start,end], ...]} for the given dates."""
+    result: dict[str, list] = {}
+    with _conn() as db:
+        for d in dates:
+            row = db.execute(
+                "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
+                (d,),
+            ).fetchone()
+            if row:
+                result[d] = json.loads(row["intervals"])
+    return result
+
+
+def _save_schedule_if_changed(target_date: str, grid: list[str]):
+    """Save grid to schedule_history only if it differs from the latest entry for that date."""
+    grid_json = json.dumps(grid)
+    with _conn() as db:
+        row = db.execute(
+            "SELECT grid_json FROM schedule_history WHERE target_date=? ORDER BY id DESC LIMIT 1",
+            (target_date,),
+        ).fetchone()
+        if row and row["grid_json"] == grid_json:
+            return
+        db.execute(
+            "INSERT INTO schedule_history(target_date, grid_json, fetched_at) VALUES(?,?,?)",
+            (target_date, grid_json, time.time()),
+        )
+        log.info("Schedule changed for %s — saved to history", target_date)
+
+
+def schedule_history_for_date(target_date: str) -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT grid_json, fetched_at FROM schedule_history WHERE target_date=? ORDER BY id ASC",
+            (target_date,),
+        ).fetchall()
+    return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
+
+
+def parse_boiler_schedule(text: str) -> list[dict]:
+    """Parse Oselya Service boiler/generator schedule from message text.
+
+    Returns [{"date": "2026-03-02", "intervals": [["16:00","20:00"], ...]}]
+    """
+    lower = text.lower()
+    if "котельн" not in lower and "генератор" not in lower:
+        log.info("Boiler parse: keywords 'котельн/генератор' not found in: %r", text[:200])
+        return []
+    year = datetime.now(UA_TZ).year
+    results = []
+    for m in _BOILER_LINE_RE.finditer(lower):
+        day = int(m.group(1))
+        month_name = m.group(2)
+        month = _UA_MONTHS.get(month_name)
+        if not month:
+            log.info("Boiler parse: unknown month %r", month_name)
+            continue
+        ranges_str = m.group(3)
+        intervals = _TIME_RANGE_RE.findall(ranges_str)
+        if not intervals:
+            log.info("Boiler parse: no time ranges in %r", ranges_str)
+            continue
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
+    log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
+    return results

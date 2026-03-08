@@ -11,10 +11,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import re
-import subprocess
 import logging
 import os
 import sqlite3
@@ -27,51 +24,56 @@ import httpx
 from fastapi import FastAPI, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-# ─── Config (override via environment variables) ─────────────
+from config import (
+    ALERT_API_URL,
+    ALERT_REGION_IDS,
+    API_KEYS,
+    AVATAR_ON_START,
+    DASHBOARD_SECTION_ORDER,
+    DELETE_PHOTO_MSG,
+    DTEK_API_URL,
+    DTEK_QUEUE,
+    DTEK_REGION,
+    DB_PATH,
+    DEYE_BATTERY_KWH,
+    GIT_COMMIT,
+    OUTAGE_CONFIRM_COUNT,
+    STALE_THRESHOLD_SEC,
+    TG_BOT_TOKEN,
+    TG_CHAT_ID,
+    TG_TEST_CHAT_ID,
+    TG_WEBHOOK_SECRET,
+    UA_TZ,
+    WEBHOOK_HOST,
+    WEATHER_URL,
+    WMO_EMOJI,
+)
+from database import (
+    boiler_schedule_for_dates,
+    cleanup_old,
+    first_heartbeat_ts,
+    init_db,
+    kv_get,
+    kv_set,
+    last_nonzero_grid_voltage,
+    parse_boiler_schedule,
+    recent_alert_events,
+    recent_deye_log,
+    recent_events,
+    recent_heartbeats,
+    recent_tg_log,
+    save_alert_event,
+    save_boiler_schedule,
+    save_deye_log,
+    save_event,
+    save_heartbeat,
+    save_tg_log,
+    schedule_history_for_date,
+    _conn,
+    _save_schedule_if_changed,
+)
 
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_TOKEN")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID", "YOUR_CHAT_ID")
-TG_TEST_CHAT_ID = os.getenv("TG_TEST_CHAT_ID", "")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "")
-AVATAR_ON_START = os.getenv("AVATAR_ON_START", "1") == "1"
-DELETE_PHOTO_MSG = os.getenv("DELETE_PHOTO_MSG", "0") == "1"
-TG_WEBHOOK_SECRET = hashlib.sha256(TG_BOT_TOKEN.encode()).hexdigest()[:32]
-def _parse_keys(raw: str) -> dict:
-    """Parse 'label:key,label2:key2' or plain 'key1,key2' into {key: label}."""
-    result = {}
-    for entry in raw.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-        if ":" in entry:
-            label, key = entry.split(":", 1)
-            result[key.strip()] = label.strip()
-        else:
-            result[entry] = ""
-    return result
-
-API_KEYS = _parse_keys(os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")))
-DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
-
-# Both plugs must be dead for this many consecutive heartbeats → outage
-OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
-
-# No heartbeat for this long → router/internet alert
-STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", "300"))
-
-# Keep heartbeat data for this many days
-CLEANUP_KEEP_DAYS = 90
-
-# Kyiv timezone offset for display (UTC+2 / UTC+3 summer)
-UA_TZ = timezone(timedelta(hours=2))
-
-# ─── DTEK schedule config ─────────────────────────────────────
-DTEK_API_URL = os.getenv("DTEK_API_URL", "https://dtek-api.svitlo-proxy.workers.dev/")
-DTEK_REGION = os.getenv("DTEK_REGION", "kiivska-oblast")
-DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
-
-# Deye battery capacity (kWh) for energy stats in summary. 0 = disabled.
-DEYE_BATTERY_KWH = float(os.getenv("DEYE_BATTERY_KWH", "0") or "0")
+# ─── Runtime caches ────────────────────────────────────────────
 
 _schedule_cache: dict = {}
 _schedule_fetched_at: float = 0
@@ -82,15 +84,6 @@ _weather_fetched_at: float = 0
 _alert_cache: dict = {}
 _alert_fetched_at: float = 0
 
-ALERT_API_URL = "https://alerts.com.ua/api/states"
-ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
-
-# Default order of dashboard sections (user can reorder via drag-and-drop)
-DASHBOARD_SECTION_ORDER = [
-    "sched_details", "boiler_details", "ev_details", "links_details",
-    "alert_ev_details", "tg_details", "deye_details", "hb_details",
-    "legend_details", "avatars_details",
-]
 
 def _wrap_dashboard_section(section_id: str, content: str) -> str:
     """Wrap section HTML in draggable container. Returns empty string if content empty."""
@@ -98,56 +91,6 @@ def _wrap_dashboard_section(section_id: str, content: str) -> str:
         return ""
     return f'<div class="dashboard-section" data-section-id="{section_id}"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>{content}</div>'
 
-WEATHER_LAT = 50.5114
-WEATHER_LON = 30.7911
-WEATHER_URL = (
-    f"https://api.open-meteo.com/v1/forecast"
-    f"?latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
-    f"&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
-    f"&daily=temperature_2m_min,temperature_2m_max&forecast_days=1"
-    f"&timezone=Europe%2FKyiv"
-)
-
-_WMO_EMOJI = {
-    0: "\u2600\ufe0f",     # clear sky
-    1: "\U0001f324\ufe0f", # mainly clear
-    2: "\u26c5",            # partly cloudy
-    3: "\u2601\ufe0f",     # overcast
-    45: "\U0001f32b\ufe0f", # fog
-    48: "\U0001f32b\ufe0f", # depositing rime fog
-    51: "\U0001f326\ufe0f", # light drizzle
-    53: "\U0001f326\ufe0f", # moderate drizzle
-    55: "\U0001f326\ufe0f", # dense drizzle
-    61: "\U0001f327\ufe0f", # slight rain
-    63: "\U0001f327\ufe0f", # moderate rain
-    65: "\U0001f327\ufe0f", # heavy rain
-    66: "\U0001f327\ufe0f", # light freezing rain
-    67: "\U0001f327\ufe0f", # heavy freezing rain
-    71: "\U0001f328\ufe0f", # slight snow
-    73: "\U0001f328\ufe0f", # moderate snow
-    75: "\U0001f328\ufe0f", # heavy snow
-    77: "\U0001f328\ufe0f", # snow grains
-    80: "\U0001f326\ufe0f", # slight rain showers
-    81: "\U0001f327\ufe0f", # moderate rain showers
-    82: "\U0001f327\ufe0f", # violent rain showers
-    85: "\U0001f328\ufe0f", # slight snow showers
-    86: "\U0001f328\ufe0f", # heavy snow showers
-    95: "\u26c8\ufe0f",     # thunderstorm
-    96: "\u26c8\ufe0f",     # thunderstorm with slight hail
-    99: "\u26c8\ufe0f",     # thunderstorm with heavy hail
-}
-
-def _git_version() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=Path(__file__).parent,
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-    except Exception:
-        return "unknown"
-
-GIT_COMMIT = _git_version()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -156,344 +99,7 @@ logging.basicConfig(
 log = logging.getLogger("power_monitor")
 
 
-# ─── Database ────────────────────────────────────────────────
-
-def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(str(DB_PATH))
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
-
-
-def init_db():
-    with _conn() as db:
-        db.executescript("""
-            CREATE TABLE IF NOT EXISTS heartbeats (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                plug204 INTEGER NOT NULL,
-                plug175 INTEGER NOT NULL,
-                ts      REAL    NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_hb_ts ON heartbeats(ts);
-
-            CREATE TABLE IF NOT EXISTS power_events (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                event TEXT    NOT NULL,
-                ts    REAL   NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS kv (
-                key TEXT PRIMARY KEY,
-                val TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS tg_log (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT    NOT NULL,
-                text    TEXT    NOT NULL,
-                status  INTEGER NOT NULL,
-                ts      REAL    NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS schedule_history (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                target_date TEXT NOT NULL,
-                grid_json   TEXT NOT NULL,
-                fetched_at  REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
-
-            CREATE TABLE IF NOT EXISTS boiler_schedule (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                target_date TEXT NOT NULL,
-                intervals   TEXT NOT NULL,
-                source_text TEXT NOT NULL,
-                parsed_at   REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_bs_date ON boiler_schedule(target_date);
-
-            CREATE TABLE IF NOT EXISTS webhook_log (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT    NOT NULL,
-                text    TEXT    NOT NULL,
-                raw_json TEXT   NOT NULL,
-                ts      REAL   NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS weather_log (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                temp        REAL,
-                humidity    REAL,
-                wind        REAL,
-                code        INTEGER,
-                t_min       REAL,
-                t_max       REAL,
-                ts          REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_wl_ts ON weather_log(ts);
-
-            CREATE TABLE IF NOT EXISTS alert_events (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                event TEXT    NOT NULL,
-                ts    REAL   NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_ae_ts ON alert_events(ts);
-
-            CREATE TABLE IF NOT EXISTS deye_log (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                load_power_w REAL,
-                load_l1_w    REAL,
-                load_l2_w    REAL,
-                load_l3_w    REAL,
-                grid_v_l1    REAL,
-                grid_v_l2    REAL,
-                grid_v_l3    REAL,
-                battery_soc  REAL,
-                battery_power_w REAL,
-                battery_voltage REAL,
-                ts           REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
-        """)
-
-
-def kv_get(key: str, default: str = "") -> str:
-    with _conn() as db:
-        row = db.execute("SELECT val FROM kv WHERE key=?", (key,)).fetchone()
-        return row["val"] if row else default
-
-
-def kv_set(key: str, val: str):
-    with _conn() as db:
-        db.execute(
-            "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
-            (key, val),
-        )
-
-
-def save_heartbeat(p204: int, p175: int):
-    with _conn() as db:
-        db.execute(
-            "INSERT INTO heartbeats(plug204, plug175, ts) VALUES(?,?,?)",
-            (p204, p175, time.time()),
-        )
-
-
-def recent_heartbeats(n: int) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT plug204, plug175, ts FROM heartbeats ORDER BY ts DESC LIMIT ?", (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def save_event(event: str):
-    with _conn() as db:
-        db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", (event, time.time()))
-
-
-def recent_events(n: int = 50) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT event, ts FROM power_events ORDER BY id DESC LIMIT ?", (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def save_alert_event(event: str):
-    with _conn() as db:
-        db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))
-
-
-def recent_alert_events(n: int = 30) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT event, ts FROM alert_events ORDER BY id DESC LIMIT ?", (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def save_deye_log(
-    load_power_w: float | None = None,
-    load_l1_w: float | None = None,
-    load_l2_w: float | None = None,
-    load_l3_w: float | None = None,
-    grid_v_l1: float | None = None,
-    grid_v_l2: float | None = None,
-    grid_v_l3: float | None = None,
-    battery_soc: float | None = None,
-    battery_power_w: float | None = None,
-    battery_voltage: float | None = None,
-):
-    with _conn() as db:
-        db.execute(
-            """INSERT INTO deye_log (
-                load_power_w, load_l1_w, load_l2_w, load_l3_w,
-                grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, ts
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                load_power_w, load_l1_w, load_l2_w, load_l3_w,
-                grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, time.time(),
-            ),
-        )
-
-
-def recent_deye_log(n: int = 100) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
-                      grid_v_l1, grid_v_l2, grid_v_l3,
-                      battery_soc, battery_power_w, battery_voltage, ts
-               FROM deye_log ORDER BY id DESC LIMIT ?""",
-            (n,),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
-    """Get most recent deye_log entry where at least one phase has non-zero voltage.
-    Returns dict with grid_v_l1, grid_v_l2, grid_v_l3 or None if no such entry in last `limit` rows.
-    """
-    rows = recent_deye_log(limit)
-    for r in rows:
-        v1 = r.get("grid_v_l1")
-        v2 = r.get("grid_v_l2")
-        v3 = r.get("grid_v_l3")
-        if (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0):
-            return {"grid_v_l1": v1, "grid_v_l2": v2, "grid_v_l3": v3}
-    return None
-
-
-def first_heartbeat_ts() -> float:
-    with _conn() as db:
-        row = db.execute("SELECT ts FROM heartbeats ORDER BY id ASC LIMIT 1").fetchone()
-        return row["ts"] if row else 0.0
-
-
-def cleanup_old():
-    cutoff = time.time() - CLEANUP_KEEP_DAYS * 86400
-    with _conn() as db:
-        deleted = db.execute("DELETE FROM heartbeats WHERE ts < ?", (cutoff,)).rowcount
-    if deleted:
-        log.info("Cleaned up %d old heartbeats", deleted)
-
-
-# ─── Telegram ────────────────────────────────────────────────
-
-def save_tg_log(chat_id: str, text: str, status: int):
-    with _conn() as db:
-        db.execute(
-            "INSERT INTO tg_log(chat_id, text, status, ts) VALUES(?,?,?,?)",
-            (chat_id, text, status, time.time()),
-        )
-
-
-def recent_tg_log(n: int = 20) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT chat_id, text, status, ts FROM tg_log ORDER BY id DESC LIMIT ?", (n,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def save_boiler_schedule(target_date: str, intervals: list, source_text: str):
-    intervals_json = json.dumps(intervals, ensure_ascii=False)
-    with _conn() as db:
-        row = db.execute(
-            "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
-            (target_date,),
-        ).fetchone()
-        if row and row["intervals"] == intervals_json:
-            return
-        db.execute(
-            "INSERT INTO boiler_schedule(target_date, intervals, source_text, parsed_at) VALUES(?,?,?,?)",
-            (target_date, intervals_json, source_text, time.time()),
-        )
-        log.info("Boiler schedule saved for %s: %s", target_date, intervals_json)
-
-
-def boiler_schedule_for_dates(dates: list[str]) -> dict[str, list]:
-    """Return {date: [[start,end], ...]} for the given dates."""
-    result: dict[str, list] = {}
-    with _conn() as db:
-        for d in dates:
-            row = db.execute(
-                "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
-                (d,),
-            ).fetchone()
-            if row:
-                result[d] = json.loads(row["intervals"])
-    return result
-
-
-def _save_schedule_if_changed(target_date: str, grid: list[str]):
-    """Save grid to schedule_history only if it differs from the latest entry for that date."""
-    grid_json = json.dumps(grid)
-    with _conn() as db:
-        row = db.execute(
-            "SELECT grid_json FROM schedule_history WHERE target_date=? ORDER BY id DESC LIMIT 1",
-            (target_date,),
-        ).fetchone()
-        if row and row["grid_json"] == grid_json:
-            return
-        db.execute(
-            "INSERT INTO schedule_history(target_date, grid_json, fetched_at) VALUES(?,?,?)",
-            (target_date, grid_json, time.time()),
-        )
-        log.info("Schedule changed for %s — saved to history", target_date)
-
-
-def schedule_history_for_date(target_date: str) -> list[dict]:
-    with _conn() as db:
-        rows = db.execute(
-            "SELECT grid_json, fetched_at FROM schedule_history WHERE target_date=? ORDER BY id ASC",
-            (target_date,),
-        ).fetchall()
-    return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
-
-
-_UA_MONTHS = {
-    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
-    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
-    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
-}
-
-_BOILER_LINE_RE = re.compile(
-    r"(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s*:\s*([\d:,\s\-–]+)",
-)
-_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
-
-
-def parse_boiler_schedule(text: str) -> list[dict]:
-    """Parse Oselya Service boiler/generator schedule from message text.
-
-    Returns [{"date": "2026-03-02", "intervals": [["16:00","20:00"], ...]}]
-    """
-    lower = text.lower()
-    if "котельн" not in lower and "генератор" not in lower:
-        log.info("Boiler parse: keywords 'котельн/генератор' not found in: %r", text[:200])
-        return []
-    year = datetime.now(UA_TZ).year
-    results = []
-    for m in _BOILER_LINE_RE.finditer(lower):
-        day = int(m.group(1))
-        month_name = m.group(2)
-        month = _UA_MONTHS.get(month_name)
-        if not month:
-            log.info("Boiler parse: unknown month %r", month_name)
-            continue
-        ranges_str = m.group(3)
-        intervals = _TIME_RANGE_RE.findall(ranges_str)
-        if not intervals:
-            log.info("Boiler parse: no time ranges in %r", ranges_str)
-            continue
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
-    log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
-    return results
-
+# ─── Channel photo ───────────────────────────────────────────
 
 async def tg_send(text: str, chat_id: str = "") -> int:
     """Send message, return message_id (0 on failure)."""
@@ -1268,7 +874,7 @@ def _build_update_fragments() -> dict:
         w = _weather_cache
         temp = w["temp"]
         sign = "+" if temp > 0 else ""
-        emoji = _WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
+        emoji = WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
         wind = w.get("wind", 0) or 0
         hum = w.get("humidity", 0) or 0
         minmax = ""
@@ -1945,7 +1551,7 @@ async def dashboard(key: str = Query("")):
         w = _weather_cache
         temp = w["temp"]
         sign = "+" if temp > 0 else ""
-        emoji = _WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
+        emoji = WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
         wind = w.get("wind", 0) or 0
         hum = w.get("humidity", 0) or 0
         minmax = ""
