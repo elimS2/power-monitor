@@ -174,13 +174,36 @@
         if (d.pm_deye) {
           el = document.getElementById('pm-deye');
           if (el) {
+            var openStates = {};
+            el.querySelectorAll('details').forEach(function(det) {
+              var key = det.getAttribute('data-ls-key');
+              if (key) openStates[key] = det.open;
+              else {
+                var sum = det.querySelector('summary');
+                if (sum) {
+                  var m = sum.textContent.match(/^(\d{4}-\d{2}-\d{2})/);
+                  if (m) openStates['day_' + m[1]] = det.open;
+                }
+              }
+            });
             el.innerHTML = d.pm_deye;
-            var dt = document.getElementById('deye_table_details');
-            if (dt && !dt.dataset.pmInited) {
-              dt.dataset.pmInited = '1';
-              dt.open = (localStorage.getItem('deye_table_open') !== '0');
-              dt.addEventListener('toggle', function() { localStorage.setItem('deye_table_open', dt.open ? '1' : '0'); });
-            }
+            el.querySelectorAll('details').forEach(function(det) {
+              var key = det.getAttribute('data-ls-key');
+              if (key) {
+                var saved = localStorage.getItem(key);
+                det.open = saved !== null ? (saved === '1') : (det.getAttribute('data-default-open') === '1');
+                if (!det.dataset.pmInited) {
+                  det.dataset.pmInited = '1';
+                  det.addEventListener('toggle', function() { localStorage.setItem(key, det.open ? '1' : '0'); });
+                }
+              } else {
+                var sum = det.querySelector('summary');
+                if (sum) {
+                  var m = sum.textContent.match(/^(\d{4}-\d{2}-\d{2})/);
+                  if (m && openStates['day_' + m[1]] !== undefined) det.open = openStates['day_' + m[1]];
+                }
+              }
+            });
           }
         }
         if (d.pm_mk) { el = document.getElementById('pm-mk-wrap'); if (el) el.innerHTML = d.pm_mk; }
