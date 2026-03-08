@@ -35,6 +35,47 @@
   updClocks();
   setInterval(updClocks, 1000);
 
+  // Schedule "now" indicator — move every 30 min (server renders once, we keep it current)
+  function updScheduleNow() {
+    var now = new Date();
+    var fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', hour: 'numeric', minute: 'numeric', hour12: false });
+    var parts = fmt.formatToParts(now);
+    var hour = parseInt(parts.find(function(p) { return p.type === 'hour'; }).value, 10);
+    var minute = parseInt(parts.find(function(p) { return p.type === 'minute'; }).value, 10);
+    var slot = hour * 2 + (minute >= 30 ? 1 : 0);
+    var isDown = document.body.getAttribute('data-pm-down') === '1';
+
+    document.querySelectorAll('.sg-table .sg-now').forEach(function(td) {
+      td.classList.remove('sg-now', 'sg-now-on', 'sg-now-off');
+    });
+
+    var desktop = document.querySelector('.sg-wrap.sg-desktop .sg-table');
+    if (desktop) {
+      var rows = desktop.querySelectorAll('tr');
+      if (rows[1]) {
+        var cells = rows[1].querySelectorAll('td');
+        if (cells[slot + 1]) {
+          cells[slot + 1].classList.add('sg-now', isDown ? 'sg-now-off' : 'sg-now-on');
+        }
+      }
+    }
+
+    var mobile = document.querySelector('.sg-mobile');
+    if (mobile) {
+      var tables = mobile.querySelectorAll('table.sg-table');
+      if (tables[0]) {
+        var mRows = tables[0].querySelectorAll('tr');
+        var targetRow = slot < 24 ? mRows[1] : mRows[3];
+        var cellIdx = slot < 24 ? slot : slot - 24;
+        if (targetRow && targetRow.cells[cellIdx]) {
+          targetRow.cells[cellIdx].classList.add('sg-now', isDown ? 'sg-now-off' : 'sg-now-on');
+        }
+      }
+    }
+  }
+  updScheduleNow();
+  setInterval(updScheduleNow, 10000);
+
   // Details localStorage persistence
   document.querySelectorAll('details[data-ls-key]').forEach(function(d) {
     var key = d.getAttribute('data-ls-key');
@@ -112,7 +153,14 @@
       var url = urlBase + '&_=' + Date.now();
       fetch(url, { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
         var el;
-        if (d.pm_status_block) { el = document.getElementById('pm-status-block'); if (el) el.innerHTML = d.pm_status_block; }
+        if (d.pm_status_block) {
+          el = document.getElementById('pm-status-block');
+          if (el) {
+            el.innerHTML = d.pm_status_block;
+            var isDown = !!el.querySelector('.status.down');
+            document.body.setAttribute('data-pm-down', isDown ? '1' : '0');
+          }
+        }
         if (d.pm_weather !== undefined) { el = document.getElementById('pm-weather'); if (el) el.innerHTML = d.pm_weather; }
         if (d.pm_alert !== undefined) { el = document.getElementById('pm-alert'); if (el) el.innerHTML = d.pm_alert; }
         if (d.pm_ev_tbody !== undefined) { el = document.getElementById('pm-events-tbody'); if (el) el.innerHTML = d.pm_ev_tbody; }
