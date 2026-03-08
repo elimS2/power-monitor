@@ -352,6 +352,20 @@ def recent_deye_log(n: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
+    """Get most recent deye_log entry where at least one phase has non-zero voltage.
+    Returns dict with grid_v_l1, grid_v_l2, grid_v_l3 or None if no such entry in last `limit` rows.
+    """
+    rows = recent_deye_log(limit)
+    for r in rows:
+        v1 = r.get("grid_v_l1")
+        v2 = r.get("grid_v_l2")
+        v3 = r.get("grid_v_l3")
+        if (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0):
+            return {"grid_v_l1": v1, "grid_v_l2": v2, "grid_v_l3": v3}
+    return None
+
+
 def first_heartbeat_ts() -> float:
     with _conn() as db:
         row = db.execute("SELECT ts FROM heartbeats ORDER BY id ASC LIMIT 1").fetchone()
@@ -600,6 +614,18 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            # Для позапланових відключень — показуємо останню напругу (допоможе: вимкнули світло / висока / низька)
+            if dev is not None and abs(dev) > 30:
+                v = last_nonzero_grid_voltage()
+                if v:
+                    parts = []
+                    for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                        val = v.get(key)
+                        if val is not None:
+                            parts.append(f"{phase}={val:.0f} В")
+                        else:
+                            parts.append(f"{phase}=—")
+                    msg += f"\n\U0001f4a0 Остання напруга: {', '.join(parts)}"
             # Для позапланових відключень не показуємо наступне включення за графіком
             if dev is None or abs(dev) <= 30:
                 nxt = _next_schedule_transition(looking_for_on=True)
@@ -2059,7 +2085,7 @@ updClocks(); setInterval(updClocks,1000);
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
 <tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
-<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4c5 Включення за графіком: ~06:00</td><td>prod</td></tr>
+<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr>
 <tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr>
