@@ -514,7 +514,10 @@ def _build_update_fragments() -> dict:
     if battery_daily or battery_monthly["cycles"] > 0:
         month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
         m = battery_monthly
-        summary_parts = [f"{m['cycles']} циклів"]
+        summary_parts = [f"{m['cycles']} епізодів"]
+        if DEYE_BATTERY_KWH > 0 and m["discharge_kwh"] > 0:
+            efc = m["discharge_kwh"] / DEYE_BATTERY_KWH
+            summary_parts.append(f"{efc:.2f} екв. циклів")
         if m["charge_kwh"] > 0:
             summary_parts.append(f"заряд +{m['charge_kwh']} кВт·год")
         if m["discharge_kwh"] > 0:
@@ -701,7 +704,10 @@ async def dashboard(key: str = Query("")):
         if battery_daily or battery_monthly["cycles"] > 0:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             m = battery_monthly
-            summary_parts = [f"{m['cycles']} циклів"]
+            summary_parts = [f"{m['cycles']} епізодів"]
+            if DEYE_BATTERY_KWH > 0 and m["discharge_kwh"] > 0:
+                efc = m["discharge_kwh"] / DEYE_BATTERY_KWH
+                summary_parts.append(f"{efc:.2f} екв. циклів")
             if m["charge_kwh"] > 0:
                 summary_parts.append(f"заряд +{m['charge_kwh']} кВт·год")
             if m["discharge_kwh"] > 0:
@@ -869,7 +875,10 @@ async def dashboard(key: str = Query("")):
         if battery_daily or battery_monthly["cycles"] > 0:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             m = battery_monthly
-            summary_parts = [f"{m['cycles']} циклів"]
+            summary_parts = [f"{m['cycles']} епізодів"]
+            if DEYE_BATTERY_KWH > 0 and m["discharge_kwh"] > 0:
+                efc = m["discharge_kwh"] / DEYE_BATTERY_KWH
+                summary_parts.append(f"{efc:.2f} екв. циклів")
             if m["charge_kwh"] > 0:
                 summary_parts.append(f"заряд +{m['charge_kwh']} кВт·год")
             if m["discharge_kwh"] > 0:
