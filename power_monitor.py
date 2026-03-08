@@ -27,7 +27,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from config import (
     API_KEYS,
     AVATAR_ON_START,
-    DASHBOARD_SECTION_ORDER,
     DELETE_PHOTO_MSG,
     DTEK_QUEUE,
     DB_PATH,
@@ -335,6 +334,15 @@ async def serve_css():
     )
 
 
+@app.get("/app.js")
+async def serve_js():
+    return FileResponse(
+        _STATIC_DIR / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 def _check_key(key: str):
     if key not in API_KEYS:
         raise HTTPException(403, "forbidden")
@@ -539,7 +547,7 @@ def _build_update_fragments() -> dict:
         "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
-        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div><details id="deye_table_details" open><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -1130,22 +1138,15 @@ async def dashboard(key: str = Query("")):
             det_id = f"sched_hist_{day_key}_details"
             ls_key = f"sched_hist_{day_key}_open"
             history_html += f"""
-<details id="{det_id}" style="margin-top:0.8rem">
+<details id="{det_id}" style="margin-top:0.8rem" data-ls-key="{ls_key}" data-default-open="0">
 <summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на {d_str} — {day_label} ({len(history)})</summary>
 <table>
 <tr><th>Час</th><th>Що змінилось</th></tr>
 {hist_rows}</table>
-</details>
-<script>
-(function(){{
-  var d=document.getElementById('{det_id}');
-  if(localStorage.getItem('{ls_key}')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('{ls_key}',d.open?'1':'0'); }});
-}})();
-</script>"""
+</details>"""
 
         schedule_html = f"""
-<details id="sched_details" open>
+<details id="sched_details" open data-ls-key="sched_open" data-default-open="1">
 <summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
 <div class="sg-wrap sg-desktop">
 <table class="sg-table">
@@ -1161,26 +1162,12 @@ async def dashboard(key: str = Query("")):
 <span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
 <span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
 </div>
-<details id="sched_text_details" open>
+<details id="sched_text_details" open data-ls-key="sched_text_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Текстовий графік відключень</summary>
 {text_blocks}
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('sched_text_details');
-  if(localStorage.getItem('sched_text_open')==='0') d.open=false;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_text_open',d.open?'1':'0'); }});
-}})();
-</script>
 {history_html}
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('sched_details');
-  if(localStorage.getItem('sched_open')==='0') d.open=false;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('sched_open',d.open?'1':'0'); }});
-}})();
-</script>
 """
 
     # ─── Alert + Weather ───
@@ -1230,31 +1217,17 @@ async def dashboard(key: str = Query("")):
             boiler_lines += f'<div style="margin-bottom:0.3rem">\U0001f535 {label}, {date_fmt} ({weekday}): <b>{ranges}</b></div>\n'
         if boiler_lines:
             boiler_html = f"""
-<details id="boiler_details" open>
+<details id="boiler_details" open data-ls-key="boiler_open" data-default-open="1">
 <summary><h2 style="display:inline">Графік котельні (генератор)</h2></summary>
 {boiler_lines}
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('boiler_details');
-  if(localStorage.getItem('boiler_open')==='0') d.open=false;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('boiler_open',d.open?'1':'0'); }});
-}})();
-</script>
 """
     elif not boiler_data:
         boiler_html = """
-<details id="boiler_details">
+<details id="boiler_details" data-ls-key="boiler_open" data-default-open="0">
 <summary><h2 style="display:inline">Графік котельні (генератор)</h2></summary>
 <div style="color:var(--muted);font-size:0.85rem">Немає даних</div>
 </details>
-<script>
-(function(){
-  var d=document.getElementById('boiler_details');
-  if(localStorage.getItem('boiler_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){ localStorage.setItem('boiler_open',d.open?'1':'0'); });
-})();
-</script>
 """
 
     status_cls = "down" if is_down else "up"
@@ -1270,37 +1243,13 @@ async def dashboard(key: str = Query("")):
 <meta name="apple-mobile-web-app-title" content="Світло ЗК6">
 <link rel="apple-touch-icon" href="/icons/icon_on.png">
 <link rel="manifest" href="/manifest.json?key={key}">
-<script>
-if('serviceWorker' in navigator){{navigator.serviceWorker.register('/sw.js');}}
-</script>
-<script>
-(function(){{
-  var old=document.querySelector('link[rel="icon"]');
-  if(old) old.remove();
-  var link=document.createElement('link');
-  link.rel='icon';link.type='image/png';
-  link.href='/icons/{"icon_off.png" if is_down else "icon_on.png"}?t='+Date.now();
-  document.head.appendChild(link);
-}})();
-</script>
 <title>{"❌ Світло нема" if is_down else "✅ Світло є"} — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
-</head><body data-pm-key="{key}">
+</head><body data-pm-key="{key}" data-pm-down={"1" if is_down else "0"}>
 <h1>Power Monitor — ЗК 6</h1>
 <div id="pm-status-block"><div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
 <div class="duration">{duration_text}{f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""}</div></div>
 <div class="clocks" id="clocks"></div>
-<script>
-function updClocks(){{
-  var now=new Date();
-  var fmt=function(tz){{return now.toLocaleTimeString('uk-UA',{{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}})}};
-  document.getElementById('clocks').innerHTML=
-    '<span>Київ '+fmt('Europe/Kyiv')+'</span>'+
-    '<span>UTC '+fmt('UTC')+'</span>'+
-    '<span>New York '+fmt('America/New_York')+'</span>';
-}}
-updClocks(); setInterval(updClocks,1000);
-</script>
 <div id="pm-weather">{weather_html}</div>
 <div id="pm-alert">{alert_html}</div>
 
@@ -1308,23 +1257,16 @@ updClocks(); setInterval(updClocks,1000);
 {_wrap_dashboard_section("sched_details", schedule_html) if schedule_html else ""}
 {_wrap_dashboard_section("boiler_details", boiler_html) if boiler_html else ""}
 <div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="ev_details" open>
+<details id="ev_details" open data-ls-key="ev_open" data-default-open="1">
 <summary><h2 style="display:inline">Події</h2></summary>
 <table>
 <tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr>
 <tbody id="pm-events-tbody">{ev_rows}</tbody></table>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('ev_details');
-  if(localStorage.getItem('ev_open')==='0') d.open=false;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('ev_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="links_details" open>
+<details id="links_details" open data-ls-key="links_open" data-default-open="1">
 <summary><h2 style="display:inline">Посилання</h2></summary>
 <table>
 <tr><th>Опис</th><th>Посилання</th></tr>
@@ -1335,96 +1277,51 @@ updClocks(); setInterval(updClocks,1000);
 <tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr>
 </table>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('links_details');
-  if(localStorage.getItem('links_open')==='0') d.open=false;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('links_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="alert_ev_details">
+<details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0">
 <summary><h2 style="display:inline">Тривоги</h2></summary>
 <table>
 <tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
 <tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('alert_ev_details');
-  if(localStorage.getItem('alert_ev_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('alert_ev_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="tg_details">
+<details id="tg_details" data-ls-key="tg_open" data-default-open="0">
 <summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
 <table>
 <tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
 <tbody id="pm-tg-tbody">{tg_rows}</tbody></table>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('tg_details');
-  if(localStorage.getItem('tg_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('tg_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="deye_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="deye_details">
+<details id="deye_details" data-ls-key="deye_open" data-default-open="0">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
 <div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
-<details id="deye_table_details" open>
+<details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
 <tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
 {deye_rows}</table>
 </details></div>
-<script>
-(function(){{
-  var d=document.getElementById('deye_table_details');
-  if(d){{
-    var saved=localStorage.getItem('deye_table_open');
-    d.open=(saved!=='0');
-    d.addEventListener('toggle',function(){{ localStorage.setItem('deye_table_open',d.open?'1':'0'); }});
-  }}
-}})();
-</script>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('deye_details');
-  if(localStorage.getItem('deye_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('deye_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="hb_details">
+<details id="hb_details" data-ls-key="hb_open" data-default-open="0">
 <summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
 <div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
 <tbody id="pm-hb-tbody">{hb_rows}</tbody></table>
 </details>
-<script>
-(function(){{
-  var d=document.getElementById('hb_details');
-  if(localStorage.getItem('hb_open')==='1') d.open=true;
-  d.addEventListener('toggle',function(){{ localStorage.setItem('hb_open',d.open?'1':'0'); }});
-}})();
-</script>
 </div>
 
 <div class="dashboard-section" data-section-id="legend_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="legend_details">
+<details id="legend_details" data-ls-key="legend_open" data-default-open="0">
 <summary><h2 style="display:inline">Легенда повідомлень</h2></summary>
 <table>
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
@@ -1439,7 +1336,7 @@ updClocks(); setInterval(updClocks,1000);
 </div>
 
 <div class="dashboard-section" data-section-id="avatars_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="avatars_details">
+<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0">
 <summary><h2 style="display:inline">Аватарки каналу</h2></summary>
 <table>
 <tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr>
@@ -1455,106 +1352,7 @@ updClocks(); setInterval(updClocks,1000);
 </details>
 </div>
 </div>
-<script>
-(function(){{
-  var ORDER_KEY='pm_section_order';
-  var DEFAULT_ORDER={json.dumps(DASHBOARD_SECTION_ORDER)};
-  var container=document.getElementById('dashboard-sections');
-  if(container){{
-    var sections=Array.from(container.querySelectorAll('.dashboard-section'));
-    var order=JSON.parse(localStorage.getItem(ORDER_KEY)||'null');
-    if(order){{
-      var byId={{}};
-      sections.forEach(function(s){{ byId[s.dataset.sectionId]=s; }});
-      order.forEach(function(id){{
-        var el=byId[id];
-        if(el){{ container.appendChild(el); }}
-      }});
-      sections.forEach(function(s){{
-        if(!order.includes(s.dataset.sectionId)) container.appendChild(s);
-      }});
-    }}
-    var handle=null;
-    container.addEventListener('dragstart',function(e){{
-      if(!e.target.classList.contains('drag-handle')) return;
-      handle=e.target.closest('.dashboard-section');
-      if(!handle) return;
-      e.dataTransfer.setData('text/plain',handle.dataset.sectionId);
-      e.dataTransfer.effectAllowed='move';
-      handle.classList.add('dragging');
-    }});
-    container.addEventListener('dragend',function(e){{
-      if(handle){{ handle.classList.remove('dragging'); handle=null; }}
-      container.querySelectorAll('.dashboard-section').forEach(function(s){{ s.classList.remove('drag-over'); }});
-    }});
-    container.addEventListener('dragover',function(e){{
-      e.preventDefault();
-      container.querySelectorAll('.dashboard-section').forEach(function(s){{ s.classList.remove('drag-over'); }});
-      var t=e.target.closest('.dashboard-section');
-      if(t&&t!==handle){{ t.classList.add('drag-over'); e.dataTransfer.dropEffect='move'; }}
-    }});
-    container.addEventListener('dragleave',function(e){{
-      var t=e.target.closest('.dashboard-section');
-      if(t) t.classList.remove('drag-over');
-    }});
-    container.addEventListener('drop',function(e){{
-      e.preventDefault();
-      var t=e.target.closest('.dashboard-section');
-      if(!t||t===handle) return;
-      t.classList.remove('drag-over');
-      var id=e.dataTransfer.getData('text/plain');
-      var dragged=container.querySelector('[data-section-id="'+id+'"]');
-      if(dragged&&dragged!==t){{
-        var all=Array.from(container.querySelectorAll('.dashboard-section'));
-        var idx=all.indexOf(t);
-        if(idx>=0) container.insertBefore(dragged,all[idx]);
-        else container.appendChild(dragged);
-        var newOrder=Array.from(container.querySelectorAll('.dashboard-section')).map(function(s){{ return s.dataset.sectionId; }});
-        localStorage.setItem(ORDER_KEY,JSON.stringify(newOrder));
-      }}
-    }});
-  }}
-  ['legend','avatars'].forEach(function(k){{
-    var d=document.getElementById(k+'_details');
-    if(localStorage.getItem(k+'_open')==='1') d.open=true;
-    d.addEventListener('toggle',function(){{ localStorage.setItem(k+'_open',d.open?'1':'0'); }});
-  }});
-}})();
-</script>
-<script>
-(function(){{
-  document.body.classList.add('pm-ready');
-  var key=document.body.getAttribute('data-pm-key')||'';
-  if(!key) return;
-  var urlBase='/api/dashboard-fragments?key='+encodeURIComponent(key);
-  function doFetch(){{
-    var url=urlBase+'&_='+Date.now();
-    fetch(url,{{cache:'no-store'}}).then(function(r){{ return r.json(); }}).then(function(d){{
-      var el;
-      if(d.pm_status_block){{ el=document.getElementById('pm-status-block'); if(el) el.innerHTML=d.pm_status_block; }}
-      if(d.pm_weather!==undefined){{ el=document.getElementById('pm-weather'); if(el) el.innerHTML=d.pm_weather; }}
-      if(d.pm_alert!==undefined){{ el=document.getElementById('pm-alert'); if(el) el.innerHTML=d.pm_alert; }}
-      if(d.pm_ev_tbody!==undefined){{ el=document.getElementById('pm-events-tbody'); if(el) el.innerHTML=d.pm_ev_tbody; }}
-      if(d.pm_hb_tbody!==undefined){{ el=document.getElementById('pm-hb-tbody'); if(el) el.innerHTML=d.pm_hb_tbody; }}
-      if(d.pm_tg_tbody!==undefined){{ el=document.getElementById('pm-tg-tbody'); if(el) el.innerHTML=d.pm_tg_tbody; }}
-      if(d.pm_alert_ev_tbody!==undefined){{ el=document.getElementById('pm-alert-events-tbody'); if(el) el.innerHTML=d.pm_alert_ev_tbody; }}
-      if(d.pm_deye){{ el=document.getElementById('pm-deye'); if(el){{ el.innerHTML=d.pm_deye; var dt=document.getElementById('deye_table_details'); if(dt){{ dt.open=(localStorage.getItem('deye_table_open')!=='0'); dt.addEventListener('toggle',function(){{ localStorage.setItem('deye_table_open',dt.open?'1':'0'); }}); }} }} }}
-      if(d.pm_mk){{ el=document.getElementById('pm-mk-wrap'); if(el) el.innerHTML=d.pm_mk; }}
-      if(d.title) document.title=d.title;
-      if(d.favicon){{
-        var old=document.querySelector('link[rel="icon"]');
-        if(old) old.remove();
-        var link=document.createElement('link');
-        link.rel='icon';link.type='image/png';
-        link.href='/icons/'+d.favicon+'?t='+Date.now();
-        document.head.appendChild(link);
-      }}
-    }}).catch(function(){{}});
-  }}
-  setInterval(doFetch,10000);
-  setTimeout(doFetch,500);
-}})();
-</script>
 
 <div class="ver">v {GIT_COMMIT}</div>
+<script src="/app.js"></script>
 </body></html>"""
