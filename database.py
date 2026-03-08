@@ -220,8 +220,27 @@ def recent_deye_log(n: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _integrate_kwh(rows: list) -> float:
+    """Trapezoidal integration of load_power_w over time. Returns kWh."""
+    total = 0.0
+    for i in range(1, len(rows)):
+        p_prev = rows[i - 1]["load_power_w"] or 0
+        p_curr = rows[i]["load_power_w"] or 0
+        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
+        total += (p_prev + p_curr) / 2 * dt_h / 1000  # W -> kWh
+    return total
+
+
 def deye_monthly_load_kwh() -> float | None:
     """Compute load energy (kWh) for current month from deye_log using trapezoidal integration."""
+    daily = deye_daily_load_kwh()
+    if not daily:
+        return None
+    return round(sum(d["kwh"] for d in daily), 1)
+
+
+def deye_daily_load_kwh() -> list[dict]:
+    """Compute load energy (kWh) per day for current month. Returns [{"date": "YYYY-MM-DD", "kwh": float, "samples": int}, ...]."""
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
@@ -236,15 +255,25 @@ def deye_monthly_load_kwh() -> float | None:
         ).fetchall()
 
     if len(rows) < 2:
-        return None
+        return []
 
-    total_kwh = 0.0
-    for i in range(1, len(rows)):
-        p_prev = rows[i - 1]["load_power_w"] or 0
-        p_curr = rows[i]["load_power_w"] or 0
-        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
-        total_kwh += (p_prev + p_curr) / 2 * dt_h / 1000  # W -> kWh
-    return round(total_kwh, 1)
+    # Group rows by date (Kyiv timezone)
+    by_date: dict[str, list] = {}
+    for r in rows:
+        dt = datetime.fromtimestamp(r["ts"], tz=UA_TZ)
+        key = dt.strftime("%Y-%m-%d")
+        if key not in by_date:
+            by_date[key] = []
+        by_date[key].append(dict(r))
+
+    result = []
+    for date_str in sorted(by_date.keys()):
+        day_rows = by_date[date_str]
+        if len(day_rows) < 2:
+            continue
+        kwh = round(_integrate_kwh(day_rows), 1)
+        result.append({"date": date_str, "kwh": kwh, "samples": len(day_rows)})
+    return result
 
 
 def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:

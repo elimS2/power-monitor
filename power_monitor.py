@@ -45,6 +45,7 @@ from config import (
 from database import (
     boiler_schedule_for_dates,
     cleanup_old,
+    deye_daily_load_kwh,
     deye_monthly_load_kwh,
     first_heartbeat_ts,
     init_db,
@@ -499,6 +500,10 @@ def _build_update_fragments() -> dict:
             bat_s = f"{int(bat_w)}" if bat_w is not None else "—"
             deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
 
+    deye_daily_rows = ""
+    for d in deye_daily_load_kwh():
+        deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
+
     alert_html = ""
     if dtek.alert_cache:
         alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
@@ -528,7 +533,7 @@ def _build_update_fragments() -> dict:
         "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
-        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div><details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -654,6 +659,9 @@ async def dashboard(key: str = Query("")):
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts.append(f"За {month_name}: {month_kwh} кВт·год")
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
+        deye_daily_rows = ""
+        for d in deye_daily_load_kwh():
+            deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")
@@ -675,6 +683,7 @@ async def dashboard(key: str = Query("")):
             )
     else:
         deye_summary = "Немає даних"
+        deye_daily_rows = ""
 
     ev_rows = ""
     for i, e in enumerate(ev):
@@ -788,6 +797,9 @@ async def dashboard(key: str = Query("")):
                     time_str = f"{m}хв"
                 parts2.append(f"~{time_str} до 0")
             deye_summary_line2 = " | ".join(parts2)
+        deye_daily_rows = ""
+        for d in deye_daily_load_kwh():
+            deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")
@@ -809,6 +821,7 @@ async def dashboard(key: str = Query("")):
             )
     else:
         deye_summary = "Немає даних"
+        deye_daily_rows = ""
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
@@ -1077,6 +1090,11 @@ async def dashboard(key: str = Query("")):
 <details id="deye_details" data-ls-key="deye_open" data-default-open="0">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
 <div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
+<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1">
+<summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>
+<table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>
+{deye_daily_rows}</table>
+</details>
 <details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
