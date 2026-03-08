@@ -502,7 +502,11 @@ def _build_update_fragments() -> dict:
 
     deye_daily_rows = ""
     for d in deye_daily_load_kwh():
-        deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
+        hr_rows = ""
+        for h in d.get("hours", []):
+            hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
+        hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
+        deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
 
     alert_html = ""
     if dtek.alert_cache:
@@ -661,7 +665,11 @@ async def dashboard(key: str = Query("")):
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
-            deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
+            hr_rows = ""
+            for h in d.get("hours", []):
+                hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
+            hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
+            deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")
@@ -799,7 +807,11 @@ async def dashboard(key: str = Query("")):
             deye_summary_line2 = " | ".join(parts2)
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
-            deye_daily_rows += f'<tr><td>{d["date"]}</td><td>{d["kwh"]} кВт·год</td><td style="color:var(--muted);font-size:0.85rem">{d["samples"]} зразк.</td></tr>\n'
+            hr_rows = ""
+            for h in d.get("hours", []):
+                hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
+            hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
+            deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")

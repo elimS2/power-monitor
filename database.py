@@ -272,7 +272,25 @@ def deye_daily_load_kwh() -> list[dict]:
         if len(day_rows) < 2:
             continue
         kwh = round(_integrate_kwh(day_rows), 1)
-        result.append({"date": date_str, "kwh": kwh, "samples": len(day_rows)})
+
+        # Group by hour for expandable breakdown
+        by_hour: dict[int, list] = {}
+        for r in day_rows:
+            dt = datetime.fromtimestamp(r["ts"], tz=UA_TZ)
+            h = dt.hour
+            if h not in by_hour:
+                by_hour[h] = []
+            by_hour[h].append(dict(r))
+
+        hours_data = []
+        for hour in range(24):
+            hr_rows = by_hour.get(hour, [])
+            if len(hr_rows) < 2:
+                hours_data.append({"hour": hour, "kwh": 0.0})
+            else:
+                hours_data.append({"hour": hour, "kwh": round(_integrate_kwh(hr_rows), 2)})
+
+        result.append({"date": date_str, "kwh": kwh, "samples": len(day_rows), "hours": hours_data})
     return result
 
 
