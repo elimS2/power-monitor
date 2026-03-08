@@ -1820,7 +1820,6 @@ async def dashboard(key: str = Query("")):
 <html lang="uk"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="10">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1845,7 +1844,8 @@ if('serviceWorker' in navigator){{navigator.serviceWorker.register('/sw.js');}}
 :root {{ --bg: #0f172a; --card: #1e293b; --border: #334155; --text: #e2e8f0; --muted: #94a3b8; }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text);
-        max-width: 800px; margin: 0 auto; padding: 1rem; }}
+        max-width: 800px; margin: 0 auto; padding: 1rem; opacity: 0; transition: opacity 0.15s ease; }}
+body.pm-ready {{ opacity: 1; }}
 h1 {{ text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom: 1rem; }}
 .status {{ text-align: center; font-size: 1.8rem; font-weight: 700; padding: 1.2rem;
            border-radius: 12px; margin-bottom: 1.5rem; }}
@@ -2176,6 +2176,26 @@ updClocks(); setInterval(updClocks,1000);
     if(localStorage.getItem(k+'_open')==='1') d.open=true;
     d.addEventListener('toggle',function(){{ localStorage.setItem(k+'_open',d.open?'1':'0'); }});
   }});
+}})();
+</script>
+<script>
+(function(){{
+  var RESTORE_KEY='pm_scroll_y';
+  var scrollY=sessionStorage.getItem(RESTORE_KEY);
+  if(scrollY!==null){{
+    sessionStorage.removeItem(RESTORE_KEY);
+    requestAnimationFrame(function(){{
+      requestAnimationFrame(function(){{
+        window.scrollTo(0,Math.min(parseInt(scrollY,10),document.body.scrollHeight));
+      }});
+    }});
+  }}
+  document.body.classList.add('pm-ready');
+  setInterval(function(){{
+    sessionStorage.setItem(RESTORE_KEY,String(window.scrollY));
+    document.body.classList.remove('pm-ready');
+    setTimeout(function(){{ location.reload(); }},150);
+  }},10000);
 }})();
 </script>
 
