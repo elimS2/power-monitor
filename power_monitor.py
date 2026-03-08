@@ -1525,7 +1525,7 @@ async def pwa_manifest(key: str = Query("")):
 @app.get("/sw.js")
 async def service_worker():
     sw_code = """\
-const CACHE = 'pm-v1';
+const CACHE = 'pm-v2';
 const PRECACHE = ['/icons/icon_on.png', '/icons/icon_off.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
@@ -1536,6 +1536,7 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') return;
+  if (e.request.url.includes('dashboard-fragments')) return;
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
   );
@@ -2355,17 +2356,17 @@ updClocks(); setInterval(updClocks,1000);
   var urlBase='/api/dashboard-fragments?key='+encodeURIComponent(key);
   function doFetch(){{
     var url=urlBase+'&_='+Date.now();
-    fetch(url).then(function(r){{ return r.json(); }}).then(function(d){{
+    fetch(url,{{cache:'no-store'}}).then(function(r){{ return r.json(); }}).then(function(d){{
       var el;
       if(d.pm_status_block){{ el=document.getElementById('pm-status-block'); if(el) el.innerHTML=d.pm_status_block; }}
       if(d.pm_weather!==undefined){{ el=document.getElementById('pm-weather'); if(el) el.innerHTML=d.pm_weather; }}
       if(d.pm_alert!==undefined){{ el=document.getElementById('pm-alert'); if(el) el.innerHTML=d.pm_alert; }}
-      if(d.pm_mk){{ el=document.getElementById('pm-mk-wrap'); if(el) el.innerHTML=d.pm_mk; }}
       if(d.pm_ev_tbody!==undefined){{ el=document.getElementById('pm-events-tbody'); if(el) el.innerHTML=d.pm_ev_tbody; }}
       if(d.pm_hb_tbody!==undefined){{ el=document.getElementById('pm-hb-tbody'); if(el) el.innerHTML=d.pm_hb_tbody; }}
       if(d.pm_tg_tbody!==undefined){{ el=document.getElementById('pm-tg-tbody'); if(el) el.innerHTML=d.pm_tg_tbody; }}
       if(d.pm_alert_ev_tbody!==undefined){{ el=document.getElementById('pm-alert-events-tbody'); if(el) el.innerHTML=d.pm_alert_ev_tbody; }}
       if(d.pm_deye){{ el=document.getElementById('pm-deye'); if(el){{ el.innerHTML=d.pm_deye; var dt=document.getElementById('deye_table_details'); if(dt){{ dt.open=(localStorage.getItem('deye_table_open')!=='0'); dt.addEventListener('toggle',function(){{ localStorage.setItem('deye_table_open',dt.open?'1':'0'); }}); }} }} }}
+      if(d.pm_mk){{ el=document.getElementById('pm-mk-wrap'); if(el) el.innerHTML=d.pm_mk; }}
       if(d.title) document.title=d.title;
       if(d.favicon){{
         var old=document.querySelector('link[rel="icon"]');
