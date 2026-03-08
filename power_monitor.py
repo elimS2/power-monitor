@@ -282,7 +282,7 @@ def save_heartbeat(p204: int, p175: int):
 def recent_heartbeats(n: int) -> list[dict]:
     with _conn() as db:
         rows = db.execute(
-            "SELECT plug204, plug175, ts FROM heartbeats ORDER BY id DESC LIMIT ?", (n,)
+            "SELECT plug204, plug175, ts FROM heartbeats ORDER BY ts DESC LIMIT ?", (n,)
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1295,7 +1295,10 @@ def _build_update_fragments() -> dict:
 @app.get("/api/dashboard-fragments")
 def ep_dashboard_fragments(key: str = Query("")):
     _check_key(key)
-    return JSONResponse(_build_update_fragments())
+    return JSONResponse(
+        _build_update_fragments(),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 @app.get("/api/debug-webhooks")
@@ -2349,8 +2352,9 @@ updClocks(); setInterval(updClocks,1000);
   document.body.classList.add('pm-ready');
   var key=document.body.getAttribute('data-pm-key')||'';
   if(!key) return;
-  var url='/api/dashboard-fragments?key='+encodeURIComponent(key);
-  setInterval(function(){{
+  var urlBase='/api/dashboard-fragments?key='+encodeURIComponent(key);
+  function doFetch(){{
+    var url=urlBase+'&_='+Date.now();
     fetch(url).then(function(r){{ return r.json(); }}).then(function(d){{
       var el;
       if(d.pm_status_block){{ el=document.getElementById('pm-status-block'); if(el) el.innerHTML=d.pm_status_block; }}
@@ -2372,7 +2376,9 @@ updClocks(); setInterval(updClocks,1000);
         document.head.appendChild(link);
       }}
     }}).catch(function(){{}});
-  }},10000);
+  }}
+  setInterval(doFetch,10000);
+  setTimeout(doFetch,500);
 }})();
 </script>
 
