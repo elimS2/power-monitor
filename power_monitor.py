@@ -1113,6 +1113,191 @@ async def ep_status(key: str = Query("")):
     }
 
 
+def _build_update_fragments() -> dict:
+    """Build HTML fragments for partial dashboard update (no full reload)."""
+    is_down = kv_get("power_down") == "1"
+    hb = recent_heartbeats(30)
+    ev = recent_events(30)
+
+    mk_cls = "down"
+    mk_text = "Роутер: немає даних"
+    if hb:
+        last_hb_age = int(time.time() - hb[0]["ts"])
+        mk_online = last_hb_age < STALE_THRESHOLD_SEC
+        mk_cls = "up" if mk_online else "down"
+        mk_text = f"Роутер: online ({last_hb_age}с тому)" if mk_online else f"Роутер: OFFLINE ({last_hb_age // 60} хв тому)"
+
+    duration_text = _power_status_text() if (hb or ev) else ""
+    schedule_note = ""
+    if _schedule_cache and _schedule_cache.get("today"):
+        now_kyiv = datetime.now(UA_TZ)
+        slot_idx = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+        slot_val = _schedule_cache["today"]["grid"][min(slot_idx, 47)]
+        if is_down:
+            schedule_note = "\U0001f4c5 Заплановане відключення" if slot_val == "off" else "\U0001f4c5 Можливе відключення (за графіком)" if slot_val == "maybe" else "\u26a1Позапланове відключення"
+        else:
+            schedule_note = "\U0001f389 Світло є (всупереч графіку)" if slot_val == "off" else "\U0001f4c5 За графіком (можливе відкл. не сталось)" if slot_val == "maybe" else "\U0001f4c5 За графіком"
+
+    status_cls = "down" if is_down else "up"
+    status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
+    icon = "icon_off.png" if is_down else "icon_on.png"
+    dur_ext = f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""
+
+    hb_rows = ""
+    for r in hb:
+        c204 = "down" if r["plug204"] == 0 else "up"
+        c175 = "down" if r["plug175"] == 0 else "up"
+        hb_rows += f'<tr><td>{_ts_fmt(r["ts"])}</td><td class="{c204}">{r["plug204"]}/3</td><td class="{c175}">{r["plug175"]}/3</td></tr>\n'
+
+    ev_rows = ""
+    for i, e in enumerate(ev):
+        cls = "down" if e["event"] == "down" else "up"
+        label = "Пропало" if e["event"] == "down" else "З'явилось"
+        if i == 0:
+            dur_sec = int(time.time() - e["ts"])
+            dur_fmt = _format_duration(dur_sec)
+            dur_str = f"нема {dur_fmt} ▸" if (e["event"] == "down" and is_down) else f"є {dur_fmt} ▸" if (e["event"] == "up" and not is_down) else dur_fmt
+        else:
+            dur_sec = int(ev[i - 1]["ts"] - e["ts"])
+            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
+        ev_kyiv = datetime.fromtimestamp(e["ts"], tz=UA_TZ)
+        ev_date_str = ev_kyiv.strftime("%Y-%m-%d")
+        ev_grid = None
+        for dk in ("today", "tomorrow"):
+            d = _schedule_cache.get(dk) if _schedule_cache else None
+            if d and d["date"] == ev_date_str:
+                ev_grid = d["grid"]
+                break
+        if ev_grid is None:
+            sh = schedule_history_for_date(ev_date_str)
+            ev_grid = sh[-1]["grid"] if sh else None
+        sched_tag = ""
+        if ev_grid and len(ev_grid) >= 48:
+            is_down_ev = e["event"] == "down"
+            ev_min = ev_kyiv.hour * 60 + ev_kyiv.minute
+            best_dev: int | None = None
+            for si in range(1, 48):
+                p_ok = ev_grid[si - 1] == "ok"
+                c_ok = ev_grid[si] == "ok"
+                t_min = si * 30
+                if is_down_ev and p_ok and not c_ok:
+                    d2 = ev_min - t_min
+                    if best_dev is None or abs(d2) < abs(best_dev):
+                        best_dev = d2
+                elif not is_down_ev and not p_ok and c_ok:
+                    d2 = ev_min - t_min
+                    if best_dev is None or abs(d2) < abs(best_dev):
+                        best_dev = d2
+            if best_dev is not None and abs(best_dev) <= 30:
+                sched_tag = f'\U0001f4c5 {_fmt_deviation(best_dev)}'
+            else:
+                sched_tag = '<span style="color:#fbbf24">\u26a1позапл.</span>'
+        ev_rows += f'<tr><td>{_ts_fmt_full(e["ts"])}</td><td class="{cls}">{label}</td><td style="color:var(--muted)">{sched_tag}</td><td style="color:var(--muted)">{dur_str}</td></tr>\n'
+
+    tg_rows = ""
+    for t in recent_tg_log(15):
+        ok = "up" if t["status"] == 200 else "down"
+        short_chat = "test" if t["chat_id"] == TG_TEST_CHAT_ID else "prod"
+        safe_text = t["text"].replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
+        tg_rows += f'<tr><td>{_ts_fmt_full(t["ts"])}</td><td class="{ok}">{t["status"]}</td><td>{short_chat}</td><td>{safe_text}</td></tr>\n'
+
+    alert_ev_rows = ""
+    alert_ev = recent_alert_events(20)
+    for i, ae in enumerate(alert_ev):
+        cls = "down" if ae["event"] == "alert_on" else "up"
+        label = "\U0001f534 Тривога" if ae["event"] == "alert_on" else "\U0001f7e2 Відбій"
+        if i == 0:
+            dur_sec = int(time.time() - ae["ts"])
+            dur_str = f"{_format_duration(dur_sec)} \u25b8" if ((ae["event"] == "alert_on" and _alert_cache.get("active")) or (ae["event"] == "alert_off" and not _alert_cache.get("active"))) else _format_duration(dur_sec)
+        else:
+            dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
+            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
+        alert_ev_rows += f'<tr><td>{_ts_fmt_full(ae["ts"])}</td><td class="{cls}">{label}</td><td style="color:var(--muted)">{dur_str}</td></tr>\n'
+
+    deye_log = recent_deye_log(30)
+    deye_summary = "Немає даних"
+    deye_summary_line2 = ""
+    deye_rows = ""
+    if deye_log:
+        last = deye_log[0]
+        load_w = last.get("load_power_w")
+        soc = last.get("battery_soc")
+        v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
+        age_sec = int(time.time() - last["ts"])
+        parts1 = []
+        if load_w is not None:
+            parts1.append(f"Споживання: {int(load_w)} Вт")
+        if soc is not None:
+            parts1.append(f"АКБ: {int(soc)}%")
+        if v1 is not None and v2 is not None and v3 is not None:
+            parts1.append(f"Напруга: {(v1+v2+v3)/3:.0f} В")
+        deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
+        if DEYE_BATTERY_KWH > 0 and soc is not None:
+            cap_kwh = DEYE_BATTERY_KWH
+            consumed_kwh = cap_kwh * (100 - soc) / 100
+            remaining_kwh = cap_kwh * soc / 100
+            parts2 = [f"{cap_kwh:.0f} кВт·год", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
+            if load_w is not None and load_w > 0 and remaining_kwh > 0:
+                hrs = remaining_kwh / (load_w / 1000)
+                time_str = f"{int(hrs//24)}д {int(hrs%24)}год" if hrs >= 24 else f"{int(hrs)}год {int((hrs%1)*60)}хв" if hrs >= 1 else f"{int(hrs*60)}хв"
+                parts2.append(f"~{time_str} до 0")
+            deye_summary_line2 = " | ".join(parts2)
+        for r in deye_log:
+            load_w = r.get("load_power_w")
+            soc = r.get("battery_soc")
+            v1 = r.get("grid_v_l1")
+            v2 = r.get("grid_v_l2")
+            v3 = r.get("grid_v_l3")
+            bat_w = r.get("battery_power_w")
+            load_s = f"{int(load_w)}" if load_w is not None else "—"
+            soc_s = f"{int(soc)}" if soc is not None else "—"
+            v1_s = f"{v1:.1f}" if v1 is not None else "—"
+            v2_s = f"{v2:.1f}" if v2 is not None else "—"
+            v3_s = f"{v3:.1f}" if v3 is not None else "—"
+            bat_s = f"{int(bat_w)}" if bat_w is not None else "—"
+            deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
+
+    alert_html = ""
+    if _alert_cache:
+        alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if _alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
+
+    weather_html = ""
+    if _weather_cache and _weather_cache.get("temp") is not None:
+        w = _weather_cache
+        temp = w["temp"]
+        sign = "+" if temp > 0 else ""
+        emoji = _WMO_EMOJI.get(w.get("code", -1), "\U0001f321\ufe0f")
+        wind = w.get("wind", 0) or 0
+        hum = w.get("humidity", 0) or 0
+        minmax = ""
+        if w.get("t_min") is not None and w.get("t_max") is not None:
+            t_lo, t_hi = w["t_min"], w["t_max"]
+            s_lo = "+" if t_lo > 0 else ""
+            s_hi = "+" if t_hi > 0 else ""
+            minmax = f' ({s_lo}{t_lo:.0f}..{s_hi}{t_hi:.0f}\u00b0)'
+        weather_html = f'<div class="weather">{emoji} {sign}{temp:.0f}\u00b0C{minmax} &nbsp; \U0001f4a8 {wind:.0f} \u043a\u043c/\u0433 &nbsp; \U0001f4a7 {hum:.0f}%</div>'
+
+    return {
+        "pm_status_block": f'<div class="status {status_cls}"><img src="/icons/{icon}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div><div class="duration">{duration_text}{dur_ext}</div>',
+        "pm_weather": weather_html,
+        "pm_alert": alert_html,
+        "pm_mk": f'<div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>',
+        "pm_ev_tbody": ev_rows,
+        "pm_hb_tbody": hb_rows,
+        "pm_tg_tbody": tg_rows,
+        "pm_alert_ev_tbody": alert_ev_rows,
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div><details id="deye_table_details" open><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
+        "favicon": icon,
+    }
+
+
+@app.get("/api/dashboard-fragments")
+def ep_dashboard_fragments(key: str = Query("")):
+    _check_key(key)
+    return JSONResponse(_build_update_fragments())
+
+
 @app.get("/api/debug-webhooks")
 def ep_debug_webhooks(key: str = Query(""), limit: int = Query(20)):
     _check_key(key)
@@ -1923,10 +2108,10 @@ details[open] summary::before {{ content: '▼ '; }}
 .dashboard-section.dragging {{ opacity: 0.5; }}
 .dashboard-section.drag-over {{ border-top: 2px dashed var(--muted); margin-top: -2px; }}
 </style>
-</head><body>
+</head><body data-pm-key="{key}">
 <h1>Power Monitor — ЗК 6</h1>
-<div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
-<div class="duration">{duration_text}{f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""}</div>
+<div id="pm-status-block"><div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
+<div class="duration">{duration_text}{f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""}</div></div>
 <div class="clocks" id="clocks"></div>
 <script>
 function updClocks(){{
@@ -1939,8 +2124,8 @@ function updClocks(){{
 }}
 updClocks(); setInterval(updClocks,1000);
 </script>
-{weather_html}
-{alert_html}
+<div id="pm-weather">{weather_html}</div>
+<div id="pm-alert">{alert_html}</div>
 
 <div id="dashboard-sections">
 {_wrap_dashboard_section("sched_details", schedule_html) if schedule_html else ""}
@@ -1950,7 +2135,7 @@ updClocks(); setInterval(updClocks,1000);
 <summary><h2 style="display:inline">Події</h2></summary>
 <table>
 <tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr>
-{ev_rows}</table>
+<tbody id="pm-events-tbody">{ev_rows}</tbody></table>
 </details>
 <script>
 (function(){{
@@ -1987,7 +2172,7 @@ updClocks(); setInterval(updClocks,1000);
 <summary><h2 style="display:inline">Тривоги</h2></summary>
 <table>
 <tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
-{alert_ev_rows}</table>
+<tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table>
 </details>
 <script>
 (function(){{
@@ -2003,7 +2188,7 @@ updClocks(); setInterval(updClocks,1000);
 <summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
 <table>
 <tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
-{tg_rows}</table>
+<tbody id="pm-tg-tbody">{tg_rows}</tbody></table>
 </details>
 <script>
 (function(){{
@@ -2017,13 +2202,13 @@ updClocks(); setInterval(updClocks,1000);
 <div class="dashboard-section" data-section-id="deye_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="deye_details">
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
-<div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
+<div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
 <details id="deye_table_details" open>
 <summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
 <tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
 {deye_rows}</table>
-</details>
+</details></div>
 <script>
 (function(){{
   var d=document.getElementById('deye_table_details');
@@ -2047,7 +2232,7 @@ updClocks(); setInterval(updClocks,1000);
 <div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
 <details id="hb_details">
 <summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
-<div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>
+<div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div>
 <script>
 (function(){{
   var age0={last_hb_age if hb else -1};
@@ -2069,7 +2254,7 @@ updClocks(); setInterval(updClocks,1000);
 </script>
 <table>
 <tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
-{hb_rows}</table>
+<tbody id="pm-hb-tbody">{hb_rows}</tbody></table>
 </details>
 <script>
 (function(){{
@@ -2180,26 +2365,32 @@ updClocks(); setInterval(updClocks,1000);
 </script>
 <script>
 (function(){{
-  var RESTORE_KEY='pm_scroll_y';
-  var scrollY=sessionStorage.getItem(RESTORE_KEY);
-  if(scrollY!==null){{
-    sessionStorage.removeItem(RESTORE_KEY);
-    requestAnimationFrame(function(){{
-      requestAnimationFrame(function(){{
-        window.scrollTo(0,Math.min(parseInt(scrollY,10),document.body.scrollHeight));
-      }});
-    }});
-  }}
   document.body.classList.add('pm-ready');
-  var isMobile=window.matchMedia('(max-width:768px)').matches;
+  var key=document.body.getAttribute('data-pm-key')||'';
+  if(!key) return;
+  var url='/api/dashboard-fragments?key='+encodeURIComponent(key);
   setInterval(function(){{
-    if(isMobile){{
-      sessionStorage.setItem(RESTORE_KEY,String(window.scrollY));
-      document.body.classList.remove('pm-ready');
-      setTimeout(function(){{ location.reload(); }},150);
-    }}else{{
-      location.reload();
-    }}
+    fetch(url).then(function(r){{ return r.json(); }}).then(function(d){{
+      var el;
+      if(d.pm_status_block){{ el=document.getElementById('pm-status-block'); if(el) el.innerHTML=d.pm_status_block; }}
+      if(d.pm_weather!==undefined){{ el=document.getElementById('pm-weather'); if(el) el.innerHTML=d.pm_weather; }}
+      if(d.pm_alert!==undefined){{ el=document.getElementById('pm-alert'); if(el) el.innerHTML=d.pm_alert; }}
+      if(d.pm_mk){{ el=document.getElementById('pm-mk-wrap'); if(el) el.innerHTML=d.pm_mk; }}
+      if(d.pm_ev_tbody!==undefined){{ el=document.getElementById('pm-events-tbody'); if(el) el.innerHTML=d.pm_ev_tbody; }}
+      if(d.pm_hb_tbody!==undefined){{ el=document.getElementById('pm-hb-tbody'); if(el) el.innerHTML=d.pm_hb_tbody; }}
+      if(d.pm_tg_tbody!==undefined){{ el=document.getElementById('pm-tg-tbody'); if(el) el.innerHTML=d.pm_tg_tbody; }}
+      if(d.pm_alert_ev_tbody!==undefined){{ el=document.getElementById('pm-alert-events-tbody'); if(el) el.innerHTML=d.pm_alert_ev_tbody; }}
+      if(d.pm_deye){{ el=document.getElementById('pm-deye'); if(el){{ el.innerHTML=d.pm_deye; var dt=document.getElementById('deye_table_details'); if(dt){{ dt.open=(localStorage.getItem('deye_table_open')!=='0'); dt.addEventListener('toggle',function(){{ localStorage.setItem('deye_table_open',dt.open?'1':'0'); }}); }} }} }}
+      if(d.title) document.title=d.title;
+      if(d.favicon){{
+        var old=document.querySelector('link[rel="icon"]');
+        if(old) old.remove();
+        var link=document.createElement('link');
+        link.rel='icon';link.type='image/png';
+        link.href='/icons/'+d.favicon+'?t='+Date.now();
+        document.head.appendChild(link);
+      }}
+    }}).catch(function(){{}});
   }},10000);
 }})();
 </script>
