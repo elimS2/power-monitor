@@ -1,4 +1,5 @@
 """Debug API routes."""
+import re
 import time
 from datetime import datetime
 
@@ -9,6 +10,10 @@ from config import UA_TZ
 from database import _conn, events_in_range, parse_boiler_schedule
 
 router = APIRouter(tags=["debug"])
+
+# Read-only SQL: only SELECT allowed
+_SQL_READONLY = re.compile(r"^\s*(SELECT|WITH\s+\w+\s+AS)", re.IGNORECASE | re.DOTALL)
+_SQL_FORBIDDEN = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE)\b", re.IGNORECASE)
 
 
 @router.get("/api/debug-webhooks")
@@ -110,3 +115,21 @@ def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31
         "deye_total_rows": len(deye_rows),
         "episodes": episodes[-days:] if episodes else [],
     }
+
+
+@router.get("/api/debug-sql")
+def ep_debug_sql(key: str = Query(""), query: str = Query(""), limit: int = Query(500, ge=1, le=1000)):
+    """Execute read-only SQL (SELECT only). For agent/CI access to DB."""
+    check_key(key)
+    q = query.strip()
+    if not _SQL_READONLY.match(q):
+        return {"error": "only SELECT (or WITH ... AS) allowed"}
+    if _SQL_FORBIDDEN.search(q):
+        return {"error": "forbidden keywords: INSERT, UPDATE, DELETE, DROP, etc."}
+    try:
+        with _conn() as db:
+            db.execute("PRAGMA read_uncommitted = 1")
+            rows = db.execute(q, ()).fetchmany(limit)
+        return {"rows": [dict(r) for r in rows], "count": len(rows)}
+    except Exception as e:
+        return {"error": str(e)}
