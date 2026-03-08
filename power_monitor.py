@@ -652,6 +652,7 @@ async def analyze():
                 since_ts = prev[0]["ts"]
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+            # Планове відключення — завжди показуємо (корисно навіть якщо включення було позаплановим)
             nxt = _next_schedule_transition(looking_for_on=False)
             if nxt:
                 msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
