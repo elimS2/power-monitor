@@ -2192,13 +2192,15 @@ updClocks(); setInterval(updClocks,1000);
   }}
   document.body.classList.add('pm-ready');
   var isMobile=window.matchMedia('(max-width:768px)').matches;
-  if(isMobile){{
-    setInterval(function(){{
+  setInterval(function(){{
+    if(isMobile){{
       sessionStorage.setItem(RESTORE_KEY,String(window.scrollY));
       document.body.classList.remove('pm-ready');
       setTimeout(function(){{ location.reload(); }},150);
-    }},10000);
-  }}
+    }}else{{
+      location.reload();
+    }}
+  }},10000);
 }})();
 </script>
 
