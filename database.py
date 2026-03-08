@@ -220,6 +220,33 @@ def recent_deye_log(n: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def deye_monthly_load_kwh() -> float | None:
+    """Compute load energy (kWh) for current month from deye_log using trapezoidal integration."""
+    now = datetime.now(UA_TZ)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ts_start = month_start.timestamp()
+    ts_end = time.time()
+
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT load_power_w, ts FROM deye_log
+               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL
+               ORDER BY ts""",
+            (ts_start, ts_end),
+        ).fetchall()
+
+    if len(rows) < 2:
+        return None
+
+    total_kwh = 0.0
+    for i in range(1, len(rows)):
+        p_prev = rows[i - 1]["load_power_w"] or 0
+        p_curr = rows[i]["load_power_w"] or 0
+        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
+        total_kwh += (p_prev + p_curr) / 2 * dt_h / 1000  # W -> kWh
+    return round(total_kwh, 1)
+
+
 def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
     """Get most recent deye_log entry where at least one phase has non-zero voltage."""
     rows = recent_deye_log(limit)

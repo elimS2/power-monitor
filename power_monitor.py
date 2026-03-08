@@ -45,6 +45,7 @@ from config import (
 from database import (
     boiler_schedule_for_dates,
     cleanup_old,
+    deye_monthly_load_kwh,
     first_heartbeat_ts,
     init_db,
     kv_get,
@@ -468,6 +469,10 @@ def _build_update_fragments() -> dict:
             parts1.append(f"АКБ: {int(soc)}%")
         if v1 is not None and v2 is not None and v3 is not None:
             parts1.append(f"Напруга: {(v1+v2+v3)/3:.0f} В")
+        month_kwh = deye_monthly_load_kwh()
+        if month_kwh is not None:
+            month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
+            parts1.append(f"За {month_name}: {month_kwh} кВт·год")
         deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
@@ -644,6 +649,10 @@ async def dashboard(key: str = Query("")):
             parts.append(f"АКБ: {int(soc)}%")
         if v_avg is not None:
             parts.append(f"Напруга: {int(v_avg)} В")
+        month_kwh = deye_monthly_load_kwh()
+        if month_kwh is not None:
+            month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
+            parts.append(f"За {month_name}: {month_kwh} кВт·год")
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         for r in deye_log:
             load_w = r.get("load_power_w")
@@ -755,6 +764,10 @@ async def dashboard(key: str = Query("")):
         if v1 is not None and v2 is not None and v3 is not None:
             avg_v = (v1 + v2 + v3) / 3
             parts1.append(f"Напруга: {avg_v:.0f} В")
+        month_kwh = deye_monthly_load_kwh()
+        if month_kwh is not None:
+            month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
+            parts1.append(f"За {month_name}: {month_kwh} кВт·год")
         deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
         deye_summary += f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
