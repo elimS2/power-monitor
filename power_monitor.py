@@ -493,6 +493,12 @@ def _build_update_fragments() -> dict:
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts1.append(f"За {month_name}: {month_kwh} кВт·год")
+        day_kwh = last.get("day_load_kwh")
+        if day_kwh is not None:
+            parts1.append(f"День (інв.): {day_kwh} кВт·год")
+        total_kwh = last.get("total_load_kwh")
+        if total_kwh is not None:
+            parts1.append(f"Всього (інв.): {total_kwh} кВт·год")
         deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
@@ -827,6 +833,12 @@ async def dashboard(key: str = Query("")):
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts.append(f"За {month_name}: {month_kwh} кВт·год")
+        day_kwh = last.get("day_load_kwh")
+        if day_kwh is not None:
+            parts.append(f"День (інв.): {day_kwh} кВт·год")
+        total_kwh = last.get("total_load_kwh")
+        if total_kwh is not None:
+            parts.append(f"Всього (інв.): {total_kwh} кВт·год")
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
@@ -980,6 +992,12 @@ async def dashboard(key: str = Query("")):
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts1.append(f"За {month_name}: {month_kwh} кВт·год")
+        day_kwh = last.get("day_load_kwh")
+        if day_kwh is not None:
+            parts1.append(f"День (інв.): {day_kwh} кВт·год")
+        total_kwh = last.get("total_load_kwh")
+        if total_kwh is not None:
+            parts1.append(f"Всього (інв.): {total_kwh} кВт·год")
         deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
         deye_summary += f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:

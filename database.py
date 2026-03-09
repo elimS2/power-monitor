@@ -128,6 +128,12 @@ def init_db():
             db.execute("ALTER TABLE deye_log ADD COLUMN ts_kyiv TEXT")
         except sqlite3.OperationalError:
             pass  # column exists
+        # Migration: add cumulative energy from Deye internal meter
+        for col in ("day_load_kwh", "total_load_kwh"):
+            try:
+                db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
+            except sqlite3.OperationalError:
+                pass  # column exists
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -207,6 +213,8 @@ def save_deye_log(
     battery_soc: float | None = None,
     battery_power_w: float | None = None,
     battery_voltage: float | None = None,
+    day_load_kwh: float | None = None,
+    total_load_kwh: float | None = None,
 ):
     ts = time.time()
     ts_kyiv = datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -215,12 +223,14 @@ def save_deye_log(
             """INSERT INTO deye_log (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, ts, ts_kyiv
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                battery_soc, battery_power_w, battery_voltage,
+                day_load_kwh, total_load_kwh, ts, ts_kyiv
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
-                battery_soc, battery_power_w, battery_voltage, ts, ts_kyiv,
+                battery_soc, battery_power_w, battery_voltage,
+                day_load_kwh, total_load_kwh, ts, ts_kyiv,
             ),
         )
 
@@ -230,7 +240,8 @@ def recent_deye_log(n: int = 100) -> list[dict]:
         rows = db.execute(
             """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
                       grid_v_l1, grid_v_l2, grid_v_l3,
-                      battery_soc, battery_power_w, battery_voltage, ts
+                      battery_soc, battery_power_w, battery_voltage,
+                      day_load_kwh, total_load_kwh, ts
                FROM deye_log ORDER BY id DESC LIMIT ?""",
             (n,),
         ).fetchall()

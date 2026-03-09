@@ -36,6 +36,7 @@ INTERVAL_SEC = int(os.getenv("INTERVAL_SEC", "30"))
 
 # Deye SUN-20K-SG05LP3 3-phase registers (from Sunsynk/Deye definitions)
 # Holding registers, unit/slave=1
+# https://kellerza.github.io/sunsynk/reference/definitions
 REGS = {
     "load_power_w": (653, True),      # signed
     "load_l1_w": (650, True),
@@ -47,6 +48,11 @@ REGS = {
     "battery_soc": (588, False),
     "battery_power_w": (590, True),
     "battery_voltage": (587, False, 0.01),
+    "day_load_kwh": (526, False, 0.1),   # Day load energy, kWh (resets daily)
+}
+# 32-bit registers: (addr_high, addr_low), scale. Value = (high << 16) | low
+REGS_32BIT = {
+    "total_load_kwh": (527, 528, 0.1),   # Total load energy, kWh (lifetime)
 }
 
 
@@ -90,6 +96,15 @@ def read_deye_solarman() -> dict | None:
                     data[name] = val
             except Exception:
                 pass
+        for name, spec in REGS_32BIT.items():
+            addr_hi, addr_lo, scale = spec
+            try:
+                rr = modbus.read_holding_registers(register_addr=addr_hi, quantity=2)
+                if rr and len(rr) >= 2:
+                    val_32 = (rr[0] << 16) | rr[1]
+                    data[name] = round(val_32 * scale, 2)
+            except Exception:
+                pass
     finally:
         modbus.disconnect()
     return data if data else None
@@ -114,6 +129,12 @@ def read_deye_modbus() -> dict | None:
             rr = client.read_holding_registers(addr, 1, slave=1)
             if not rr.isError() and rr.registers:
                 data[name] = _parse_reg_val(rr.registers[0], signed, scale)
+        for name, spec in REGS_32BIT.items():
+            addr_hi, addr_lo, scale = spec
+            rr = client.read_holding_registers(addr_hi, 2, slave=1)
+            if not rr.isError() and rr.registers and len(rr.registers) >= 2:
+                val_32 = (rr.registers[0] << 16) | rr.registers[1]
+                data[name] = round(val_32 * scale, 2)
     finally:
         client.close()
     return data if data else None
@@ -166,8 +187,10 @@ def main():
             ok = send_to_server(data)
             load = data.get("load_power_w", "?")
             soc = data.get("battery_soc", "?")
+            day_kwh = data.get("day_load_kwh")
+            day_str = f" day={day_kwh}kWh" if day_kwh is not None else ""
             status = "OK" if ok else "FAIL"
-            print(f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}% send={status}")
+            print(f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str} send={status}")
         else:
             print(f"{time.strftime('%H:%M:%S')} read failed")
         time.sleep(INTERVAL_SEC)

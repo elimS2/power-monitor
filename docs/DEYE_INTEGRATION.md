@@ -86,6 +86,8 @@ POWER_MONITOR_KEY=...
 | battery_soc | 588 | unsigned | — | Заряд батареї, % |
 | battery_power_w | 590 | signed | — | Потужність батареї, Вт |
 | battery_voltage | 587 | unsigned | ×0.01 | Напруга батареї, В |
+| day_load_kwh | 526 | unsigned | ×0.1 | Споживання за день, кВт·год (скидається о півночі) |
+| total_load_kwh | 527-528 | 32-bit | ×0.1 | Сумарне споживання, кВт·год (з моменту встановлення) |
 
 ---
 
