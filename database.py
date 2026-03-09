@@ -364,6 +364,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
         while j < len(events):
             if events[j]["event"] == "up":
                 up_ts = events[j]["ts"]
+                j += 1
                 break
             if events[j]["event"] == "down":
                 break
