@@ -329,19 +329,15 @@ def _integrate_battery_power(rows: list, positive_only: bool) -> float:
 def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
     """
     Compute discharge (during outage) and charge (after power returns) episodes.
+    Each down-up pair = one episode with full detail.
     Returns (daily_list, monthly_summary).
     daily_list: [{"date": str, "discharges": [{"soc_from", "soc_to", "kwh"}], "charges": [...], "cycles": int}]
     monthly_summary: {"cycles": int, "charge_kwh": float, "discharge_kwh": float}
-
-    For charge episodes: soc_from/soc_to are taken only from rows when battery_power_w <= 0
-    (actual charging), so SOC delta reflects real charge — not the full 6h window that may
-    include nested outages.
     """
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
     ts_end = time.time()
-    CHARGE_WINDOW_H = 6  # hours after "up" to capture charging
 
     events = events_in_range(ts_start, ts_end)
     if not events:
@@ -351,7 +347,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
         deye_rows = db.execute(
             """SELECT battery_soc, battery_power_w, ts FROM deye_log
                WHERE ts >= ? AND ts <= ? ORDER BY ts""",
-            (ts_start, ts_end + CHARGE_WINDOW_H * 3600),
+            (ts_start, ts_end + 3600),
         ).fetchall()
     deye_rows = [dict(r) for r in deye_rows]
 
@@ -377,7 +373,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
         if up_ts is None:
             continue
 
-        # Discharge episode: deye_log between down_ts and up_ts
+        # Discharge: every episode (including tiny ones)
         ep_rows = [r for r in deye_rows if down_ts <= r["ts"] <= up_ts]
         if len(ep_rows) >= 2:
             soc_from = ep_rows[0].get("battery_soc")
@@ -389,11 +385,9 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
                 "ts_start": down_ts, "ts_end": up_ts,
             })
 
-        # Charge episode: deye_log from up_ts for CHARGE_WINDOW_H
-        # soc_from/soc_to only from rows when actually charging (battery_power_w <= 0)
-        # charge_duration_h = sum of intervals when actually charging (real charging time)
-        charge_end = min(up_ts + CHARGE_WINDOW_H * 3600, ts_end + 3600)
-        ch_rows = [r for r in deye_rows if up_ts <= r["ts"] <= charge_end]
+        # Charge: from up until next down (or end of data). No fixed window.
+        charge_end = events[i]["ts"] if i < len(events) and events[i]["event"] == "down" else ts_end
+        ch_rows = [r for r in deye_rows if up_ts <= r["ts"] < charge_end]
         if len(ch_rows) >= 2:
             kwh = round(_integrate_battery_power(ch_rows, positive_only=True), 2)
             if kwh > 0:
@@ -402,8 +396,8 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
                     soc_from = charge_only_rows[0].get("battery_soc")
                     soc_to = charge_only_rows[-1].get("battery_soc")
                     charge_duration_h = round(
-                        sum(charge_only_rows[i]["ts"] - charge_only_rows[i - 1]["ts"]
-                            for i in range(1, len(charge_only_rows))) / 3600, 1)
+                        sum(charge_only_rows[k]["ts"] - charge_only_rows[k - 1]["ts"]
+                            for k in range(1, len(charge_only_rows))) / 3600, 1)
                 else:
                     soc_from = ch_rows[0].get("battery_soc")
                     soc_to = ch_rows[-1].get("battery_soc")
