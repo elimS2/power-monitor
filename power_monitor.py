@@ -204,22 +204,30 @@ async def analyze():
                     sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})"
                 else:
                     sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+            else:
+                # Немає переходу в графіку (напр. весь день "ок") — перевіряємо поточний слот
+                slot = dtek.current_slot_status()
+                if slot == "ok":
+                    sched_label = " (\u26a1Позапланове)"
+                elif slot in ("maybe", "off"):
+                    sched_label = " (\U0001f4c5 За графіком)"
+                elif slot is None:
+                    sched_label = " (немає даних графіку)"
             msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            # Для позапланових відключень — показуємо останню напругу (допоможе: вимкнули світло / висока / низька)
-            if dev is not None and abs(dev) > 30:
-                v = last_nonzero_grid_voltage()
-                if v:
-                    parts = []
-                    for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
-                        val = v.get(key)
-                        if val is not None:
-                            parts.append(f"{phase}={val:.0f} В")
-                        else:
-                            parts.append(f"{phase}=—")
-                    msg += f"\n\U0001f4a0 Остання напруга: {', '.join(parts)}"
+            # Остання напруга — завжди показуємо коли є дані (допоможе: вимкнули світло / висока / низька)
+            v = last_nonzero_grid_voltage()
+            if v:
+                parts = []
+                for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                    val = v.get(key)
+                    if val is not None:
+                        parts.append(f"{phase}={val:.0f} В")
+                    else:
+                        parts.append(f"{phase}=—")
+                msg += f"\n\U0001f4a0 Остання напруга: {', '.join(parts)}"
             # Для позапланових відключень не показуємо наступне включення за графіком
             if dev is None or abs(dev) <= 30:
                 nxt = dtek.next_schedule_transition(looking_for_on=True)
@@ -241,6 +249,14 @@ async def analyze():
                     sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})"
                 else:
                     sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+            else:
+                slot = dtek.current_slot_status()
+                if slot == "ok":
+                    sched_label = " (\U0001f4c5 За графіком)"
+                elif slot in ("maybe", "off"):
+                    sched_label = " (\u26a1Позапланове)"
+                elif slot is None:
+                    sched_label = " (немає даних графіку)"
             msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
             if prev:
                 since_ts = prev[0]["ts"]

@@ -62,6 +62,16 @@ def _day_slots_to_48(day_data: dict) -> list[str]:
     return grid
 
 
+def current_slot_status() -> str | None:
+    """Current slot status: 'ok', 'maybe', or 'off'. None if no schedule."""
+    if not schedule_cache or not schedule_cache.get("today"):
+        return None
+    grid = schedule_cache["today"]["grid"]
+    now_kyiv = datetime.now(UA_TZ)
+    slot_idx = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+    return grid[min(slot_idx, 47)]
+
+
 def schedule_deviation(is_down_event: bool) -> int | None:
     """Find signed deviation (minutes) from the nearest matching DTEK transition.
 
