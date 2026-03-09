@@ -332,6 +332,10 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
     Returns (daily_list, monthly_summary).
     daily_list: [{"date": str, "discharges": [{"soc_from", "soc_to", "kwh"}], "charges": [...], "cycles": int}]
     monthly_summary: {"cycles": int, "charge_kwh": float, "discharge_kwh": float}
+
+    For charge episodes: soc_from/soc_to are taken only from rows when battery_power_w <= 0
+    (actual charging), so SOC delta reflects real charge — not the full 6h window that may
+    include nested outages.
     """
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -359,7 +363,6 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
             i += 1
             continue
         down_ts = events[i]["ts"]
-        # find next "up"
         up_ts = None
         j = i + 1
         while j < len(events):
@@ -387,13 +390,19 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
             })
 
         # Charge episode: deye_log from up_ts for CHARGE_WINDOW_H
+        # soc_from/soc_to only from rows when actually charging (battery_power_w <= 0)
         charge_end = min(up_ts + CHARGE_WINDOW_H * 3600, ts_end + 3600)
         ch_rows = [r for r in deye_rows if up_ts <= r["ts"] <= charge_end]
         if len(ch_rows) >= 2:
-            soc_from = ch_rows[0].get("battery_soc")
-            soc_to = ch_rows[-1].get("battery_soc")
             kwh = round(_integrate_battery_power(ch_rows, positive_only=True), 2)
             if kwh > 0:
+                charge_only_rows = [r for r in ch_rows if (r.get("battery_power_w") or 0) <= 0]
+                if len(charge_only_rows) >= 2:
+                    soc_from = charge_only_rows[0].get("battery_soc")
+                    soc_to = charge_only_rows[-1].get("battery_soc")
+                else:
+                    soc_from = ch_rows[0].get("battery_soc")
+                    soc_to = ch_rows[-1].get("battery_soc")
                 date_str = datetime.fromtimestamp(up_ts, tz=UA_TZ).strftime("%Y-%m-%d")
                 by_date["charges"].append({
                     "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
