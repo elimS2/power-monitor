@@ -534,7 +534,7 @@ def _build_update_fragments() -> dict:
                 st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                 t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                 t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                dur = (x["ts_end"] - x["ts_start"]) / 3600
+                dur = x.get("charge_duration_h") if x.get("t") == "заряд" and x.get("charge_duration_h") is not None else (x["ts_end"] - x["ts_start"]) / 3600
                 parts.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
             if parts:
                 bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts)}</td></tr>\n'
@@ -726,7 +726,7 @@ async def dashboard(key: str = Query("")):
                     st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                     t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                     t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                    dur = (x["ts_end"] - x["ts_start"]) / 3600
+                    dur = x.get("charge_duration_h") if x.get("t") == "заряд" and x.get("charge_duration_h") is not None else (x["ts_end"] - x["ts_start"]) / 3600
                     parts_b.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
                 if parts_b:
                     bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts_b)}</td></tr>\n'
@@ -898,7 +898,7 @@ async def dashboard(key: str = Query("")):
                     st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                     t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                     t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                    dur = (x["ts_end"] - x["ts_start"]) / 3600
+                    dur = x.get("charge_duration_h") if x.get("t") == "заряд" and x.get("charge_duration_h") is not None else (x["ts_end"] - x["ts_start"]) / 3600
                     parts_b.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
                 if parts_b:
                     bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts_b)}</td></tr>\n'

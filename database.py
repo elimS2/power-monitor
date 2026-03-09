@@ -391,6 +391,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
 
         # Charge episode: deye_log from up_ts for CHARGE_WINDOW_H
         # soc_from/soc_to only from rows when actually charging (battery_power_w <= 0)
+        # charge_duration_h = sum of intervals when actually charging (real charging time)
         charge_end = min(up_ts + CHARGE_WINDOW_H * 3600, ts_end + 3600)
         ch_rows = [r for r in deye_rows if up_ts <= r["ts"] <= charge_end]
         if len(ch_rows) >= 2:
@@ -400,13 +401,18 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
                 if len(charge_only_rows) >= 2:
                     soc_from = charge_only_rows[0].get("battery_soc")
                     soc_to = charge_only_rows[-1].get("battery_soc")
+                    charge_duration_h = round(
+                        sum(charge_only_rows[i]["ts"] - charge_only_rows[i - 1]["ts"]
+                            for i in range(1, len(charge_only_rows))) / 3600, 1)
                 else:
                     soc_from = ch_rows[0].get("battery_soc")
                     soc_to = ch_rows[-1].get("battery_soc")
+                    charge_duration_h = round((ch_rows[-1]["ts"] - ch_rows[0]["ts"]) / 3600, 1)
                 date_str = datetime.fromtimestamp(up_ts, tz=UA_TZ).strftime("%Y-%m-%d")
                 by_date["charges"].append({
                     "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
                     "ts_start": up_ts, "ts_end": ch_rows[-1]["ts"],
+                    "charge_duration_h": charge_duration_h,
                 })
 
     # Group by date
