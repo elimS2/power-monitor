@@ -339,6 +339,7 @@ from api import (
     deye_router,
     debug_router,
     heartbeat_router,
+    plug_router,
     static_router,
     telegram_router,
 )
@@ -348,6 +349,7 @@ app.include_router(dashboard_router)
 app.include_router(debug_router)
 app.include_router(telegram_router)
 app.include_router(deye_router)
+app.include_router(plug_router)
 app.include_router(static_router)
 
 
@@ -573,6 +575,7 @@ def _build_update_fragments() -> dict:
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -1139,6 +1142,9 @@ async def dashboard(key: str = Query("")):
     status_cls = "down" if is_down else "up"
     status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
 
+    plug_state_raw = kv_get("plug_dashboard_state", "unknown")
+    plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)
+
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
 <meta charset="utf-8">
@@ -1182,6 +1188,17 @@ async def dashboard(key: str = Query("")):
 <tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr>
 <tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr>
 </table>
+</details>
+</div>
+
+<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
+<details id="plug_details" open data-ls-key="plug_open" data-default-open="1">
+<summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary>
+<div id="pm-plug" style="margin:0.5rem 0">
+  <span id="plug-state" style="color:var(--muted)">{plug_state}</span>
+  <button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button>
+  <button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button>
+</div>
 </details>
 </div>
 

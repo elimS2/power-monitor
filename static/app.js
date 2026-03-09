@@ -147,9 +147,32 @@
     });
   }
 
+  // Plug control (Nous/Tuya)
+  var key = document.body.getAttribute('data-pm-key') || '';
+  var plugState = document.getElementById('plug-state');
+  var plugBtnOn = document.getElementById('plug-btn-on');
+  var plugBtnOff = document.getElementById('plug-btn-off');
+  var plugLabels = { on: 'Увімкнено', off: 'Вимкнено', unknown: 'невідомо' };
+  function updPlugState(s) { if (plugState) plugState.textContent = plugLabels[s] || s; }
+  function plugSet(state) {
+    if (!key) return;
+    plugState.textContent = 'чекаємо...';
+    fetch('/api/plug-set?key=' + encodeURIComponent(key) + '&state=' + state, { method: 'POST' })
+      .then(function() {
+        setTimeout(function() {
+          fetch('/api/plug-status?key=' + encodeURIComponent(key))
+            .then(function(r) { return r.json(); })
+            .then(function(d) { updPlugState(d.state || 'unknown'); })
+            .catch(function() { updPlugState('unknown'); });
+        }, 3000);
+      })
+      .catch(function() { updPlugState('unknown'); });
+  }
+  if (plugBtnOn) plugBtnOn.addEventListener('click', function() { plugSet('on'); });
+  if (plugBtnOff) plugBtnOff.addEventListener('click', function() { plugSet('off'); });
+
   // Fragment fetch + live update
   document.body.classList.add('pm-ready');
-  var key = document.body.getAttribute('data-pm-key') || '';
   if (key) {
     var urlBase = '/api/dashboard-fragments?key=' + encodeURIComponent(key);
     function doFetch() {
@@ -207,6 +230,7 @@
           }
         }
         if (d.pm_mk) { el = document.getElementById('pm-mk-wrap'); if (el) el.innerHTML = d.pm_mk; }
+        if (d.pm_plug_state !== undefined) updPlugState(d.pm_plug_state);
         if (d.title) document.title = d.title;
         if (d.favicon) {
           var old = document.querySelector('link[rel="icon"]');
