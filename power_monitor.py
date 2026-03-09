@@ -526,21 +526,16 @@ def _build_update_fragments() -> dict:
             summary_parts.append(f"розряд −{m['discharge_kwh']} кВт·год")
         bat_rows = ""
         for d in battery_daily:
+            all_ep = [{"t": "розряд", **x} for x in d["discharges"]] + [{"t": "заряд", **x} for x in d["charges"]]
+            all_ep.sort(key=lambda e: e["ts_start"])
             parts = []
-            for x in d["discharges"]:
+            for x in all_ep:
                 sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
                 st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                 t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                 t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
                 dur = (x["ts_end"] - x["ts_start"]) / 3600
-                parts.append(f"розряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
-            for x in d["charges"]:
-                sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
-                st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
-                t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
-                t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                dur = (x["ts_end"] - x["ts_start"]) / 3600
-                parts.append(f"заряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
+                parts.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
             if parts:
                 bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts)}</td></tr>\n'
         deye_battery_html = f'<details id="deye_battery_details" data-ls-key="deye_battery_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">АКБ: розряд та заряд (за {month_name}: {", ".join(summary_parts)})</summary><table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>День</th><th>Епізоди</th></tr>{bat_rows}</table></details>'
@@ -723,21 +718,16 @@ async def dashboard(key: str = Query("")):
                 summary_parts.append(f"розряд −{m['discharge_kwh']} кВт·год")
             bat_rows = ""
             for d in battery_daily:
+                all_ep = [{"t": "розряд", **x} for x in d["discharges"]] + [{"t": "заряд", **x} for x in d["charges"]]
+                all_ep.sort(key=lambda e: e["ts_start"])
                 parts_b = []
-                for x in d["discharges"]:
+                for x in all_ep:
                     sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
                     st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                     t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                     t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
                     dur = (x["ts_end"] - x["ts_start"]) / 3600
-                    parts_b.append(f"розряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
-                for x in d["charges"]:
-                    sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
-                    st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
-                    t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
-                    t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                    dur = (x["ts_end"] - x["ts_start"]) / 3600
-                    parts_b.append(f"заряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
+                    parts_b.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
                 if parts_b:
                     bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts_b)}</td></tr>\n'
             deye_battery_html = f'<details id="deye_battery_details" data-ls-key="deye_battery_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">АКБ: розряд та заряд (за {month_name}: {", ".join(summary_parts)})</summary><table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>День</th><th>Епізоди</th></tr>{bat_rows}</table></details>'
@@ -900,21 +890,16 @@ async def dashboard(key: str = Query("")):
                 summary_parts.append(f"розряд −{m['discharge_kwh']} кВт·год")
             bat_rows = ""
             for d in battery_daily:
+                all_ep = [{"t": "розряд", **x} for x in d["discharges"]] + [{"t": "заряд", **x} for x in d["charges"]]
+                all_ep.sort(key=lambda e: e["ts_start"])
                 parts_b = []
-                for x in d["discharges"]:
+                for x in all_ep:
                     sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
                     st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
                     t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
                     t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
                     dur = (x["ts_end"] - x["ts_start"]) / 3600
-                    parts_b.append(f"розряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
-                for x in d["charges"]:
-                    sf = int(x["soc_from"]) if x.get("soc_from") is not None else "?"
-                    st = int(x["soc_to"]) if x.get("soc_to") is not None else "?"
-                    t1 = datetime.fromtimestamp(x["ts_start"], tz=UA_TZ).strftime("%H:%M")
-                    t2 = datetime.fromtimestamp(x["ts_end"], tz=UA_TZ).strftime("%H:%M")
-                    dur = (x["ts_end"] - x["ts_start"]) / 3600
-                    parts_b.append(f"заряд {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
+                    parts_b.append(f"{x['t']} {sf}%→{st}% ({x['kwh']} кВт·год) {t1}–{t2}, {dur:.1f} год")
                 if parts_b:
                     bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts_b)}</td></tr>\n'
             deye_battery_html = f'<details id="deye_battery_details" data-ls-key="deye_battery_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">АКБ: розряд та заряд (за {month_name}: {", ".join(summary_parts)})</summary><table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>День</th><th>Епізоди</th></tr>{bat_rows}</table></details>'
