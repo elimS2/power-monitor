@@ -562,6 +562,7 @@ def _build_update_fragments() -> dict:
 
     return {
         "pm_status_block": f'<div class="status {status_cls}"><img src="/icons/{icon}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div><div class="duration">{duration_text}{dur_ext}</div>',
+        "pm_sched": _build_schedule_inner(is_down),
         "pm_weather": weather_html,
         "pm_alert": alert_html,
         "pm_mk": f'<div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>',
@@ -618,6 +619,121 @@ def _ts_fmt(ts: float) -> str:
 
 def _ts_fmt_full(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _build_schedule_inner(is_down: bool) -> str:
+    """Build schedule grid inner content (for fragment update of pm-sched-content)."""
+    if not dtek.schedule_cache:
+        return ""
+    now_kyiv = datetime.now(UA_TZ)
+    current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
+    sched_rows = ""
+    text_blocks = ""
+    for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
+        day = dtek.schedule_cache.get(day_key)
+        if not day:
+            continue
+        date_str = day["date"][:10] if day["date"] else ""
+        cells = ""
+        grid = day["grid"]
+        for i in range(48):
+            cls = "sg-" + grid[i]
+            if i % 2 == 0:
+                cls += " sg-hr"
+            if day_key == "today" and i == current_slot:
+                cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
+            cells += f'<td class="{cls}"></td>'
+        sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
+        text_blocks += dtek.grid_text_summary(grid, date_str, day_label)
+
+    hour_headers = "".join(f'<th colspan="2" class="sg-hdr">{h:02d}</th>' for h in range(24))
+
+    sched_mob_html = ""
+    for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
+        day = dtek.schedule_cache.get(day_key)
+        if not day:
+            continue
+        date_str = day["date"][:10]
+        grid = day["grid"]
+        sched_mob_html += f'<div class="sg-mob-day">{day_label} <span style="font-size:0.8rem;color:var(--muted)">{date_str}</span></div>\n'
+        sched_mob_html += '<table class="sg-table"><colgroup><col span="24"></colgroup>\n'
+        for half in range(2):
+            start_h = half * 12
+            mob_hdr = "".join(f'<th colspan="2" class="sg-hdr">{h:02d}</th>' for h in range(start_h, start_h + 12))
+            sched_mob_html += f'<tr>{mob_hdr}</tr>\n'
+            cells = ""
+            for i in range(half * 24, half * 24 + 24):
+                cls = "sg-" + grid[i]
+                if i % 2 == 0:
+                    cls += " sg-hr"
+                if day_key == "today" and i == current_slot:
+                    cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
+                cells += f'<td class="{cls}"></td>'
+            sched_mob_html += f'<tr>{cells}</tr>\n'
+        sched_mob_html += '</table>\n'
+
+    history_html = ""
+    for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
+        day = dtek.schedule_cache.get(day_key)
+        if not day:
+            continue
+        d_str = day["date"][:10]
+        history = schedule_history_for_date(d_str)
+        if len(history) < 2:
+            continue
+        hist_rows = ""
+        prev_grid = None
+        for h in history:
+            ts_str = _ts_fmt_full(h["ts"])
+            if prev_grid is None:
+                diff_text = "Перший графік"
+            else:
+                diff_text = dtek.describe_grid_diff(prev_grid, h["grid"])
+            prev_grid = h["grid"]
+            hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
+        ls_key = f"sched_hist_{day_key}_open"
+        history_html += f"""
+<details id="sched_hist_{day_key}_details" style="margin-top:0.8rem" data-ls-key="{ls_key}" data-default-open="0">
+<summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на {d_str} — {day_label} ({len(history)})</summary>
+<table>
+<tr><th>Час</th><th>Що змінилось</th></tr>
+{hist_rows}</table>
+</details>"""
+
+    inner = f"""<div class="sg-wrap sg-desktop">
+<table class="sg-table">
+<colgroup><col class="sg-col-label"><col span="48"></colgroup>
+<tr><th class="sg-label"></th>{hour_headers}</tr>
+{sched_rows}</table>
+</div>
+<div class="sg-mobile">
+{sched_mob_html}</div>
+<div class="sg-legend">
+<span class="sg-leg-item"><span class="sg-swatch sg-ok"></span> Світло є</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-off"></span> Відключення</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
+<span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
+</div>
+<details id="sched_text_details" open data-ls-key="sched_text_open" data-default-open="1">
+<summary style="font-size:0.85rem;color:var(--muted)">Текстовий графік відключень</summary>
+{text_blocks}
+</details>
+{history_html}"""
+
+    return inner
+
+
+def _build_schedule_html(is_down: bool) -> str:
+    """Build full schedule details block. Uses pm-sched-content wrapper for fragment updates."""
+    inner = _build_schedule_inner(is_down)
+    if not inner:
+        return ""
+    return f"""
+<details id="sched_details" open data-ls-key="sched_open" data-default-open="1">
+<summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
+<div id="pm-sched-content">{inner}</div>
+</details>
+"""
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -952,117 +1068,7 @@ async def dashboard(key: str = Query("")):
         )
 
     # ─── DTEK schedule grid ───
-    schedule_html = ""
-    if dtek.schedule_cache:
-        now_kyiv = datetime.now(UA_TZ)
-        current_slot = now_kyiv.hour * 2 + (1 if now_kyiv.minute >= 30 else 0)
-        sched_rows = ""
-        text_blocks = ""
-        today_date = ""
-        for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = dtek.schedule_cache.get(day_key)
-            if not day:
-                continue
-            date_str = day["date"][:10] if day["date"] else ""
-            cells = ""
-            grid = day["grid"]
-            for i in range(48):
-                cls = "sg-" + grid[i]
-                if i % 2 == 0:
-                    cls += " sg-hr"
-                if day_key == "today" and i == current_slot:
-                    cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
-                cells += f'<td class="{cls}"></td>'
-            sched_rows += f'<tr><td class="sg-label">{day_label}<br><span style="font-size:0.7rem;color:var(--muted)">{date_str}</span></td>{cells}</tr>\n'
-            text_blocks += dtek.grid_text_summary(grid, date_str, day_label)
-            if day_key == "today":
-                today_date = date_str
-
-        hour_headers = ""
-        for h in range(24):
-            hour_headers += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
-
-        mob_grids = []
-        for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = dtek.schedule_cache.get(day_key)
-            if not day:
-                continue
-            mob_grids.append((day_key, day_label, day["date"][:10], day["grid"]))
-
-        sched_mob_html = ""
-        for day_key, day_label, date_str, grid in mob_grids:
-            sched_mob_html += f'<div class="sg-mob-day">{day_label} <span style="font-size:0.8rem;color:var(--muted)">{date_str}</span></div>\n'
-            sched_mob_html += '<table class="sg-table"><colgroup><col span="24"></colgroup>\n'
-            for half in range(2):
-                start_h = half * 12
-                mob_hdr = ""
-                for h in range(start_h, start_h + 12):
-                    mob_hdr += f'<th colspan="2" class="sg-hdr">{h:02d}</th>'
-                sched_mob_html += f'<tr>{mob_hdr}</tr>\n'
-                cells = ""
-                for i in range(half * 24, half * 24 + 24):
-                    cls = "sg-" + grid[i]
-                    if i % 2 == 0:
-                        cls += " sg-hr"
-                    if day_key == "today" and i == current_slot:
-                        cls += " sg-now sg-now-on" if not is_down else " sg-now sg-now-off"
-                    cells += f'<td class="{cls}"></td>'
-                sched_mob_html += f'<tr>{cells}</tr>\n'
-            sched_mob_html += '</table>\n'
-
-        history_html = ""
-        for day_key, day_label in (("today", "Сьогодні"), ("tomorrow", "Завтра")):
-            day = dtek.schedule_cache.get(day_key)
-            if not day:
-                continue
-            d_str = day["date"][:10]
-            history = schedule_history_for_date(d_str)
-            if len(history) < 2:
-                continue
-            hist_rows = ""
-            prev_grid = None
-            for h in history:
-                ts_str = _ts_fmt_full(h["ts"])
-                if prev_grid is None:
-                    diff_text = "Перший графік"
-                else:
-                    diff_text = dtek.describe_grid_diff(prev_grid, h["grid"])
-                prev_grid = h["grid"]
-                hist_rows += f"<tr><td>{ts_str}</td><td>{diff_text}</td></tr>\n"
-            det_id = f"sched_hist_{day_key}_details"
-            ls_key = f"sched_hist_{day_key}_open"
-            history_html += f"""
-<details id="{det_id}" style="margin-top:0.8rem" data-ls-key="{ls_key}" data-default-open="0">
-<summary style="font-size:0.8rem;color:var(--muted)">Зміни графіку на {d_str} — {day_label} ({len(history)})</summary>
-<table>
-<tr><th>Час</th><th>Що змінилось</th></tr>
-{hist_rows}</table>
-</details>"""
-
-        schedule_html = f"""
-<details id="sched_details" open data-ls-key="sched_open" data-default-open="1">
-<summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
-<div class="sg-wrap sg-desktop">
-<table class="sg-table">
-<colgroup><col class="sg-col-label"><col span="48"></colgroup>
-<tr><th class="sg-label"></th>{hour_headers}</tr>
-{sched_rows}</table>
-</div>
-<div class="sg-mobile">
-{sched_mob_html}</div>
-<div class="sg-legend">
-<span class="sg-leg-item"><span class="sg-swatch sg-ok"></span> Світло є</span>
-<span class="sg-leg-item"><span class="sg-swatch sg-off"></span> Відключення</span>
-<span class="sg-leg-item"><span class="sg-swatch sg-maybe"></span> Можливе</span>
-<span class="sg-leg-item"><span class="sg-swatch sg-now-demo"></span> Зараз</span>
-</div>
-<details id="sched_text_details" open data-ls-key="sched_text_open" data-default-open="1">
-<summary style="font-size:0.85rem;color:var(--muted)">Текстовий графік відключень</summary>
-{text_blocks}
-</details>
-{history_html}
-</details>
-"""
+    schedule_html = _build_schedule_html(is_down)
 
     # ─── Alert + Weather ───
     alert_html = ""

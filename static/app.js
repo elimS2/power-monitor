@@ -188,6 +188,13 @@
             updScheduleNow();
           }
         }
+        if (d.pm_sched !== undefined) {
+          el = document.getElementById('pm-sched-content');
+          if (el) {
+            el.innerHTML = d.pm_sched;
+            updScheduleNow();
+          }
+        }
         if (d.pm_weather !== undefined) { el = document.getElementById('pm-weather'); if (el) el.innerHTML = d.pm_weather; }
         if (d.pm_alert !== undefined) { el = document.getElementById('pm-alert'); if (el) el.innerHTML = d.pm_alert; }
         if (d.pm_ev_tbody !== undefined) { el = document.getElementById('pm-events-tbody'); if (el) el.innerHTML = d.pm_ev_tbody; }
