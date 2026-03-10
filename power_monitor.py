@@ -1532,6 +1532,6 @@ async def dashboard(key: str = Query("")):
 </div>
 </div>
 
-<div class="ver">v {GIT_COMMIT}</div>
+<div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
