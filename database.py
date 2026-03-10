@@ -334,68 +334,6 @@ def deye_total_load_kwh_integrated() -> float | None:
     return _integrate_range(row["ts_min"], time.time())
 
 
-def _integrate_grid_range(
-    ts_start: float, ts_end: float, import_only: bool
-) -> float | None:
-    """Integrate grid_power_w: import_only=True -> positive (import), False -> negative (export). Returns kWh."""
-    with _conn() as db:
-        rows = db.execute(
-            """SELECT grid_power_w, ts FROM deye_log
-               WHERE ts >= ? AND ts <= ? AND grid_power_w IS NOT NULL
-               ORDER BY ts""",
-            (ts_start, ts_end),
-        ).fetchall()
-    if len(rows) < 2:
-        return None
-    total = 0.0
-    for i in range(1, len(rows)):
-        p_prev = rows[i - 1]["grid_power_w"] or 0
-        p_curr = rows[i]["grid_power_w"] or 0
-        if import_only:
-            p_prev, p_curr = max(0, p_prev), max(0, p_curr)
-        else:
-            p_prev, p_curr = max(0, -p_prev), max(0, -p_curr)
-        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
-        total += (p_prev + p_curr) / 2 * dt_h / 1000
-    return round(total, 2)
-
-
-def deye_day_grid_import_integrated() -> float | None:
-    """Grid import (kWh) for today from grid_power_w integration."""
-    now = datetime.now(UA_TZ)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return _integrate_grid_range(day_start.timestamp(), time.time(), import_only=True)
-
-
-def deye_day_grid_export_integrated() -> float | None:
-    """Grid export (kWh) for today from grid_power_w integration."""
-    now = datetime.now(UA_TZ)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return _integrate_grid_range(day_start.timestamp(), time.time(), import_only=False)
-
-
-def deye_total_grid_import_integrated() -> float | None:
-    """Total grid import from first deye_log entry (grid_power_w integration)."""
-    with _conn() as db:
-        row = db.execute(
-            "SELECT MIN(ts) as ts_min FROM deye_log WHERE grid_power_w IS NOT NULL"
-        ).fetchone()
-    if not row or row["ts_min"] is None:
-        return None
-    return _integrate_grid_range(row["ts_min"], time.time(), import_only=True)
-
-
-def deye_total_grid_export_integrated() -> float | None:
-    """Total grid export from first deye_log entry (grid_power_w integration)."""
-    with _conn() as db:
-        row = db.execute(
-            "SELECT MIN(ts) as ts_min FROM deye_log WHERE grid_power_w IS NOT NULL"
-        ).fetchone()
-    if not row or row["ts_min"] is None:
-        return None
-    return _integrate_grid_range(row["ts_min"], time.time(), import_only=False)
-
-
 def deye_cumulative_metrics(last: dict | None) -> list[dict]:
     """
     Cumulative Load Energy and Grid metrics for dashboard table.
@@ -406,10 +344,11 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
         ("День", "526", "Load за сьогодні (скидається о 00:00)", "day_load_kwh", deye_day_load_kwh_integrated),
         ("Місяць", "66", "Load за поточний місяць (×0.001 для 3PH)", "month_load_kwh", deye_monthly_load_kwh),
         ("Всього", "527–528", "Load за весь час (×0.000001 для 3PH)", "total_load_kwh", deye_total_load_kwh_integrated),
-        ("День імпорт", "520", "Grid імпорт за день (×0.1)", "day_grid_import_kwh", deye_day_grid_import_integrated),
-        ("День експорт", "521", "Grid експорт за день (×0.1)", "day_grid_export_kwh", deye_day_grid_export_integrated),
-        ("Всього імпорт", "522–523", "Grid імпорт за весь час (×0.000001)", "total_grid_import_kwh", deye_total_grid_import_integrated),
-        ("Всього експорт", "524–525", "Grid експорт за весь час (×0.000001)", "total_grid_export_kwh", deye_total_grid_export_integrated),
+        # Grid: тільки лічильник інвертора (інтеграція grid_power_w часто 0 в гібридному режимі)
+        ("День імпорт", "520", "Grid імпорт за день (×0.1)", "day_grid_import_kwh", None),
+        ("День експорт", "521", "Grid експорт за день (×0.1)", "day_grid_export_kwh", None),
+        ("Всього імпорт", "522–523", "Grid імпорт за весь час (×0.000001)", "total_grid_import_kwh", None),
+        ("Всього експорт", "524–525", "Grid експорт за весь час (×0.000001)", "total_grid_export_kwh", None),
     ]
     result = []
     for period, reg, desc, key_inv, fn_integrated in rows:

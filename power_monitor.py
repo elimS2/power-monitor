@@ -642,7 +642,7 @@ def _build_deye_cumulative_table(last: dict | None) -> str:
         '<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Період</th><th>Регістр</th><th>Що показує</th><th>Кумулятивне (інв.)</th><th>Інтеграція</th></tr>'
         f'{trs}</table>'
         '<div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem">'
-        'Load: load_power_w. Grid: grid_power_w (+ імпорт, − експорт). Інтеграція = наша обчисленка з зразків.'
+        'Load: load_power_w + інтеграція. Grid: тільки лічильник інвертора (у гібридному режимі grid_power_w часто 0).'
         '</div></details>'
     )
 
