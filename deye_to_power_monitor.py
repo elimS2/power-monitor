@@ -14,11 +14,16 @@ Environment or .env:
     POWER_MONITOR_URL=         # e.g. https://your-server.example.com
     POWER_MONITOR_KEY=         # API key from Power Monitor
     INTERVAL_SEC=30
+    DEYE_LOG_FILE=             # Optional: path to log file (default: script_dir/deye_to_power_monitor.log)
 """
 
+import logging
 import os
+import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 # Optional: load .env from power-monitor folder
 try:
@@ -26,6 +31,10 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_DIR = SCRIPT_PATH.parent
+DEYE_LOG_FILE = os.getenv("DEYE_LOG_FILE", str(SCRIPT_DIR / "deye_to_power_monitor.log"))
 
 DEYE_IP = os.getenv("DEYE_IP", "")
 DEYE_PORT = int(os.getenv("DEYE_PORT", "8899"))
@@ -56,6 +65,50 @@ REGS_32BIT = {
     "total_load_kwh": (527, 528, 0.1),   # Total load energy, kWh (lifetime)
     "year_load_kwh": (87, 88, 0.1),     # Year load energy, kWh (1PH; 3PH may not support)
 }
+
+
+def _git_version() -> str:
+    """Return short git commit hash, or 'unknown' if not in repo."""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=SCRIPT_DIR, timeout=2,
+        )
+        return r.stdout.strip() if r.returncode == 0 and r.stdout else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _setup_logging() -> logging.Logger:
+    """Configure logging to console and file. Returns logger."""
+    log = logging.getLogger("deye_to_power_monitor")
+    log.setLevel(logging.INFO)
+    log.handlers.clear()
+    fmt = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    # Console
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(fmt)
+    log.addHandler(ch)
+    # File
+    fh = logging.FileHandler(DEYE_LOG_FILE, encoding="utf-8")
+    fh.setFormatter(fmt)
+    log.addHandler(fh)
+    return log
+
+
+def _log_startup(log: logging.Logger) -> None:
+    """Log script path, log file, start time (UTC), git version."""
+    start_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    git_ver = _git_version()
+    msgs = [
+        f"Script path: {SCRIPT_PATH}",
+        f"Log file: {DEYE_LOG_FILE}",
+        f"Start time (UTC): {start_utc}",
+        f"Git version: {git_ver}",
+    ]
+    for m in msgs:
+        log.info(m)
+        print(m, flush=True)
 
 
 def _to_signed16(val: int) -> int:
@@ -104,7 +157,11 @@ def read_deye_solarman() -> dict | None:
                 rr = modbus.read_holding_registers(register_addr=addr_hi, quantity=2)
                 if rr and len(rr) >= 2:
                     val_32 = (rr[0] << 16) | rr[1]
-                    data[name] = round(val_32 * scale, 2)
+                    v = val_32 * scale
+                    # Solarman may return 1000× larger for 32-bit energy (workaround)
+                    if v > 100_000 and name in ("total_load_kwh", "year_load_kwh"):
+                        v /= 1000
+                    data[name] = round(v, 2)
             except Exception:
                 pass
     finally:
@@ -136,7 +193,10 @@ def read_deye_modbus() -> dict | None:
             rr = client.read_holding_registers(addr_hi, 2, slave=1)
             if not rr.isError() and rr.registers and len(rr.registers) >= 2:
                 val_32 = (rr.registers[0] << 16) | rr.registers[1]
-                data[name] = round(val_32 * scale, 2)
+                v = val_32 * scale
+                if v > 100_000 and name in ("total_load_kwh", "year_load_kwh"):
+                    v /= 1000
+                data[name] = round(v, 2)
     finally:
         client.close()
     return data if data else None
@@ -149,7 +209,7 @@ def read_deye() -> dict | None:
     return read_deye_modbus()
 
 
-def send_to_server(data: dict) -> bool:
+def send_to_server(data: dict, log: logging.Logger | None = None) -> bool:
     """POST data to Power Monitor API."""
     try:
         import requests
@@ -162,42 +222,58 @@ def send_to_server(data: dict) -> bool:
         r = requests.post(url, json=data, timeout=10)
         if r.status_code == 200:
             return True
-        print(f"POST {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        err = f"POST {r.status_code}: {r.text[:200]}"
+        print(err, file=sys.stderr)
+        if log:
+            log.warning(err)
         return False
     except Exception as e:
-        print(f"POST error: {e}", file=sys.stderr)
+        err = f"POST error: {e}"
+        print(err, file=sys.stderr)
+        if log:
+            log.warning(err)
         return False
 
 
 def main():
+    log = _setup_logging()
+    _log_startup(log)
+
     if not DEYE_IP:
-        print("Set DEYE_IP (inverter IP on your network)", file=sys.stderr)
+        log.error("Set DEYE_IP (inverter IP on your network)")
         sys.exit(1)
     if not POWER_MONITOR_URL:
-        print("Set POWER_MONITOR_URL (Power Monitor server URL)", file=sys.stderr)
+        log.error("Set POWER_MONITOR_URL (Power Monitor server URL)")
         sys.exit(1)
     if not POWER_MONITOR_KEY:
-        print("Set POWER_MONITOR_KEY (API key from Power Monitor .env)", file=sys.stderr)
+        log.error("Set POWER_MONITOR_KEY (API key from Power Monitor .env)")
         sys.exit(1)
     if DEYE_PORT == 8899 and not DEYE_SERIAL:
-        print("For Solarman (port 8899) set DEYE_SERIAL (WiFi module serial from Deye Cloud or sticker)", file=sys.stderr)
+        log.error("For Solarman (port 8899) set DEYE_SERIAL (WiFi module serial from Deye Cloud or sticker)")
         sys.exit(1)
 
-    print(f"Deye {DEYE_IP}:{DEYE_PORT} -> {POWER_MONITOR_URL} every {INTERVAL_SEC}s")
-    print("Ctrl+C to stop")
+    msg = f"Deye {DEYE_IP}:{DEYE_PORT} -> {POWER_MONITOR_URL} every {INTERVAL_SEC}s"
+    log.info(msg)
+    print(msg, flush=True)
+    log.info("Ctrl+C to stop")
+    print("Ctrl+C to stop", flush=True)
 
     while True:
         data = read_deye()
         if data:
-            ok = send_to_server(data)
+            ok = send_to_server(data, log)
             load = data.get("load_power_w", "?")
             soc = data.get("battery_soc", "?")
             day_kwh = data.get("day_load_kwh")
             day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
             status = "OK" if ok else "FAIL"
-            print(f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str} send={status}")
+            line = f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str} send={status}"
+            log.info(line)
+            print(line, flush=True)
         else:
-            print(f"{time.strftime('%H:%M:%S')} read failed")
+            line = f"{time.strftime('%H:%M:%S')} read failed"
+            log.warning(line)
+            print(line, flush=True)
         time.sleep(INTERVAL_SEC)
 
 

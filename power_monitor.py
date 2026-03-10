@@ -496,10 +496,10 @@ def _build_update_fragments() -> dict:
             parts1.append(f"За {month_name}: {month_kwh} кВт·год")
         day_kwh = last.get("day_load_kwh")
         if day_kwh is not None:
-            parts1.append(f"День (інв.): {day_kwh} кВт·год")
+            parts1.append(f"День (інв.): {round(day_kwh, 1)} кВт·год")
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
-            parts1.append(f"Всього (інв.): {total_kwh} кВт·год")
+            parts1.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
         deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
@@ -607,8 +607,8 @@ def _build_deye_cumulative_table(last: dict | None) -> str:
     rows = deye_cumulative_metrics(last)
     trs = ""
     for r in rows:
-        v_inv = f"{r['value_inv']} кВт·год" if r["value_inv"] is not None else "—"
-        v_int = f"{r['value_integrated']} кВт·год" if r["value_integrated"] is not None else "—"
+        v_inv = f"{round(r['value_inv'], 2)} кВт·год" if r["value_inv"] is not None else "—"
+        v_int = f"{round(r['value_integrated'], 2)} кВт·год" if r["value_integrated"] is not None else "—"
         trs += f'<tr><td>{r["period"]}</td><td>{r["register"]}</td><td>{r["description"]}</td><td>{v_inv}</td><td>{v_int}</td></tr>\n'
     return (
         '<details id="deye_cumulative_details" open data-ls-key="deye_cumulative_open" data-default-open="1">'
@@ -854,10 +854,10 @@ async def dashboard(key: str = Query("")):
             parts.append(f"За {month_name}: {month_kwh} кВт·год")
         day_kwh = last.get("day_load_kwh")
         if day_kwh is not None:
-            parts.append(f"День (інв.): {day_kwh} кВт·год")
+            parts.append(f"День (інв.): {round(day_kwh, 1)} кВт·год")
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
-            parts.append(f"Всього (інв.): {total_kwh} кВт·год")
+            parts.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
@@ -1013,10 +1013,10 @@ async def dashboard(key: str = Query("")):
             parts1.append(f"За {month_name}: {month_kwh} кВт·год")
         day_kwh = last.get("day_load_kwh")
         if day_kwh is not None:
-            parts1.append(f"День (інв.): {day_kwh} кВт·год")
+            parts1.append(f"День (інв.): {round(day_kwh, 1)} кВт·год")
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
-            parts1.append(f"Всього (інв.): {total_kwh} кВт·год")
+            parts1.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
         deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
         deye_summary += f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
