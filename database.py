@@ -570,6 +570,18 @@ def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
     return (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0)
 
 
+def has_all_three_phases_voltage(max_age_sec: float = 300) -> bool:
+    """True if most recent deye_log has all three phases with voltage > 0."""
+    rows = recent_deye_log(1)
+    if not rows:
+        return False
+    r = rows[0]
+    if time.time() - r["ts"] > max_age_sec:
+        return False
+    v1, v2, v3 = r.get("grid_v_l1"), r.get("grid_v_l2"), r.get("grid_v_l3")
+    return (v1 and v1 > 0) and (v2 and v2 > 0) and (v3 and v3 > 0)
+
+
 def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
     """Останні limit ненульових показників для фази key. Повертає [(value, ts), ...] від нових до старих."""
     with _conn() as db:

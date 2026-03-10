@@ -51,6 +51,7 @@ from database import (
     deye_monthly_load_kwh,
     deye_voltage_trend,
     first_heartbeat_ts,
+    has_all_three_phases_voltage,
     has_grid_voltage_now,
     init_db,
     kv_get,
@@ -235,6 +236,28 @@ async def analyze():
                 return
 
             if voltage_alerted and has_grid_voltage_now():
+                if has_all_three_phases_voltage():
+                    now = time.time()
+                    prev = recent_events(1)
+                    kv_set("voltage_anomaly", "0")
+                    save_event("up")
+                    log.info("VOLTAGE RESTORED (all 3 phases)")
+                    dev = dtek.schedule_deviation(is_down_event=False)
+                    sched_label = ""
+                    if dev is not None:
+                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                    else:
+                        slot = dtek.current_slot_status()
+                        sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
+                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась{sched_label}"
+                    if prev:
+                        dur = _format_duration(int(now - prev[0]["ts"]))
+                        msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
+                    nxt = dtek.next_schedule_transition(looking_for_on=False)
+                    if nxt:
+                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                    await update_chat_photo(False)
+                    await tg_send(msg)
                 return
 
             # Справжнє відключення: напруги немає або немає даних Deye
