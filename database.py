@@ -576,7 +576,7 @@ def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
     return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]
 
 
-def deye_voltage_trend(n: int = 10, threshold_v: float = 5.0) -> str | None:
+def deye_voltage_trend(n: int = 100, threshold_v: float = 5.0) -> str | None:
     """
     Висока/низька тільки при змішаному стані: є присутні й відсутні фази.
     Тренд дивимось виключно по ВІДСУТНІХ фазах — останні n ненульових показників до зникнення.

@@ -206,7 +206,7 @@ async def analyze():
 
             # Якщо Deye бачить напругу на будь-якій фазі — це не відключення, а аномалія напруги
             if has_grid_voltage_now() and not voltage_alerted:
-                trend = deye_voltage_trend(10)
+                trend = deye_voltage_trend(100)
                 v = last_nonzero_grid_voltage()
                 parts_v = []
                 if v:
@@ -445,7 +445,7 @@ def _build_update_fragments() -> dict:
     plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
     has_voltage = has_grid_voltage_now()
     if plugs_dead and has_voltage:
-        trend = deye_voltage_trend(10)
+        trend = deye_voltage_trend(100)
         status_cls = "down"
         if trend == "high":
             status_text = "Висока напруга"
@@ -1327,7 +1327,7 @@ async def dashboard(key: str = Query("")):
     plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
     has_voltage = has_grid_voltage_now()
     if plugs_dead and has_voltage:
-        trend = deye_voltage_trend(10)
+        trend = deye_voltage_trend(100)
         status_cls = "down"
         if trend == "high":
             status_text = "Висока напруга"
