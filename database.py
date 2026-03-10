@@ -129,7 +129,7 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # column exists
         # Migration: add cumulative energy from Deye internal meter
-        for col in ("day_load_kwh", "total_load_kwh"):
+        for col in ("day_load_kwh", "total_load_kwh", "month_load_kwh", "year_load_kwh"):
             try:
                 db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
             except sqlite3.OperationalError:
@@ -215,6 +215,8 @@ def save_deye_log(
     battery_voltage: float | None = None,
     day_load_kwh: float | None = None,
     total_load_kwh: float | None = None,
+    month_load_kwh: float | None = None,
+    year_load_kwh: float | None = None,
 ):
     ts = time.time()
     ts_kyiv = datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -224,13 +226,13 @@ def save_deye_log(
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
-                day_load_kwh, total_load_kwh, ts, ts_kyiv
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts, ts_kyiv
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
-                day_load_kwh, total_load_kwh, ts, ts_kyiv,
+                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts, ts_kyiv,
             ),
         )
 
@@ -241,7 +243,7 @@ def recent_deye_log(n: int = 100) -> list[dict]:
             """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
                       grid_v_l1, grid_v_l2, grid_v_l3,
                       battery_soc, battery_power_w, battery_voltage,
-                      day_load_kwh, total_load_kwh, ts
+                      day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts
                FROM deye_log ORDER BY id DESC LIMIT ?""",
             (n,),
         ).fetchall()
@@ -265,6 +267,71 @@ def deye_monthly_load_kwh() -> float | None:
     if not daily:
         return None
     return round(sum(d["kwh"] for d in daily), 1)
+
+
+def _integrate_range(ts_start: float, ts_end: float) -> float | None:
+    """Integrate load_power_w in [ts_start, ts_end]. Returns kWh or None if insufficient data."""
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT load_power_w, ts FROM deye_log
+               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL
+               ORDER BY ts""",
+            (ts_start, ts_end),
+        ).fetchall()
+    if len(rows) < 2:
+        return None
+    return round(_integrate_kwh([dict(r) for r in rows]), 2)
+
+
+def deye_day_load_kwh_integrated() -> float | None:
+    """Load energy for today from load_power_w integration (our calculation)."""
+    now = datetime.now(UA_TZ)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return _integrate_range(day_start.timestamp(), time.time())
+
+
+def deye_yearly_load_kwh() -> float | None:
+    """Load energy for current year from load_power_w integration."""
+    now = datetime.now(UA_TZ)
+    year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    return _integrate_range(year_start.timestamp(), time.time())
+
+
+def deye_total_load_kwh_integrated() -> float | None:
+    """Total load energy from first deye_log entry (our integration since start)."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT MIN(ts) as ts_min FROM deye_log WHERE load_power_w IS NOT NULL"
+        ).fetchone()
+    if not row or row["ts_min"] is None:
+        return None
+    return _integrate_range(row["ts_min"], time.time())
+
+
+def deye_cumulative_metrics(last: dict | None) -> list[dict]:
+    """
+    Cumulative Load Energy metrics for dashboard table.
+    Returns [{"period", "register", "description", "value_inv", "value_integrated"}, ...]
+    value_inv = from inverter register; value_integrated = our load_power_w integration.
+    """
+    rows = [
+        ("День", "526", "За сьогодні (скидається о 00:00)", "day_load_kwh", deye_day_load_kwh_integrated),
+        ("Місяць", "66", "За поточний місяць (×0.1)", "month_load_kwh", deye_monthly_load_kwh),
+        ("Рік", "87–88", "За поточний рік (32-біт, тільки 1PH?)", "year_load_kwh", deye_yearly_load_kwh),
+        ("Всього", "527–528", "За весь час", "total_load_kwh", deye_total_load_kwh_integrated),
+    ]
+    result = []
+    for period, reg, desc, key_inv, fn_integrated in rows:
+        val_inv = last.get(key_inv) if last else None
+        val_int = fn_integrated() if fn_integrated else None
+        result.append({
+            "period": period,
+            "register": reg,
+            "description": desc,
+            "value_inv": round(val_inv, 2) if val_inv is not None else None,
+            "value_integrated": round(val_int, 2) if val_int is not None else None,
+        })
+    return result
 
 
 def deye_daily_load_kwh() -> list[dict]:

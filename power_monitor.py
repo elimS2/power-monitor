@@ -46,6 +46,7 @@ from database import (
     boiler_schedule_for_dates,
     cleanup_old,
     deye_battery_episodes_for_month,
+    deye_cumulative_metrics,
     deye_daily_load_kwh,
     deye_monthly_load_kwh,
     first_heartbeat_ts,
@@ -562,6 +563,8 @@ def _build_update_fragments() -> dict:
                 bat_rows += f'<tr><td>{d["date"]}</td><td style="font-size:0.85rem">{("<br>").join(parts)}</td></tr>\n'
         deye_battery_html = f'<details id="deye_battery_details" data-ls-key="deye_battery_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">АКБ: розряд та заряд (за {month_name}: {", ".join(summary_parts)})</summary><table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>День</th><th>Епізоди</th></tr>{bat_rows}</table></details>'
 
+    deye_cumulative_table = _build_deye_cumulative_table(deye_log[0] if deye_log else None)
+
     alert_html = ""
     if dtek.alert_cache:
         alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
@@ -592,11 +595,27 @@ def _build_update_fragments() -> dict:
         "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
-        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
+
+
+def _build_deye_cumulative_table(last: dict | None) -> str:
+    """Build HTML table for cumulative Load Energy metrics."""
+    rows = deye_cumulative_metrics(last)
+    trs = ""
+    for r in rows:
+        v_inv = f"{r['value_inv']} кВт·год" if r["value_inv"] is not None else "—"
+        v_int = f"{r['value_integrated']} кВт·год" if r["value_integrated"] is not None else "—"
+        trs += f'<tr><td>{r["period"]}</td><td>{r["register"]}</td><td>{r["description"]}</td><td>{v_inv}</td><td>{v_int}</td></tr>\n'
+    return (
+        '<details id="deye_cumulative_details" open data-ls-key="deye_cumulative_open" data-default-open="1">'
+        '<summary style="font-size:0.85rem;color:var(--muted)">Кумулятивні метрики Load Energy (3PH)</summary>'
+        '<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Період</th><th>Регістр</th><th>Що показує</th><th>Кумулятивне (інв.)</th><th>Інтеграція (load_power_w)</th></tr>'
+        f'{trs}</table></details>'
+    )
 
 
 def _format_duration(seconds: int) -> str:
@@ -1077,6 +1096,7 @@ async def dashboard(key: str = Query("")):
         deye_daily_rows = ""
         deye_battery_html = ""
         deye_rows = ""
+    deye_cumulative_table = _build_deye_cumulative_table(deye_log[0] if deye_log else None)
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
@@ -1250,6 +1270,7 @@ async def dashboard(key: str = Query("")):
 <summary><h2 style="display:inline">Deye інвертор</h2></summary>
 <div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
 {deye_battery_html}
+{deye_cumulative_table}
 <details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>
 <table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>

@@ -48,11 +48,13 @@ REGS = {
     "battery_soc": (588, False),
     "battery_power_w": (590, True),
     "battery_voltage": (587, False, 0.01),
-    "day_load_kwh": (526, False, 0.1),   # Day load energy, kWh (resets daily)
+    "day_load_kwh": (526, False, 0.1),    # Day load energy, kWh (resets daily)
+    "month_load_kwh": (66, False, 0.1),   # Month load energy, kWh (1PH; 3PH may differ)
 }
 # 32-bit registers: (addr_high, addr_low), scale. Value = (high << 16) | low
 REGS_32BIT = {
     "total_load_kwh": (527, 528, 0.1),   # Total load energy, kWh (lifetime)
+    "year_load_kwh": (87, 88, 0.1),     # Year load energy, kWh (1PH; 3PH may not support)
 }
 
 

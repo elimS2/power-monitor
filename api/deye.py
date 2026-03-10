@@ -25,5 +25,7 @@ async def ep_deye_heartbeat(request: Request, key: str = Query("")):
         battery_voltage=data.get("battery_voltage"),
         day_load_kwh=data.get("day_load_kwh"),
         total_load_kwh=data.get("total_load_kwh"),
+        month_load_kwh=data.get("month_load_kwh"),
+        year_load_kwh=data.get("year_load_kwh"),
     )
     return {"ok": True}
