@@ -568,24 +568,37 @@ def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
 
 def deye_voltage_trend(n: int = 10, threshold_v: float = 5.0) -> str | None:
     """
-    Analyze trend of grid voltage over last n samples. Returns "high", "low", or None.
-    high = voltage was increasing (last half > first half + threshold)
-    low = voltage was decreasing (last half < first half - threshold)
+    Returns "high" or "low" when: змішаний стан (частина фаз є, частина відсутня),
+    тренд дивимось по відсутніх фазах — останні n не-нульових показників до того як вони зникли.
+    high = тренд росте (напруга зростала → Зубр вирубив)
+    low = тренд падає (напруга падала)
     """
-    rows = recent_deye_log(n)
-    with_voltage = []
-    for r in rows:
-        vs = [v for v in (r.get("grid_v_l1"), r.get("grid_v_l2"), r.get("grid_v_l3")) if v is not None and v > 0]
-        if vs:
-            with_voltage.append({"avg": sum(vs) / len(vs), "ts": r["ts"]})
-    if len(with_voltage) < 4:
+    rows = recent_deye_log(120)
+    if not rows:
         return None
-    # Order by ts ascending (oldest first)
-    with_voltage.sort(key=lambda x: x["ts"])
-    half = len(with_voltage) // 2
-    first_avg = sum(x["avg"] for x in with_voltage[:half]) / half
-    last_avg = sum(x["avg"] for x in with_voltage[half:]) / (len(with_voltage) - half)
-    diff = last_avg - first_avg
+    latest = rows[0]
+    phase_keys = [("grid_v_l1", latest.get("grid_v_l1")), ("grid_v_l2", latest.get("grid_v_l2")), ("grid_v_l3", latest.get("grid_v_l3"))]
+    absent_keys = [k for k, v in phase_keys if v is None or v == 0]
+    present_keys = [k for k, v in phase_keys if v is not None and v > 0]
+    if not absent_keys or not present_keys:
+        return None
+    values_from_absent_phases = []
+    for r in rows:
+        for key in absent_keys:
+            v = r.get(key)
+            if v is not None and v > 0:
+                values_from_absent_phases.append(v)
+                if len(values_from_absent_phases) >= n:
+                    break
+        if len(values_from_absent_phases) >= n:
+            break
+    if len(values_from_absent_phases) < 4:
+        return None
+    values = values_from_absent_phases[:n]
+    half = len(values) // 2
+    newer_avg = sum(values[:half]) / half
+    older_avg = sum(values[half:]) / (len(values) - half)
+    diff = newer_avg - older_avg
     if diff >= threshold_v:
         return "high"
     if diff <= -threshold_v:
