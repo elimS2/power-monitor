@@ -382,7 +382,16 @@ async def lifespan(_app: FastAPI):
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
-        await update_chat_photo(kv_get("power_down") == "1")
+        if kv_get("voltage_anomaly") == "1" and has_grid_voltage_now():
+            trend = deye_voltage_trend(1000)
+            if trend == "high":
+                await update_chat_photo(False, voltage="high")
+            elif trend == "low":
+                await update_chat_photo(False, voltage="low")
+            else:
+                await update_chat_photo(True)
+        else:
+            await update_chat_photo(kv_get("power_down") == "1")
     else:
         log.info("Skipping avatar update on start (AVATAR_ON_START=0)")
     log.info("Power monitor started, DB=%s", DB_PATH)
