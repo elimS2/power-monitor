@@ -80,8 +80,9 @@ POWER_MONITOR_KEY=...
 
 | Назва | Адреса | Тип | Масштаб | Опис |
 |-------|--------|-----|---------|------|
-| load_power_w | 653 | signed | — | Сумарне навантаження, Вт |
+| load_power_w | 653 | signed | — | Сумарне навантаження (споживач), Вт |
 | load_l1_w, load_l2_w, load_l3_w | 650-652 | signed | — | Навантаження по фазах |
+| grid_power_w | 625 | signed | — | Мережа: + імпорт, − експорт, Вт |
 | grid_v_l1, grid_v_l2, grid_v_l3 | 598-600 | unsigned | ×0.1 | Напруга мережі, В |
 | battery_soc | 588 | unsigned | — | Заряд батареї, % |
 | battery_power_w | 590 | signed | — | Потужність батареї, Вт |
@@ -90,6 +91,10 @@ POWER_MONITOR_KEY=...
 | month_load_kwh | 66 | unsigned | ×0.001 (3PH) | Споживання за місяць (1PH: ×0.1; 3PH: ×0.001) |
 | year_load_kwh | 87-88 | 32-bit | ×0.000001 (3PH) | Споживання за рік |
 | total_load_kwh | 527-528 | 32-bit | ×0.000001 (3PH) | Сумарне споживання (з моменту встановлення) |
+| day_grid_import_kwh | 520 | unsigned | ×0.1 | Імпорт з мережі за день |
+| day_grid_export_kwh | 521 | unsigned | ×0.1 | Експорт у мережу за день |
+| total_grid_import_kwh | 522-523 | 32-bit | ×0.000001 (3PH) | Всього імпорт |
+| total_grid_export_kwh | 524-525 | 32-bit | ×0.000001 (3PH) | Всього експорт |
 
 ---
 

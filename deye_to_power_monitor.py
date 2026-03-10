@@ -47,10 +47,11 @@ INTERVAL_SEC = int(os.getenv("INTERVAL_SEC", "30"))
 # Holding registers, unit/slave=1
 # https://kellerza.github.io/sunsynk/reference/definitions
 REGS = {
-    "load_power_w": (653, True),      # signed
+    "load_power_w": (653, True),      # signed, load = споживання споживачем
     "load_l1_w": (650, True),
     "load_l2_w": (651, True),
     "load_l3_w": (652, True),
+    "grid_power_w": (625, True),      # signed, + = імпорт з мережі, − = експорт
     "grid_v_l1": (598, False, 0.1),   # value * 0.1
     "grid_v_l2": (599, False, 0.1),
     "grid_v_l3": (600, False, 0.1),
@@ -58,6 +59,8 @@ REGS = {
     "battery_power_w": (590, True),
     "battery_voltage": (587, False, 0.01),
     "day_load_kwh": (526, False, 0.1),    # Day load energy, kWh (resets daily)
+    "day_grid_import_kwh": (520, False, 0.1),   # Day grid import
+    "day_grid_export_kwh": (521, False, 0.1),   # Day grid export
     "month_load_kwh": (66, False, 0.001),  # 3PH: ×0.001 (65.535); 1PH docs say ×0.1
 }
 # 32-bit registers: (addr_high, addr_low), scale. Value = (high << 16) | low
@@ -65,6 +68,8 @@ REGS = {
 REGS_32BIT = {
     "total_load_kwh": (527, 528, 0.000001),   # Total: ×0.000001 (~582 за міс)
     "year_load_kwh": (87, 88, 0.000001),     # Year: той самий масштаб
+    "total_grid_import_kwh": (522, 523, 0.000001),  # 3PH: ×0.000001 (docs say ×0.1 for 1PH)
+    "total_grid_export_kwh": (524, 525, 0.000001),
 }
 
 
@@ -164,6 +169,9 @@ def read_deye_solarman() -> dict | None:
                     # Year: 0xFFFFFFFF → 4295 kWh, нереально для року з початку
                     if name == "year_load_kwh" and v > 1_000:
                         continue
+                    # Grid total: skip if unrealistically high (wrong scale/firmware)
+                    if name in ("total_grid_import_kwh", "total_grid_export_kwh") and v > 100_000:
+                        continue
                     data[name] = round(v, 2)
             except Exception:
                 pass
@@ -200,6 +208,8 @@ def read_deye_modbus() -> dict | None:
                     continue
                 v = val_32 * scale
                 if name == "year_load_kwh" and v > 1_000:
+                    continue
+                if name in ("total_grid_import_kwh", "total_grid_export_kwh") and v > 100_000:
                     continue
                 data[name] = round(v, 2)
     finally:
@@ -271,8 +281,10 @@ def main():
             soc = data.get("battery_soc", "?")
             day_kwh = data.get("day_load_kwh")
             day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
+            grid_w = data.get("grid_power_w")
+            grid_str = f" grid={int(grid_w)}W" if grid_w is not None else ""
             status = "OK" if ok else "FAIL"
-            line = f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str} send={status}"
+            line = f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str}{grid_str} send={status}"
             log.info(line)
             print(line, flush=True)
         else:

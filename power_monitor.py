@@ -486,6 +486,10 @@ def _build_update_fragments() -> dict:
         parts1 = []
         if load_w is not None:
             parts1.append(f"Споживання: {int(load_w)} Вт")
+        grid_w = last.get("grid_power_w")
+        if grid_w is not None:
+            sign = "+" if grid_w >= 0 else "−"
+            parts1.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
             parts1.append(f"АКБ: {int(soc)}%")
         if v1 is not None and v2 is not None and v3 is not None:
@@ -500,6 +504,12 @@ def _build_update_fragments() -> dict:
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
             parts1.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
+        day_imp = last.get("day_grid_import_kwh")
+        day_exp = last.get("day_grid_export_kwh")
+        if day_imp is not None or day_exp is not None:
+            imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
+            exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
+            parts1.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
         deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
@@ -518,13 +528,15 @@ def _build_update_fragments() -> dict:
             v2 = r.get("grid_v_l2")
             v3 = r.get("grid_v_l3")
             bat_w = r.get("battery_power_w")
+            grid_w = r.get("grid_power_w")
             load_s = f"{int(load_w)}" if load_w is not None else "—"
             soc_s = f"{int(soc)}" if soc is not None else "—"
+            grid_s = f"{int(grid_w)}" if grid_w is not None else "—"
             v1_s = f"{v1:.1f}" if v1 is not None else "—"
             v2_s = f"{v2:.1f}" if v2 is not None else "—"
             v3_s = f"{v3:.1f}" if v3 is not None else "—"
             bat_s = f"{int(bat_w)}" if bat_w is not None else "—"
-            deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
+            deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{grid_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
 
     deye_daily_rows = ""
     for d in deye_daily_load_kwh():
@@ -565,6 +577,20 @@ def _build_update_fragments() -> dict:
 
     deye_cumulative_table = _build_deye_cumulative_table(deye_log[0] if deye_log else None)
 
+    deye_grid_html = ""
+    if deye_log:
+        last = deye_log[0]
+        tot_imp = last.get("total_grid_import_kwh")
+        tot_exp = last.get("total_grid_export_kwh")
+        if tot_imp is not None or tot_exp is not None:
+            imp_s = f"{round(tot_imp, 1)} кВт·год" if tot_imp is not None else "—"
+            exp_s = f"{round(tot_exp, 1)} кВт·год" if tot_exp is not None else "—"
+            deye_grid_html = (
+                f'<details id="deye_grid_details" data-ls-key="deye_grid_open" data-default-open="0">'
+                f'<summary style="font-size:0.85rem;color:var(--muted)">Grid (на вводі): всього імпорт {imp_s} / експорт {exp_s}</summary>'
+                f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
+            )
+
     alert_html = ""
     if dtek.alert_cache:
         alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
@@ -595,7 +621,7 @@ def _build_update_fragments() -> dict:
         "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
-        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
@@ -848,6 +874,10 @@ async def dashboard(key: str = Query("")):
         parts = []
         if load_w is not None:
             parts.append(f"Споживання: {int(load_w)} Вт")
+        grid_w = last.get("grid_power_w")
+        if grid_w is not None:
+            sign = "+" if grid_w >= 0 else "−"
+            parts.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
             parts.append(f"АКБ: {int(soc)}%")
         if v_avg is not None:
@@ -862,6 +892,12 @@ async def dashboard(key: str = Query("")):
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
             parts.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
+        day_imp = last.get("day_grid_import_kwh")
+        day_exp = last.get("day_grid_export_kwh")
+        if day_imp is not None or day_exp is not None:
+            imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
+            exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
+            parts.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
         deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
@@ -905,15 +941,17 @@ async def dashboard(key: str = Query("")):
             v2 = r.get("grid_v_l2")
             v3 = r.get("grid_v_l3")
             bat_w = r.get("battery_power_w")
+            grid_w = r.get("grid_power_w")
             load_s = str(int(load_w)) if load_w is not None else "—"
             soc_s = f"{int(soc)}%" if soc is not None else "—"
+            grid_s = str(int(grid_w)) if grid_w is not None else "—"
             v1_s = f"{v1:.0f}" if v1 is not None else "—"
             v2_s = f"{v2:.0f}" if v2 is not None else "—"
             v3_s = f"{v3:.0f}" if v3 is not None else "—"
             bat_s = str(int(bat_w)) if bat_w is not None else "—"
             deye_rows += (
                 f'<tr><td>{_ts_fmt(r["ts"])}</td>'
-                f'<td>{load_s}</td><td>{soc_s}</td>'
+                f'<td>{load_s}</td><td>{grid_s}</td><td>{soc_s}</td>'
                 f'<td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td>'
                 f'<td>{bat_s}</td></tr>\n'
             )
@@ -1006,6 +1044,10 @@ async def dashboard(key: str = Query("")):
         parts1 = []
         if load_w is not None:
             parts1.append(f"Споживання: {int(load_w)} Вт")
+        grid_w = last.get("grid_power_w")
+        if grid_w is not None:
+            sign = "+" if grid_w >= 0 else "−"
+            parts1.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
             parts1.append(f"АКБ: {int(soc)}%")
         if v1 is not None and v2 is not None and v3 is not None:
@@ -1021,6 +1063,12 @@ async def dashboard(key: str = Query("")):
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
             parts1.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
+        day_imp = last.get("day_grid_import_kwh")
+        day_exp = last.get("day_grid_export_kwh")
+        if day_imp is not None or day_exp is not None:
+            imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
+            exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
+            parts1.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
         deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
         deye_summary += f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
@@ -1083,15 +1131,17 @@ async def dashboard(key: str = Query("")):
             v2 = r.get("grid_v_l2")
             v3 = r.get("grid_v_l3")
             bat_w = r.get("battery_power_w")
+            grid_w = r.get("grid_power_w")
             load_s = f"{int(load_w)}" if load_w is not None else "—"
             soc_s = f"{int(soc)}" if soc is not None else "—"
+            grid_s = f"{int(grid_w)}" if grid_w is not None else "—"
             v1_s = f"{v1:.1f}" if v1 is not None else "—"
             v2_s = f"{v2:.1f}" if v2 is not None else "—"
             v3_s = f"{v3:.1f}" if v3 is not None else "—"
             bat_s = f"{int(bat_w)}" if bat_w is not None else "—"
             deye_rows += (
                 f'<tr><td>{_ts_fmt_full(r["ts"])}</td>'
-                f'<td>{load_s}</td><td>{soc_s}</td>'
+                f'<td>{load_s}</td><td>{grid_s}</td><td>{soc_s}</td>'
                 f'<td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td>'
                 f'<td>{bat_s}</td></tr>\n'
             )
@@ -1101,6 +1151,20 @@ async def dashboard(key: str = Query("")):
         deye_battery_html = ""
         deye_rows = ""
     deye_cumulative_table = _build_deye_cumulative_table(deye_log[0] if deye_log else None)
+
+    deye_grid_html = ""
+    if deye_log:
+        last = deye_log[0]
+        tot_imp = last.get("total_grid_import_kwh")
+        tot_exp = last.get("total_grid_export_kwh")
+        if tot_imp is not None or tot_exp is not None:
+            imp_s = f"{round(tot_imp, 1)} кВт·год" if tot_imp is not None else "—"
+            exp_s = f"{round(tot_exp, 1)} кВт·год" if tot_exp is not None else "—"
+            deye_grid_html = (
+                f'<details id="deye_grid_details" data-ls-key="deye_grid_open" data-default-open="0">'
+                f'<summary style="font-size:0.85rem;color:var(--muted)">Grid (на вводі): всього імпорт {imp_s} / експорт {exp_s}</summary>'
+                f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
+            )
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
@@ -1275,6 +1339,7 @@ async def dashboard(key: str = Query("")):
 <div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
 {deye_battery_html}
 {deye_cumulative_table}
+{deye_grid_html}
 <details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>
 <table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>
@@ -1283,7 +1348,7 @@ async def dashboard(key: str = Query("")):
 <details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
 <table>
-<tr><th>Час</th><th>Споживання (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
+<tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
 {deye_rows}</table>
 </details></div>
 </details>

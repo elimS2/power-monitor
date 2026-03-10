@@ -134,6 +134,18 @@ def init_db():
                 db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
             except sqlite3.OperationalError:
                 pass  # column exists
+        # Migration: add grid power and grid energy (import/export)
+        for col in (
+            "grid_power_w",
+            "day_grid_import_kwh",
+            "day_grid_export_kwh",
+            "total_grid_import_kwh",
+            "total_grid_export_kwh",
+        ):
+            try:
+                db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
+            except sqlite3.OperationalError:
+                pass  # column exists
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -207,6 +219,7 @@ def save_deye_log(
     load_l1_w: float | None = None,
     load_l2_w: float | None = None,
     load_l3_w: float | None = None,
+    grid_power_w: float | None = None,
     grid_v_l1: float | None = None,
     grid_v_l2: float | None = None,
     grid_v_l3: float | None = None,
@@ -217,6 +230,10 @@ def save_deye_log(
     total_load_kwh: float | None = None,
     month_load_kwh: float | None = None,
     year_load_kwh: float | None = None,
+    day_grid_import_kwh: float | None = None,
+    day_grid_export_kwh: float | None = None,
+    total_grid_import_kwh: float | None = None,
+    total_grid_export_kwh: float | None = None,
 ):
     ts = time.time()
     ts_kyiv = datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -224,15 +241,21 @@ def save_deye_log(
         db.execute(
             """INSERT INTO deye_log (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_power_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
-                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts, ts_kyiv
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
+                day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
+                ts, ts_kyiv
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                grid_power_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
-                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts, ts_kyiv,
+                day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
+                day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
+                ts, ts_kyiv,
             ),
         )
 
@@ -241,9 +264,12 @@ def recent_deye_log(n: int = 100) -> list[dict]:
     with _conn() as db:
         rows = db.execute(
             """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
+                      grid_power_w,
                       grid_v_l1, grid_v_l2, grid_v_l3,
                       battery_soc, battery_power_w, battery_voltage,
-                      day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts
+                      day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
+                      day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
+                      ts
                FROM deye_log ORDER BY id DESC LIMIT ?""",
             (n,),
         ).fetchall()
