@@ -566,33 +566,46 @@ def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
     return (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0)
 
 
+def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
+    """Останні limit ненульових показників для фази key. Повертає [(value, ts), ...] від нових до старих."""
+    with _conn() as db:
+        rows = db.execute(
+            f"""SELECT {key}, ts FROM deye_log WHERE {key} > 0 ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]
+
+
 def deye_voltage_trend(n: int = 10, threshold_v: float = 5.0) -> str | None:
     """
     Висока/низька тільки при змішаному стані: є присутні й відсутні фази.
     Тренд дивимось виключно по ВІДСУТНІХ фазах — останні n ненульових показників до зникнення.
     high = тренд по відсутнім РОСТЕ (висока напруга → Зубр вирубив)
     low = тренд по відсутнім ПАДАЄ (низька напруга)
+    Якщо тренд невизначений: fallback по рівню присутніх фаз (≥250 → high, ≤190 → low).
     """
-    rows = recent_deye_log(120)
-    if not rows:
+    latest_row = recent_deye_log(1)
+    if not latest_row:
         return None
-    latest = rows[0]
+    latest = latest_row[0]
     phase_keys = [("grid_v_l1", latest.get("grid_v_l1")), ("grid_v_l2", latest.get("grid_v_l2")), ("grid_v_l3", latest.get("grid_v_l3"))]
     absent_keys = [k for k, v in phase_keys if v is None or v == 0]
     present_keys = [k for k, v in phase_keys if v is not None and v > 0]
     if not absent_keys or not present_keys:
         return None
-    values_from_absent_phases = []
-    for r in rows:
-        for key in absent_keys:
-            v = r.get(key)
-            if v is not None and v > 0:
-                values_from_absent_phases.append(v)
-                if len(values_from_absent_phases) >= n:
-                    break
-        if len(values_from_absent_phases) >= n:
-            break
+
+    present_avg = sum(latest.get(k) for k in present_keys) / len(present_keys)
+
+    all_val_ts: list[tuple[float, float]] = []
+    for key in absent_keys:
+        all_val_ts.extend(_last_nonzero_for_phase(key, limit=n))
+    all_val_ts.sort(key=lambda x: x[1], reverse=True)
+    values_from_absent_phases = [v for v, _ in all_val_ts[:n]]
     if len(values_from_absent_phases) < 4:
+        if present_avg >= 250:
+            return "high"
+        if present_avg <= 190:
+            return "low"
         return None
     values = values_from_absent_phases[:n]
     half = len(values) // 2
@@ -602,6 +615,10 @@ def deye_voltage_trend(n: int = 10, threshold_v: float = 5.0) -> str | None:
     if diff >= threshold_v:
         return "high"
     if diff <= -threshold_v:
+        return "low"
+    if present_avg >= 250:
+        return "high"
+    if present_avg <= 190:
         return "low"
     return None
 
