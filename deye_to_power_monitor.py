@@ -61,10 +61,10 @@ REGS = {
     "month_load_kwh": (66, False, 0.001),  # 3PH: ×0.001 (65.535); 1PH docs say ×0.1
 }
 # 32-bit registers: (addr_high, addr_low), scale. Value = (high << 16) | low
-# 3PH/Solarman: use ×0.0001 (docs say ×0.1 for 1PH)
+# 3PH/Solarman: total ×0.000001 (≈582 kWh за ~міс); year ×0.0001 або ×0.000001
 REGS_32BIT = {
-    "total_load_kwh": (527, 528, 0.0001),   # Total load energy, kWh (lifetime)
-    "year_load_kwh": (87, 88, 0.0001),     # Year load energy, kWh
+    "total_load_kwh": (527, 528, 0.000001),   # Total: ×0.000001 (~582 за міс)
+    "year_load_kwh": (87, 88, 0.000001),     # Year: той самий масштаб
 }
 
 
@@ -161,8 +161,8 @@ def read_deye_solarman() -> dict | None:
                     if val_32 == 0xFFFFFFFF:  # invalid / not supported on 3PH
                         continue
                     v = val_32 * scale
-                    # Year on 3PH often invalid (0xFFFFFFFF → 42949 kWh)
-                    if name == "year_load_kwh" and v > 10_000:
+                    # Year: 0xFFFFFFFF → 4295 kWh, нереально для року з початку
+                    if name == "year_load_kwh" and v > 1_000:
                         continue
                     data[name] = round(v, 2)
             except Exception:
@@ -199,7 +199,7 @@ def read_deye_modbus() -> dict | None:
                 if val_32 == 0xFFFFFFFF:
                     continue
                 v = val_32 * scale
-                if name == "year_load_kwh" and v > 10_000:
+                if name == "year_load_kwh" and v > 1_000:
                     continue
                 data[name] = round(v, 2)
     finally:

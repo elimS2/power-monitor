@@ -614,7 +614,11 @@ def _build_deye_cumulative_table(last: dict | None) -> str:
         '<details id="deye_cumulative_details" open data-ls-key="deye_cumulative_open" data-default-open="1">'
         '<summary style="font-size:0.85rem;color:var(--muted)">Кумулятивні метрики Load Energy (3PH)</summary>'
         '<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Період</th><th>Регістр</th><th>Що показує</th><th>Кумулятивне (інв.)</th><th>Інтеграція (load_power_w)</th></tr>'
-        f'{trs}</table></details>'
+        f'{trs}</table>'
+        '<div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem">'
+        'Кумулятивне: лічильник інвертора (скидається за період). Інтеграція: наша обчисленка з зразків load_power_w. '
+        'Всього: інв. = за весь час з моменту встановлення; інтегр. = з моменту початку збору даних.'
+        '</div></details>'
     )
 
 
