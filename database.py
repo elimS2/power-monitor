@@ -316,9 +316,9 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
     """
     rows = [
         ("День", "526", "За сьогодні (скидається о 00:00)", "day_load_kwh", deye_day_load_kwh_integrated),
-        ("Місяць", "66", "За поточний місяць (×0.1)", "month_load_kwh", deye_monthly_load_kwh),
-        ("Рік", "87–88", "За поточний рік (32-біт, тільки 1PH?)", "year_load_kwh", deye_yearly_load_kwh),
-        ("Всього", "527–528", "За весь час", "total_load_kwh", deye_total_load_kwh_integrated),
+        ("Місяць", "66", "За поточний місяць (×0.001 для 3PH)", "month_load_kwh", deye_monthly_load_kwh),
+        ("Рік", "87–88", "За поточний рік (×0.0001 для 3PH)", "year_load_kwh", deye_yearly_load_kwh),
+        ("Всього", "527–528", "За весь час (×0.0001 для 3PH)", "total_load_kwh", deye_total_load_kwh_integrated),
     ]
     result = []
     for period, reg, desc, key_inv, fn_integrated in rows:
