@@ -483,34 +483,39 @@ def _build_update_fragments() -> dict:
         soc = last.get("battery_soc")
         v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
         age_sec = int(time.time() - last["ts"])
-        parts1 = []
+        sep = " · "
+        parts_rt, parts_tot = [], []
         if load_w is not None:
-            parts1.append(f"Споживання: {int(load_w)} Вт")
+            parts_rt.append(f"Споживання: {int(load_w)} Вт")
         grid_w = last.get("grid_power_w")
         if grid_w is not None:
             sign = "+" if grid_w >= 0 else "−"
-            parts1.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
+            parts_rt.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
-            parts1.append(f"АКБ: {int(soc)}%")
-        if v1 is not None and v2 is not None and v3 is not None:
-            parts1.append(f"Напруга: {(v1+v2+v3)/3:.0f} В")
+            parts_rt.append(f"АКБ: {int(soc)}%")
+        if any(x is not None for x in (v1, v2, v3)):
+            v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+            parts_rt.append("Напруга " + " ".join(v_parts) + " В")
         month_kwh = deye_monthly_load_kwh()
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
-            parts1.append(f"За {month_name}: {month_kwh} кВт·год")
+            parts_tot.append(f"За {month_name}: {month_kwh} кВт·год")
         day_kwh = last.get("day_load_kwh")
         if day_kwh is not None:
-            parts1.append(f"День (інв.): {round(day_kwh, 1)} кВт·год")
+            parts_tot.append(f"День (інв.): {round(day_kwh, 1)} кВт·год")
         total_kwh = last.get("total_load_kwh")
         if total_kwh is not None:
-            parts1.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
+            parts_tot.append(f"Всього (інв.): {round(total_kwh, 1)} кВт·год")
         day_imp = last.get("day_grid_import_kwh")
         day_exp = last.get("day_grid_export_kwh")
         if day_imp is not None or day_exp is not None:
             imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
             exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
-            parts1.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
-        deye_summary = (" | ".join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
+            parts_tot.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
+        line1 = sep.join(parts_rt) if parts_rt else "Дані отримано"
+        line2_tot = sep.join(parts_tot) if parts_tot else ""
+        age_span = f' <span style="opacity:0.85">({age_sec}с тому)</span>'
+        deye_summary = f"<div class=\"deye-summary\">{line1}{'<br>' + line2_tot if line2_tot else ''}{age_span}</div>"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
             consumed_kwh = cap_kwh * (100 - soc) / 100
@@ -520,7 +525,10 @@ def _build_update_fragments() -> dict:
                 hrs = remaining_kwh / (load_w / 1000)
                 time_str = f"{int(hrs//24)}д {int(hrs%24)}год" if hrs >= 24 else f"{int(hrs)}год {int((hrs%1)*60)}хв" if hrs >= 1 else f"{int(hrs*60)}хв"
                 parts2.append(f"~{time_str} до 0")
-            deye_summary_line2 = " | ".join(parts2)
+            if any(x is not None for x in (v1, v2, v3)):
+                v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+                parts2.append(" ".join(v_parts) + " В")
+            deye_summary_line2 = sep.join(parts2)
         for r in deye_log:
             load_w = r.get("load_power_w")
             soc = r.get("battery_soc")
@@ -864,11 +872,7 @@ async def dashboard(key: str = Query("")):
         last = deye_log[0]
         load_w = last.get("load_power_w")
         soc = last.get("battery_soc")
-        v_avg = None
-        if last.get("grid_v_l1") is not None or last.get("grid_v_l2") is not None or last.get("grid_v_l3") is not None:
-            vs = [last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")]
-            vs = [v for v in vs if v is not None]
-            v_avg = round(sum(vs) / len(vs), 0) if vs else None
+        v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
         age = int(time.time() - last["ts"])
         parts = []
         if load_w is not None:
@@ -879,8 +883,9 @@ async def dashboard(key: str = Query("")):
             parts.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
             parts.append(f"АКБ: {int(soc)}%")
-        if v_avg is not None:
-            parts.append(f"Напруга: {int(v_avg)} В")
+        if any(x is not None for x in (v1, v2, v3)):
+            v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+            parts.append("Напруга " + " ".join(v_parts) + " В")
         month_kwh = deye_monthly_load_kwh()
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
@@ -897,7 +902,8 @@ async def dashboard(key: str = Query("")):
             imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
             exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
             parts.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
-        deye_summary = " | ".join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
+        sep = " · "
+        deye_summary = sep.join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
             hr_rows = ""
@@ -1049,9 +1055,9 @@ async def dashboard(key: str = Query("")):
             parts1.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
         if soc is not None:
             parts1.append(f"АКБ: {int(soc)}%")
-        if v1 is not None and v2 is not None and v3 is not None:
-            avg_v = (v1 + v2 + v3) / 3
-            parts1.append(f"Напруга: {avg_v:.0f} В")
+        if any(x is not None for x in (v1, v2, v3)):
+            v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+            parts1.append("Напруга " + " ".join(v_parts) + " В")
         month_kwh = deye_monthly_load_kwh()
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
@@ -1068,8 +1074,8 @@ async def dashboard(key: str = Query("")):
             imp_s = f"{round(day_imp, 1)}" if day_imp is not None else "—"
             exp_s = f"{round(day_exp, 1)}" if day_exp is not None else "—"
             parts1.append(f"Мережа день: імпорт {imp_s} / експорт {exp_s} кВт·год")
-        deye_summary = " | ".join(parts1) if parts1 else "Дані отримано"
-        deye_summary += f" ({age_sec}с тому)"
+        sep = " · "
+        deye_summary = (sep.join(parts1) if parts1 else "Дані отримано") + f" ({age_sec}с тому)"
         if DEYE_BATTERY_KWH > 0 and soc is not None:
             cap_kwh = DEYE_BATTERY_KWH
             consumed_kwh = cap_kwh * (100 - soc) / 100
@@ -1087,7 +1093,10 @@ async def dashboard(key: str = Query("")):
                     m = int(hrs * 60)
                     time_str = f"{m}хв"
                 parts2.append(f"~{time_str} до 0")
-            deye_summary_line2 = " | ".join(parts2)
+            if any(x is not None for x in (v1, v2, v3)):
+                v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+                parts2.append(" ".join(v_parts) + " В")
+            deye_summary_line2 = sep.join(parts2)
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
             hr_rows = ""
