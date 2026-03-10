@@ -49,7 +49,9 @@ from database import (
     deye_cumulative_metrics,
     deye_daily_load_kwh,
     deye_monthly_load_kwh,
+    deye_voltage_trend,
     first_heartbeat_ts,
+    has_grid_voltage_now,
     init_db,
     kv_get,
     kv_set,
@@ -116,6 +118,13 @@ _PHOTO_ON = (_ICONS_DIR / "icon_on.png").read_bytes()
 _PHOTO_OFF = (_ICONS_DIR / "icon_off.png").read_bytes()
 
 
+def _photo_for_voltage(kind: str) -> bytes | None:
+    """Load high/low voltage icon. kind='high' or 'low'. Returns None if file missing."""
+    names = {"high": "icon_high_voltage_v1.png", "low": "icon_low_voltage_v1.png"}
+    path = _ICONS_DIR / names.get(kind, "")
+    return path.read_bytes() if path.exists() else None
+
+
 async def _delete_service_msg(client: httpx.AsyncClient, api: str):
     """Send temp message, delete it and the service message before it."""
     r = await client.post(f"{api}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": "."})
@@ -126,8 +135,13 @@ async def _delete_service_msg(client: httpx.AsyncClient, api: str):
             await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
 
 
-async def update_chat_photo(is_down: bool):
-    photo = _PHOTO_OFF if is_down else _PHOTO_ON
+async def update_chat_photo(is_down: bool, voltage: str | None = None):
+    """voltage='high'|'low' overrides is_down for voltage anomaly icons."""
+    if voltage:
+        pic = _photo_for_voltage(voltage)
+        photo = pic if pic else _PHOTO_OFF
+    else:
+        photo = _PHOTO_OFF if is_down else _PHOTO_ON
     api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -188,6 +202,40 @@ async def analyze():
 
         if all_dead and not is_down:
             now = time.time()
+            voltage_alerted = kv_get("voltage_anomaly") == "1"
+
+            # Якщо Deye бачить напругу на будь-якій фазі — це не відключення, а аномалія напруги
+            if has_grid_voltage_now() and not voltage_alerted:
+                trend = deye_voltage_trend(10)
+                v = last_nonzero_grid_voltage()
+                parts_v = []
+                if v:
+                    for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                        val = v.get(key)
+                        parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                v_str = ", ".join(parts_v) if parts_v else ""
+
+                if trend == "high":
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга (розетки не відповідають)"
+                    await update_chat_photo(False, voltage="high")
+                elif trend == "low":
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга (розетки не відповідають)"
+                    await update_chat_photo(False, voltage="low")
+                else:
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою (розетки не відповідають)"
+                    await update_chat_photo(True)
+                if v_str:
+                    msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                kv_set("voltage_anomaly", "1")
+                log.warning("VOLTAGE ANOMALY detected (not power outage)")
+                await tg_send(msg)
+                return
+
+            if voltage_alerted and has_grid_voltage_now():
+                return
+
+            # Справжнє відключення: напруги немає або немає даних Deye
+            kv_set("voltage_anomaly", "0")
             prev = recent_events(1)
             if prev:
                 since_ts = prev[0]["ts"]
@@ -206,7 +254,6 @@ async def analyze():
                 else:
                     sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
             else:
-                # Немає переходу в графіку (напр. весь день "ок") — перевіряємо поточний слот
                 slot = dtek.current_slot_status()
                 if slot == "ok":
                     sched_label = " (\u26a1Позапланове)"
@@ -218,18 +265,13 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            # Остання напруга — завжди показуємо коли є дані (допоможе: вимкнули світло / висока / низька)
             v = last_nonzero_grid_voltage()
             if v:
                 parts = []
                 for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
                     val = v.get(key)
-                    if val is not None:
-                        parts.append(f"{phase}={val:.0f} В")
-                    else:
-                        parts.append(f"{phase}=—")
+                    parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
                 msg += f"\n\U0001f4a0 Остання напруга: {', '.join(parts)}"
-            # Для позапланових відключень не показуємо наступне включення за графіком
             if dev is None or abs(dev) <= 30:
                 nxt = dtek.next_schedule_transition(looking_for_on=True)
                 if nxt:
@@ -237,7 +279,10 @@ async def analyze():
             await update_chat_photo(True)
             await tg_send(msg)
 
-        elif latest_alive and is_down:
+        elif latest_alive:
+            kv_set("voltage_anomaly", "0")
+            if not is_down:
+                return
             now = time.time()
             prev = recent_events(1)
             kv_set("power_down", "0")

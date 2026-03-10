@@ -554,6 +554,45 @@ def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
     return None
 
 
+def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
+    """True if most recent deye_log (within max_age_sec) has at least one phase with voltage > 0."""
+    rows = recent_deye_log(1)
+    if not rows:
+        return False
+    r = rows[0]
+    if time.time() - r["ts"] > max_age_sec:
+        return False
+    v1, v2, v3 = r.get("grid_v_l1"), r.get("grid_v_l2"), r.get("grid_v_l3")
+    return (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0)
+
+
+def deye_voltage_trend(n: int = 10, threshold_v: float = 5.0) -> str | None:
+    """
+    Analyze trend of grid voltage over last n samples. Returns "high", "low", or None.
+    high = voltage was increasing (last half > first half + threshold)
+    low = voltage was decreasing (last half < first half - threshold)
+    """
+    rows = recent_deye_log(n)
+    with_voltage = []
+    for r in rows:
+        vs = [v for v in (r.get("grid_v_l1"), r.get("grid_v_l2"), r.get("grid_v_l3")) if v is not None and v > 0]
+        if vs:
+            with_voltage.append({"avg": sum(vs) / len(vs), "ts": r["ts"]})
+    if len(with_voltage) < 4:
+        return None
+    # Order by ts ascending (oldest first)
+    with_voltage.sort(key=lambda x: x["ts"])
+    half = len(with_voltage) // 2
+    first_avg = sum(x["avg"] for x in with_voltage[:half]) / half
+    last_avg = sum(x["avg"] for x in with_voltage[half:]) / (len(with_voltage) - half)
+    diff = last_avg - first_avg
+    if diff >= threshold_v:
+        return "high"
+    if diff <= -threshold_v:
+        return "low"
+    return None
+
+
 def first_heartbeat_ts() -> float:
     with _conn() as db:
         row = db.execute("SELECT ts FROM heartbeats ORDER BY id ASC LIMIT 1").fetchone()
