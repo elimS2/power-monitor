@@ -160,7 +160,10 @@ def send_to_server(data: dict) -> bool:
     url = f"{POWER_MONITOR_URL}/api/deye-heartbeat?key={POWER_MONITOR_KEY}"
     try:
         r = requests.post(url, json=data, timeout=10)
-        return r.status_code == 200
+        if r.status_code == 200:
+            return True
+        print(f"POST {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        return False
     except Exception as e:
         print(f"POST error: {e}", file=sys.stderr)
         return False
@@ -190,7 +193,7 @@ def main():
             load = data.get("load_power_w", "?")
             soc = data.get("battery_soc", "?")
             day_kwh = data.get("day_load_kwh")
-            day_str = f" day={day_kwh}kWh" if day_kwh is not None else ""
+            day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
             status = "OK" if ok else "FAIL"
             print(f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str} send={status}")
         else:
