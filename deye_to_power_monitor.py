@@ -283,8 +283,22 @@ def main():
             day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
             grid_w = data.get("grid_power_w")
             grid_str = f" grid={int(grid_w)}W" if grid_w is not None else ""
+            day_imp = data.get("day_grid_import_kwh")
+            day_exp = data.get("day_grid_export_kwh")
+            tot_imp = data.get("total_grid_import_kwh")
+            tot_exp = data.get("total_grid_export_kwh")
+            grid_extra = []
+            if day_imp is not None:
+                grid_extra.append(f"dImp={round(day_imp, 1)}")
+            if day_exp is not None:
+                grid_extra.append(f"dExp={round(day_exp, 1)}")
+            if tot_imp is not None:
+                grid_extra.append(f"tImp={round(tot_imp, 1)}")
+            if tot_exp is not None:
+                grid_extra.append(f"tExp={round(tot_exp, 1)}")
+            grid_ext_str = " " + " ".join(grid_extra) if grid_extra else ""
             status = "OK" if ok else "FAIL"
-            line = f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str}{grid_str} send={status}"
+            line = f"{time.strftime('%H:%M:%S')} load={load}W soc={soc}%{day_str}{grid_str}{grid_ext_str} send={status}"
             log.info(line)
             print(line, flush=True)
         else:
