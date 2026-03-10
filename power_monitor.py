@@ -442,9 +442,28 @@ def _build_update_fragments() -> dict:
         else:
             schedule_note = "\U0001f389 Світло є (всупереч графіку)" if slot_val == "off" else "\U0001f4c5 За графіком (можливе відкл. не сталось)" if slot_val == "maybe" else "\U0001f4c5 За графіком"
 
-    status_cls = "down" if is_down else "up"
-    status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
-    icon = "icon_off.png" if is_down else "icon_on.png"
+    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
+    has_voltage = has_grid_voltage_now()
+    if plugs_dead and has_voltage:
+        trend = deye_voltage_trend(10)
+        status_cls = "down"
+        if trend == "high":
+            status_text = "Висока напруга"
+            icon = "icon_high_voltage_v1.png"
+        elif trend == "low":
+            status_text = "Низька напруга"
+            icon = "icon_low_voltage_v1.png"
+        else:
+            status_text = "Проблема з напругою"
+            icon = "icon_off.png"
+    elif is_down:
+        status_cls = "down"
+        status_text = "Світло ВІДСУТНЄ"
+        icon = "icon_off.png"
+    else:
+        status_cls = "up"
+        status_text = "Світло є"
+        icon = "icon_on.png"
     dur_ext = f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""
 
     hb_rows = ""
@@ -1305,8 +1324,28 @@ async def dashboard(key: str = Query("")):
 </details>
 """
 
-    status_cls = "down" if is_down else "up"
-    status_text = "Світло ВІДСУТНЄ" if is_down else "Світло є"
+    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
+    has_voltage = has_grid_voltage_now()
+    if plugs_dead and has_voltage:
+        trend = deye_voltage_trend(10)
+        status_cls = "down"
+        if trend == "high":
+            status_text = "Висока напруга"
+            status_icon = "icon_high_voltage_v1.png"
+        elif trend == "low":
+            status_text = "Низька напруга"
+            status_icon = "icon_low_voltage_v1.png"
+        else:
+            status_text = "Проблема з напругою"
+            status_icon = "icon_off.png"
+    elif is_down:
+        status_cls = "down"
+        status_text = "Світло ВІДСУТНЄ"
+        status_icon = "icon_off.png"
+    else:
+        status_cls = "up"
+        status_text = "Світло є"
+        status_icon = "icon_on.png"
 
     plug_state_raw = kv_get("plug_dashboard_state", "unknown")
     plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)
@@ -1321,11 +1360,11 @@ async def dashboard(key: str = Query("")):
 <meta name="apple-mobile-web-app-title" content="Світло ЗК6">
 <link rel="apple-touch-icon" href="/icons/icon_on.png">
 <link rel="manifest" href="/manifest.json?key={key}">
-<title>{"❌ Світло нема" if is_down else "✅ Світло є"} — Power Monitor</title>
+<title>{"❌ " + status_text if status_cls == "down" else "✅ " + status_text} — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
-</head><body data-pm-key="{key}" data-pm-down={"1" if is_down else "0"}>
+</head><body data-pm-key="{key}" data-pm-down={"1" if status_cls == "down" else "0"}>
 <h1>Power Monitor — ЗК 6</h1>
-<div id="pm-status-block"><div class="status {status_cls}"><img src="/icons/{"icon_off.png" if is_down else "icon_on.png"}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
+<div id="pm-status-block"><div class="status {status_cls}"><img src="/icons/{status_icon}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
 <div class="duration">{duration_text}{f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""}</div></div>
 <div class="clocks" id="clocks"></div>
 <div id="pm-weather">{weather_html}</div>
