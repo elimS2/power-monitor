@@ -222,7 +222,7 @@ def send_to_server(data: dict, log: logging.Logger | None = None) -> bool:
         r = requests.post(url, json=data, timeout=10)
         if r.status_code == 200:
             return True
-        err = f"POST {r.status_code}: {r.text[:200]}"
+        err = f"POST {r.status_code}: {r.text[:500]}"
         print(err, file=sys.stderr)
         if log:
             log.warning(err)

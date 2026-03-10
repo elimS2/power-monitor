@@ -227,7 +227,7 @@ def save_deye_log(
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
                 day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh, ts, ts_kyiv
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
