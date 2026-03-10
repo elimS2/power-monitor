@@ -15,6 +15,9 @@ from config import CLEANUP_KEEP_DAYS, DB_PATH, UA_TZ
 
 log = logging.getLogger("power_monitor")
 
+# Events that mean "plugs dead" (outage or voltage anomaly)
+DOWN_LIKE_EVENTS = ("down", "voltage_high", "voltage_low", "voltage_issue")
+
 # Boiler schedule parser constants
 _UA_MONTHS = {
     "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
@@ -464,7 +467,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
 
     i = 0
     while i < len(events):
-        if events[i]["event"] != "down":
+        if events[i]["event"] not in DOWN_LIKE_EVENTS:
             i += 1
             continue
         down_ts = events[i]["ts"]
@@ -475,7 +478,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
                 up_ts = events[j]["ts"]
                 j += 1
                 break
-            if events[j]["event"] == "down":
+            if events[j]["event"] in DOWN_LIKE_EVENTS:
                 break
             j += 1
         i = j
@@ -496,7 +499,7 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
             })
 
         # Charge: from up until next down (or end of data). No fixed window.
-        charge_end = events[i]["ts"] if i < len(events) and events[i]["event"] == "down" else ts_end
+        charge_end = events[i]["ts"] if i < len(events) and events[i]["event"] in DOWN_LIKE_EVENTS else ts_end
         ch_rows = [r for r in deye_rows if up_ts <= r["ts"] < charge_end]
         if len(ch_rows) >= 2:
             kwh = round(_integrate_battery_power(ch_rows, positive_only=True), 2)

@@ -216,14 +216,17 @@ async def analyze():
                 v_str = ", ".join(parts_v) if parts_v else ""
 
                 if trend == "high":
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга (розетки не відповідають)"
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга"
                     await update_chat_photo(False, voltage="high")
+                    save_event("voltage_high")
                 elif trend == "low":
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга (розетки не відповідають)"
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга"
                     await update_chat_photo(False, voltage="low")
+                    save_event("voltage_low")
                 else:
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою (розетки не відповідають)"
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою"
                     await update_chat_photo(True)
+                    save_event("voltage_issue")
                 if v_str:
                     msg += f"\n\U0001f4a0 Напруга: {v_str}"
                 kv_set("voltage_anomaly", "1")
@@ -418,6 +421,7 @@ app.include_router(static_router)
 def _build_update_fragments() -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
     is_down = kv_get("power_down") == "1"
+    voltage_anomaly = kv_get("voltage_anomaly") == "1"
     hb = recent_heartbeats(30)
     ev = recent_events(30)
 
@@ -472,14 +476,17 @@ def _build_update_fragments() -> dict:
         c175 = "down" if r["plug175"] == 0 else "up"
         hb_rows += f'<tr><td>{_ts_fmt(r["ts"])}</td><td class="{c204}">{r["plug204"]}/3</td><td class="{c175}">{r["plug175"]}/3</td></tr>\n'
 
+    _ev_labels = {"down": "Пропало", "up": "З'явилось", "voltage_high": "Висока напруга", "voltage_low": "Низька напруга", "voltage_issue": "Проблема напруги"}
+    _ev_downlike = ("down", "voltage_high", "voltage_low", "voltage_issue")
     ev_rows = ""
     for i, e in enumerate(ev):
-        cls = "down" if e["event"] == "down" else "up"
-        label = "Пропало" if e["event"] == "down" else "З'явилось"
+        cls = "down" if e["event"] in _ev_downlike else "up"
+        label = _ev_labels.get(e["event"], e["event"])
         if i == 0:
             dur_sec = int(time.time() - e["ts"])
             dur_fmt = _format_duration(dur_sec)
-            dur_str = f"нема {dur_fmt} ▸" if (e["event"] == "down" and is_down) else f"є {dur_fmt} ▸" if (e["event"] == "up" and not is_down) else dur_fmt
+            in_down_state = (e["event"] in _ev_downlike) and (is_down or voltage_anomaly)
+            dur_str = f"нема {dur_fmt} ▸" if in_down_state else f"є {dur_fmt} ▸" if (e["event"] == "up" and not is_down and not voltage_anomaly) else dur_fmt
         else:
             dur_sec = int(ev[i - 1]["ts"] - e["ts"])
             dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
@@ -496,7 +503,7 @@ def _build_update_fragments() -> dict:
             ev_grid = sh[-1]["grid"] if sh else None
         sched_tag = ""
         if ev_grid and len(ev_grid) >= 48:
-            is_down_ev = e["event"] == "down"
+            is_down_ev = e["event"] in _ev_downlike
             ev_min = ev_kyiv.hour * 60 + ev_kyiv.minute
             best_dev: int | None = None
             for si in range(1, 48):
@@ -882,6 +889,7 @@ def _build_schedule_html(is_down: bool) -> str:
 async def dashboard(key: str = Query("")):
     _check_key(key)
     is_down = kv_get("power_down") == "1"
+    voltage_anomaly = kv_get("voltage_anomaly") == "1"
     hb = recent_heartbeats(30)
     ev = recent_events(30)
 
@@ -1030,16 +1038,19 @@ async def dashboard(key: str = Query("")):
         deye_battery_html = ""
         deye_rows = ""
 
+    _ev_labels = {"down": "Пропало", "up": "З'явилось", "voltage_high": "Висока напруга", "voltage_low": "Низька напруга", "voltage_issue": "Проблема напруги"}
+    _ev_downlike = ("down", "voltage_high", "voltage_low", "voltage_issue")
     ev_rows = ""
     for i, e in enumerate(ev):
-        cls = "down" if e["event"] == "down" else "up"
-        label = "Пропало" if e["event"] == "down" else "З'явилось"
+        cls = "down" if e["event"] in _ev_downlike else "up"
+        label = _ev_labels.get(e["event"], e["event"])
         if i == 0:
             dur_sec = int(time.time() - e["ts"])
             dur_fmt = _format_duration(dur_sec)
-            if e["event"] == "down" and is_down:
+            in_down_state = (e["event"] in _ev_downlike) and (is_down or voltage_anomaly)
+            if in_down_state:
                 dur_str = f"нема {dur_fmt} ▸"
-            elif e["event"] == "up" and not is_down:
+            elif e["event"] == "up" and not is_down and not voltage_anomaly:
                 dur_str = f"є {dur_fmt} ▸"
             else:
                 dur_str = dur_fmt
@@ -1060,7 +1071,7 @@ async def dashboard(key: str = Query("")):
             if sh:
                 ev_grid = sh[-1]["grid"]
         if ev_grid:
-            is_down_ev = e["event"] == "down"
+            is_down_ev = e["event"] in _ev_downlike
             ev_min = ev_kyiv.hour * 60 + ev_kyiv.minute
             best_dev: int | None = None
             for si in range(1, 48):

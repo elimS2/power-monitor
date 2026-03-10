@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 
 from api.deps import check_key
 from config import UA_TZ
-from database import _conn, events_in_range, parse_boiler_schedule
+from database import DOWN_LIKE_EVENTS, _conn, events_in_range, parse_boiler_schedule
 
 router = APIRouter(tags=["debug"])
 
@@ -67,7 +67,7 @@ def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31
     episodes = []
     i = 0
     while i < len(events):
-        if events[i]["event"] != "down":
+        if events[i]["event"] not in DOWN_LIKE_EVENTS:
             i += 1
             continue
         down_ts = events[i]["ts"]
@@ -77,7 +77,7 @@ def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31
             if events[j]["event"] == "up":
                 up_ts = events[j]["ts"]
                 break
-            if events[j]["event"] == "down":
+            if events[j]["event"] in DOWN_LIKE_EVENTS:
                 break
             j += 1
         i = j
