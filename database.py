@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import statistics
 import sqlite3
 import time
 from datetime import datetime
@@ -576,10 +577,10 @@ def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
     return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]
 
 
-def deye_voltage_trend(n: int = 100, threshold_v: float = 5.0) -> str | None:
+def deye_voltage_trend(n: int = 1000, threshold_v: float = 5.0) -> str | None:
     """
     Висока/низька тільки при змішаному стані: є присутні й відсутні фази.
-    Тренд дивимось виключно по ВІДСУТНІХ фазах — останні n ненульових показників до зникнення.
+    Тренд дивимось виключно по ВІДСУТНІХ фазах — останні n ненульових показників до зникнення. Медіана (стійка до викидів).
     high = тренд по відсутнім РОСТЕ (висока напруга → Зубр вирубив)
     low = тренд по відсутнім ПАДАЄ (низька напруга)
     Якщо тренд невизначений: fallback по рівню присутніх фаз (≥250 → high, ≤190 → low).
@@ -609,9 +610,9 @@ def deye_voltage_trend(n: int = 100, threshold_v: float = 5.0) -> str | None:
         return None
     values = values_from_absent_phases[:n]
     half = len(values) // 2
-    newer_avg = sum(values[:half]) / half
-    older_avg = sum(values[half:]) / (len(values) - half)
-    diff = newer_avg - older_avg
+    newer_med = statistics.median(values[:half])
+    older_med = statistics.median(values[half:])
+    diff = newer_med - older_med
     if diff >= threshold_v:
         return "high"
     if diff <= -threshold_v:
