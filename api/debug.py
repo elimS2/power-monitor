@@ -1,11 +1,12 @@
 """Debug API routes."""
 import re
+import subprocess
 import time
 from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from api.deps import check_key
+from api.deps import check_admin, check_key
 from config import UA_TZ
 from database import DOWN_LIKE_EVENTS, _conn, events_in_range, parse_boiler_schedule
 
@@ -133,3 +134,24 @@ def ep_debug_sql(key: str = Query(""), query: str = Query(""), limit: int = Quer
         return {"rows": [dict(r) for r in rows], "count": len(rows)}
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/api/debug-log")
+def ep_debug_log(key: str = Query(""), lines: int = Query(100, ge=1, le=500)):
+    """Read power-monitor service log from journalctl. Admin only."""
+    check_admin(key)
+    try:
+        out = subprocess.run(
+            ["journalctl", "-u", "power-monitor", "-n", str(lines), "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd="/",
+        )
+        if out.returncode != 0:
+            return {"error": out.stderr or f"exit {out.returncode}", "lines": 0}
+        return {"lines": len(out.stdout.strip().splitlines()), "log": out.stdout}
+    except subprocess.TimeoutExpired:
+        return {"error": "timeout", "lines": 0}
+    except Exception as e:
+        return {"error": str(e), "lines": 0}

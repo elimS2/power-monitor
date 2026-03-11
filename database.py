@@ -410,6 +410,11 @@ def deye_daily_load_kwh() -> list[dict]:
         y, m, d = (int(x) for x in date_str.split("-"))
         kyiv_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=UA_TZ).timestamp()
         inv_rows = [r for r in day_rows if r["ts"] >= kyiv_midnight]
+        if date_str >= "2026-03-12":  # debug
+            load_vals = [r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None]
+            log.info("deye_daily date=%s kyiv_midnight_ts=%.0f day_rows=%d inv_rows=%d load_vals=%s",
+                     date_str, kyiv_midnight, len(day_rows), len(inv_rows),
+                     load_vals[:5] if len(load_vals) > 5 else load_vals)
         load_kwh = max((r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None), default=None)
         if load_kwh is not None:
             load_kwh = round(load_kwh, 1)
