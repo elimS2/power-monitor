@@ -33,6 +33,7 @@ from config import (
     DEYE_BATTERY_KWH,
     GIT_COMMIT,
     OUTAGE_CONFIRM_COUNT,
+    PHASES_ONLY,
     STALE_THRESHOLD_SEC,
     TG_BOT_TOKEN,
     TG_CHAT_ID,
@@ -193,13 +194,132 @@ _lock = asyncio.Lock()
 async def analyze():
     async with _lock:
         rows = recent_heartbeats(OUTAGE_CONFIRM_COUNT)
+        min_rows = 3 if PHASES_ONLY else OUTAGE_CONFIRM_COUNT
+        if len(rows) < min_rows:
+            return
 
-        if len(rows) < OUTAGE_CONFIRM_COUNT:
+        is_down = kv_get("power_down") == "1"
+        voltage_alerted = kv_get("voltage_anomaly") == "1"
+
+        if PHASES_ONLY:
+            phases_ok = has_all_three_phases_voltage()
+            phases_mixed = has_grid_voltage_now() and not phases_ok
+
+            if phases_ok:
+                if voltage_alerted:
+                    now = time.time()
+                    prev = recent_events(1)
+                    kv_set("voltage_anomaly", "0")
+                    save_event("up")
+                    log.info("VOLTAGE RESTORED (all 3 phases)")
+                    dev = dtek.schedule_deviation(is_down_event=False)
+                    if dev is not None:
+                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                    else:
+                        slot = dtek.current_slot_status()
+                        sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
+                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась{sched_label}"
+                    if prev:
+                        dur = _format_duration(int(now - prev[0]["ts"]))
+                        msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
+                    nxt = dtek.next_schedule_transition(looking_for_on=False)
+                    if nxt:
+                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                    await update_chat_photo(False)
+                    await tg_send(msg)
+                elif is_down:
+                    now = time.time()
+                    prev = recent_events(1)
+                    kv_set("power_down", "0")
+                    save_event("up")
+                    log.info("POWER RESTORED")
+                    dev = dtek.schedule_deviation(is_down_event=False)
+                    if dev is not None:
+                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                    else:
+                        slot = dtek.current_slot_status()
+                        sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
+                    msg = f"\u2705 {_ts_fmt_hm(now)} Світло з'явилось{sched_label}"
+                    if prev:
+                        dur = _format_duration(int(now - prev[0]["ts"]))
+                        msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
+                    nxt = dtek.next_schedule_transition(looking_for_on=False)
+                    if nxt:
+                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                    await update_chat_photo(False)
+                    await tg_send(msg)
+            else:
+                if voltage_alerted and phases_mixed:
+                    return
+                if voltage_alerted and not phases_mixed:
+                    now = time.time()
+                    kv_set("voltage_anomaly", "0")
+                    prev = recent_events(1)
+                    since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
+                    kv_set("power_down", "1")
+                    save_event("down")
+                    log.warning("POWER OUTAGE (was anomaly, now no voltage)")
+                    msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло"
+                    if since_ts:
+                        msg += f"\n\U0001f553 Проблема тривала {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+                    await update_chat_photo(True)
+                    await tg_send(msg)
+                    return
+                if is_down:
+                    return
+                if not voltage_alerted:
+                    now = time.time()
+                    if phases_mixed:
+                        trend = deye_voltage_trend(1000)
+                        v = last_nonzero_grid_voltage()
+                        parts_v = []
+                        if v:
+                            for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                                val = v.get(key)
+                                parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                        v_str = ", ".join(parts_v) if parts_v else ""
+                        if trend == "high":
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга"
+                            await update_chat_photo(False, voltage="high")
+                            save_event("voltage_high")
+                        elif trend == "low":
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга"
+                            await update_chat_photo(False, voltage="low")
+                            save_event("voltage_low")
+                        else:
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою"
+                            await update_chat_photo(True)
+                            save_event("voltage_issue")
+                        if v_str:
+                            msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                        kv_set("voltage_anomaly", "1")
+                        log.warning("VOLTAGE ANOMALY detected (phases_only)")
+                        await tg_send(msg)
+                    else:
+                        kv_set("voltage_anomaly", "0")
+                        prev = recent_events(1)
+                        since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
+                        kv_set("power_down", "1")
+                        save_event("down")
+                        log.warning("POWER OUTAGE detected (phases_only)")
+                        dev = dtek.schedule_deviation(is_down_event=True)
+                        if dev is not None:
+                            sched_label = " (\U0001f4c5 За графіком)" if abs(dev) <= 30 else " (\u26a1Позапланове)"
+                        else:
+                            slot = dtek.current_slot_status()
+                            sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
+                        msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
+                        if since_ts:
+                            msg += f"\n\U0001f553 Воно було {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+                        nxt = dtek.next_schedule_transition(looking_for_on=True)
+                        if nxt:
+                            msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
+                        await update_chat_photo(True)
+                        await tg_send(msg)
             return
 
         all_dead = all(r["plug204"] == 0 and r["plug175"] == 0 for r in rows)
         latest_alive = rows[0]["plug204"] > 0 or rows[0]["plug175"] > 0
-        is_down = kv_get("power_down") == "1"
 
         if all_dead and not is_down:
             now = time.time()

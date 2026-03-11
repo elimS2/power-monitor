@@ -52,7 +52,10 @@ API_KEYS = _parse_keys(os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")))
 
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
-# Both plugs must be dead for this many consecutive heartbeats → outage
+# When 1: ignore plug status, use only L1/L2/L3 phases from Deye for detection
+PHASES_ONLY = os.getenv("PHASES_ONLY", "0") == "1"
+
+# Both plugs must be dead for this many consecutive heartbeats → outage (ignored if PHASES_ONLY)
 OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
 
 # No heartbeat for this long → router/internet alert
