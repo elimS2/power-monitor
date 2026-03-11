@@ -296,7 +296,7 @@ def deye_monthly_load_kwh() -> float | None:
     daily = deye_daily_load_kwh()
     if not daily:
         return None
-    return round(sum(d["kwh"] for d in daily), 1)
+    return round(sum(d["integrated_kwh"] for d in daily), 1)
 
 
 def _integrate_range(ts_start: float, ts_end: float) -> float | None:
@@ -346,7 +346,7 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
     """
     rows = [
         ("День", "526", "Load за сьогодні (скидається о 00:00)", "day_load_kwh", deye_day_load_kwh_integrated),
-        ("Місяць", "66", "Load за поточний місяць (×0.001 для 3PH)", "month_load_kwh", deye_monthly_load_kwh),
+        ("Місяць", "66", "Load за поточний місяць (×0.1 за Sunsynk)", "month_load_kwh", deye_monthly_load_kwh),
         ("Всього", "527–528", "Load за весь час (×0.000001 для 3PH)", "total_load_kwh", deye_total_load_kwh_integrated),
         # Grid: тільки лічильник інвертора (інтеграція grid_power_w часто 0 в гібридному режимі)
         ("День імпорт", "520", "Grid імпорт за день (×0.1)", "day_grid_import_kwh", None),
@@ -369,7 +369,9 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
 
 
 def deye_daily_load_kwh() -> list[dict]:
-    """Compute load energy (kWh) per day for current month. Returns [{"date": "YYYY-MM-DD", "kwh": float, "samples": int}, ...]."""
+    """Compute load energy (kWh) per day for current month.
+    Returns [{"date", "load_kwh", "grid_kwh", "integrated_kwh", "samples", "hours"}, ...].
+    load_kwh = MAX(day_load_kwh), grid_kwh = MAX(day_grid_import_kwh), integrated = trapezoidal load_power_w."""
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
@@ -377,7 +379,7 @@ def deye_daily_load_kwh() -> list[dict]:
 
     with _conn() as db:
         rows = db.execute(
-            """SELECT load_power_w, ts FROM deye_log
+            """SELECT load_power_w, ts, day_load_kwh, day_grid_import_kwh FROM deye_log
                WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL
                ORDER BY ts""",
             (ts_start, ts_end),
@@ -400,7 +402,13 @@ def deye_daily_load_kwh() -> list[dict]:
         day_rows = by_date[date_str]
         if len(day_rows) < 2:
             continue
-        kwh = round(_integrate_kwh(day_rows), 1)
+        integrated_kwh = round(_integrate_kwh(day_rows), 1)
+        load_kwh = max((r.get("day_load_kwh") for r in day_rows if r.get("day_load_kwh") is not None), default=None)
+        if load_kwh is not None:
+            load_kwh = round(load_kwh, 1)
+        grid_kwh = max((r.get("day_grid_import_kwh") for r in day_rows if r.get("day_grid_import_kwh") is not None), default=None)
+        if grid_kwh is not None:
+            grid_kwh = round(grid_kwh, 1)
 
         # Group by hour for expandable breakdown
         by_hour: dict[int, list] = {}
@@ -419,7 +427,14 @@ def deye_daily_load_kwh() -> list[dict]:
             else:
                 hours_data.append({"hour": hour, "kwh": round(_integrate_kwh(hr_rows), 2)})
 
-        result.append({"date": date_str, "kwh": kwh, "samples": len(day_rows), "hours": hours_data})
+        result.append({
+            "date": date_str,
+            "load_kwh": load_kwh,
+            "grid_kwh": grid_kwh,
+            "integrated_kwh": integrated_kwh,
+            "samples": len(day_rows),
+            "hours": hours_data,
+        })
     return result
 
 

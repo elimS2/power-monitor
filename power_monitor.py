@@ -796,11 +796,14 @@ def _build_update_fragments() -> dict:
 
     deye_daily_rows = ""
     for d in deye_daily_load_kwh():
+        load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
+        grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
+        int_s = f'{d["integrated_kwh"]}'
         hr_rows = ""
         for h in d.get("hours", []):
             hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
         hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
-        deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
+        deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
 
     battery_daily, battery_monthly = deye_battery_episodes_for_month()
     deye_battery_html = ""
@@ -877,7 +880,7 @@ def _build_update_fragments() -> dict:
         "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
-        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
@@ -1155,11 +1158,14 @@ async def dashboard(key: str = Query("")):
         deye_summary = sep.join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
+            load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
+            grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
+            int_s = f'{d["integrated_kwh"]}'
             hr_rows = ""
             for h in d.get("hours", []):
                 hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
             hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
-            deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
+            deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
         battery_daily, battery_monthly = deye_battery_episodes_for_month()
         deye_battery_html = ""
         if battery_daily or battery_monthly["cycles"] > 0:
@@ -1351,11 +1357,14 @@ async def dashboard(key: str = Query("")):
             deye_summary_line2 = sep.join(parts2)
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
+            load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
+            grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
+            int_s = f'{d["integrated_kwh"]}'
             hr_rows = ""
             for h in d.get("hours", []):
                 hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
             hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
-            deye_daily_rows += f'<tr><td colspan="3"><details style="margin:0.2rem 0"><summary>{d["date"]} — {d["kwh"]} кВт·год ({d["samples"]} зразк.)</summary>{hr_table}</details></td></tr>\n'
+            deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
         battery_daily, battery_monthly = deye_battery_episodes_for_month()
         deye_battery_html = ""
         if battery_daily or battery_monthly["cycles"] > 0:
@@ -1604,7 +1613,7 @@ async def dashboard(key: str = Query("")):
 {deye_grid_html}
 <details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1">
 <summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>
-<table><tr><th>День</th><th>кВт·год</th><th>Зразків</th></tr>
+<table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>
 {deye_daily_rows}</table>
 </details>
 <details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1">

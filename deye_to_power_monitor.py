@@ -61,13 +61,13 @@ REGS = {
     "day_load_kwh": (526, False, 0.1),    # Day load energy, kWh (resets daily)
     "day_grid_import_kwh": (520, False, 0.1),   # Day grid import
     "day_grid_export_kwh": (521, False, 0.1),   # Day grid export
-    "month_load_kwh": (66, False, 0.001),  # 3PH: ×0.001 (65.535); 1PH docs say ×0.1
+    "month_load_kwh": (66, False, 0.1),   # Sunsynk: 1PH+3PH both use ×0.1 for month load
 }
 # 32-bit registers: (addr_high, addr_low), scale. Value = (high << 16) | low
-# 3PH/Solarman: total ×0.000001 (≈582 kWh за ~міс); year ×0.0001 або ×0.000001
+# total: Solarman 3PH фактично дає ×0.000001 (~626 kWh), Sunsynk Modbus — ×0.1
 REGS_32BIT = {
-    "total_load_kwh": (527, 528, 0.000001),   # Total: ×0.000001 (~582 за міс)
-    "year_load_kwh": (87, 88, 0.000001),     # Year: той самий масштаб
+    "total_load_kwh": (527, 528, 0.000001),   # Total: залишаємо ×0.000001 (значення коректні)
+    "year_load_kwh": (87, 88, 0.1),          # Year: пробуємо ×0.1 за Sunsynk
     "total_grid_import_kwh": (522, 523, 0.000001),  # 3PH: ×0.000001 (docs say ×0.1 for 1PH)
     "total_grid_export_kwh": (524, 525, 0.000001),
 }
@@ -153,6 +153,8 @@ def read_deye_solarman() -> dict | None:
             try:
                 rr = modbus.read_holding_registers(register_addr=addr, quantity=1)
                 if rr:
+                    if name == "month_load_kwh":
+                        logging.getLogger("deye_to_power_monitor").info(f"RAW reg66={rr[0]}")
                     val = _parse_reg_val(rr[0], signed, scale)
                     data[name] = val
             except Exception:
@@ -163,6 +165,8 @@ def read_deye_solarman() -> dict | None:
                 rr = modbus.read_holding_registers(register_addr=addr_hi, quantity=2)
                 if rr and len(rr) >= 2:
                     val_32 = (rr[0] << 16) | rr[1]
+                    if name == "year_load_kwh":
+                        logging.getLogger("deye_to_power_monitor").info(f"RAW reg87-88={val_32}")
                     if val_32 == 0xFFFFFFFF:  # invalid / not supported on 3PH
                         continue
                     v = val_32 * scale
@@ -198,12 +202,16 @@ def read_deye_modbus() -> dict | None:
             scale = spec[2] if len(spec) >= 3 else 1.0
             rr = client.read_holding_registers(addr, 1, slave=1)
             if not rr.isError() and rr.registers:
+                if name == "month_load_kwh":
+                    logging.getLogger("deye_to_power_monitor").info(f"RAW reg66={rr.registers[0]}")
                 data[name] = _parse_reg_val(rr.registers[0], signed, scale)
         for name, spec in REGS_32BIT.items():
             addr_hi, addr_lo, scale = spec
             rr = client.read_holding_registers(addr_hi, 2, slave=1)
             if not rr.isError() and rr.registers and len(rr.registers) >= 2:
                 val_32 = (rr.registers[0] << 16) | rr.registers[1]
+                if name == "year_load_kwh":
+                    logging.getLogger("deye_to_power_monitor").info(f"RAW reg87-88={val_32}")
                 if val_32 == 0xFFFFFFFF:
                     continue
                 v = val_32 * scale

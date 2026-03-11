@@ -88,8 +88,8 @@ POWER_MONITOR_KEY=...
 | battery_power_w | 590 | signed | — | Потужність батареї, Вт |
 | battery_voltage | 587 | unsigned | ×0.01 | Напруга батареї, В |
 | day_load_kwh | 526 | unsigned | ×0.1 | Споживання за день, кВт·год (скидається о півночі) |
-| month_load_kwh | 66 | unsigned | ×0.001 (3PH) | Споживання за місяць (1PH: ×0.1; 3PH: ×0.001) |
-| year_load_kwh | 87-88 | 32-bit | ×0.000001 (3PH) | Споживання за рік |
+| month_load_kwh | 66 | unsigned | ×0.1 | Споживання за місяць (Sunsynk: 1PH+3PH обидва ×0.1) |
+| year_load_kwh | 87-88 | 32-bit | ×0.1 | Споживання за рік (Sunsynk ×0.1) |
 | total_load_kwh | 527-528 | 32-bit | ×0.000001 (3PH) | Сумарне споживання (з моменту встановлення) |
 | day_grid_import_kwh | 520 | unsigned | ×0.1 | Імпорт з мережі за день |
 | day_grid_export_kwh | 521 | unsigned | ×0.1 | Експорт у мережу за день |
