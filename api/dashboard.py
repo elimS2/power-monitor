@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from api.deps import check_admin, check_key
 from database import kv_get, recent_deye_log, recent_events, recent_heartbeats
+import dtek
 
 router = APIRouter(tags=["dashboard"])
 
@@ -70,13 +71,16 @@ async def ep_refresh_status(key: str = Query("")):
         plugs_dead = hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
 
     if voltage_anomaly or (plugs_dead and has_grid_voltage_now()):
-        trend = deye_voltage_trend(1000)
-        if trend == "high":
-            await update_chat_photo(False, voltage="high")
-        elif trend == "low":
-            await update_chat_photo(False, voltage="low")
-        else:
-            await update_chat_photo(True)
+        from power_monitor import VOLTAGE_STATUS
+
+        has_voltage = has_grid_voltage_now()
+        is_scheduled = None
+        if voltage_anomaly and plugs_dead and not has_voltage:
+            slot = dtek.current_slot_status()
+            is_scheduled = slot in ("maybe", "off") if slot else False
+        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+        s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+        await update_chat_photo(s["voltage"] is None, voltage=s["voltage"])
         return {"ok": True, "message": "voltage_anomaly — аватарка оновлена, повідомлення не надсилається"}
 
     await update_chat_photo(False)

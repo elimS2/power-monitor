@@ -278,44 +278,47 @@ async def analyze():
                                 val = v.get(key)
                                 parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
                         v_str = ", ".join(parts_v) if parts_v else ""
-                        if trend == "high":
-                            msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга"
-                            await update_chat_photo(False, voltage="high")
-                            save_event("voltage_high")
-                        elif trend == "low":
-                            msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга"
-                            await update_chat_photo(False, voltage="low")
-                            save_event("voltage_low")
-                        else:
-                            msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою"
-                            await update_chat_photo(True)
-                            save_event("voltage_issue")
+                        s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+                        msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
+                        await update_chat_photo(s["voltage"] is None, voltage=s["voltage"])
+                        save_event(s["event"])
                         if v_str:
                             msg += f"\n\U0001f4a0 Напруга: {v_str}"
                         kv_set("voltage_anomaly", "1")
                         log.warning("VOLTAGE ANOMALY detected (phases_only)")
                         await tg_send(msg)
                     else:
-                        kv_set("voltage_anomaly", "0")
-                        prev = recent_events(1)
-                        since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
-                        kv_set("power_down", "1")
-                        save_event("down")
-                        log.warning("POWER OUTAGE detected (phases_only)")
-                        dev = dtek.schedule_deviation(is_down_event=True)
-                        if dev is not None:
-                            sched_label = " (\U0001f4c5 За графіком)" if abs(dev) <= 30 else " (\u26a1Позапланове)"
+                        slot = dtek.current_slot_status()
+                        is_scheduled = slot in ("maybe", "off") if slot else False
+                        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+                        if trend == "high":
+                            s = VOLTAGE_STATUS["high"]
+                            kv_set("voltage_anomaly", "1")
+                            save_event(s["event"])
+                            log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
+                            await update_chat_photo(False, voltage=s["voltage"])
+                            await tg_send(msg)
                         else:
-                            slot = dtek.current_slot_status()
-                            sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
-                        msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
-                        if since_ts:
-                            msg += f"\n\U0001f553 Воно було {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-                        nxt = dtek.next_schedule_transition(looking_for_on=True)
-                        if nxt:
-                            msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
-                        await update_chat_photo(True)
-                        await tg_send(msg)
+                            kv_set("voltage_anomaly", "0")
+                            prev = recent_events(1)
+                            since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
+                            kv_set("power_down", "1")
+                            save_event("down")
+                            log.warning("POWER OUTAGE detected (phases_only)")
+                            dev = dtek.schedule_deviation(is_down_event=True)
+                            if dev is not None:
+                                sched_label = " (\U0001f4c5 За графіком)" if abs(dev) <= 30 else " (\u26a1Позапланове)"
+                            else:
+                                sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
+                            msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
+                            if since_ts:
+                                msg += f"\n\U0001f553 Воно було {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+                            nxt = dtek.next_schedule_transition(looking_for_on=True)
+                            if nxt:
+                                msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
+                            await update_chat_photo(True)
+                            await tg_send(msg)
             return
 
         all_dead = all(r["plug204"] == 0 and r["plug175"] == 0 for r in rows)
@@ -336,18 +339,10 @@ async def analyze():
                         parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
                 v_str = ", ".join(parts_v) if parts_v else ""
 
-                if trend == "high":
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Висока напруга"
-                    await update_chat_photo(False, voltage="high")
-                    save_event("voltage_high")
-                elif trend == "low":
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Низька напруга"
-                    await update_chat_photo(False, voltage="low")
-                    save_event("voltage_low")
-                else:
-                    msg = f"\u26a1 {_ts_fmt_hm(now)} Проблема з напругою"
-                    await update_chat_photo(True)
-                    save_event("voltage_issue")
+                s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+                msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
+                await update_chat_photo(s["voltage"] is None, voltage=s["voltage"])
+                save_event(s["event"])
                 if v_str:
                     msg += f"\n\U0001f4a0 Напруга: {v_str}"
                 kv_set("voltage_anomaly", "1")
@@ -381,6 +376,18 @@ async def analyze():
                 return
 
             # Справжнє відключення: напруги немає або немає даних Deye
+            slot = dtek.current_slot_status()
+            is_scheduled = slot in ("maybe", "off") if slot else False
+            trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+            if trend == "high":
+                s = VOLTAGE_STATUS["high"]
+                kv_set("voltage_anomaly", "1")
+                save_event(s["event"])
+                log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
+                msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
+                await update_chat_photo(False, voltage=s["voltage"])
+                await tg_send(msg)
+                return
             kv_set("voltage_anomaly", "0")
             prev = recent_events(1)
             if prev:
@@ -400,7 +407,6 @@ async def analyze():
                 else:
                     sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
             else:
-                slot = dtek.current_slot_status()
                 if slot == "ok":
                     sched_label = " (\u26a1Позапланове)"
                 elif slot in ("maybe", "off"):
@@ -569,6 +575,46 @@ app.include_router(deye_router)
 app.include_router(plug_router)
 app.include_router(static_router)
 
+# Single source for voltage status: trend -> display text, icon, event, avatar voltage param
+VOLTAGE_STATUS = {
+    "high": {"text": "Висока напруга", "icon": "icon_high_voltage_v1.png", "event": "voltage_high", "voltage": "high"},
+    "low": {"text": "Низька напруга", "icon": "icon_low_voltage_v1.png", "event": "voltage_low", "voltage": "low"},
+    None: {"text": "Проблема з напругою", "icon": "icon_off.png", "event": "voltage_issue", "voltage": None},
+}
+
+
+def get_display_status() -> dict:
+    """
+    Single source of truth for power/voltage status. Used by dashboard (and must match Telegram logic).
+    Returns: {status_cls, status_text, icon}
+    """
+    is_down = kv_get("power_down") == "1"
+    voltage_anomaly = kv_get("voltage_anomaly") == "1"
+    hb = recent_heartbeats(30)
+    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
+    has_voltage = has_grid_voltage_now()
+
+    slot = dtek.current_slot_status()
+    is_scheduled = slot in ("maybe", "off") if slot else False
+
+    # Voltage anomaly: mixed state (plugs dead, we have voltage) — conditions 1,3,4,5
+    if plugs_dead and has_voltage:
+        trend = deye_voltage_trend(1000)
+        s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+        return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"]}
+
+    # Voltage anomaly: all phases gone but we detected high — condition 2
+    if voltage_anomaly and plugs_dead and not has_voltage:
+        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+        if trend == "high":
+            return {"status_cls": "down", "status_text": VOLTAGE_STATUS["high"]["text"], "icon": VOLTAGE_STATUS["high"]["icon"]}
+        return {"status_cls": "down", "status_text": VOLTAGE_STATUS[None]["text"], "icon": VOLTAGE_STATUS[None]["icon"]}
+
+    if is_down:
+        return {"status_cls": "down", "status_text": "Світло ВІДСУТНЄ", "icon": "icon_off.png"}
+
+    return {"status_cls": "up", "status_text": "Світло є", "icon": "icon_on.png"}
+
 
 def _build_update_fragments() -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
@@ -598,28 +644,10 @@ def _build_update_fragments() -> dict:
         else:
             schedule_note = "\U0001f389 Світло є (всупереч графіку)" if slot_val == "off" else "\U0001f4c5 За графіком (можливе відкл. не сталось)" if slot_val == "maybe" else "\U0001f4c5 За графіком"
 
-    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
-    has_voltage = has_grid_voltage_now()
-    if plugs_dead and has_voltage:
-        trend = deye_voltage_trend(1000)
-        status_cls = "down"
-        if trend == "high":
-            status_text = "Висока напруга"
-            icon = "icon_high_voltage_v1.png"
-        elif trend == "low":
-            status_text = "Низька напруга"
-            icon = "icon_low_voltage_v1.png"
-        else:
-            status_text = "Проблема з напругою"
-            icon = "icon_off.png"
-    elif is_down:
-        status_cls = "down"
-        status_text = "Світло ВІДСУТНЄ"
-        icon = "icon_off.png"
-    else:
-        status_cls = "up"
-        status_text = "Світло є"
-        icon = "icon_on.png"
+    status = get_display_status()
+    status_cls = status["status_cls"]
+    status_text = status["status_text"]
+    icon = status["icon"]
     dur_ext = f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""
 
     hb_rows = ""
@@ -1487,28 +1515,10 @@ async def dashboard(key: str = Query("")):
 </details>
 """
 
-    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
-    has_voltage = has_grid_voltage_now()
-    if plugs_dead and has_voltage:
-        trend = deye_voltage_trend(1000)
-        status_cls = "down"
-        if trend == "high":
-            status_text = "Висока напруга"
-            status_icon = "icon_high_voltage_v1.png"
-        elif trend == "low":
-            status_text = "Низька напруга"
-            status_icon = "icon_low_voltage_v1.png"
-        else:
-            status_text = "Проблема з напругою"
-            status_icon = "icon_off.png"
-    elif is_down:
-        status_cls = "down"
-        status_text = "Світло ВІДСУТНЄ"
-        status_icon = "icon_off.png"
-    else:
-        status_cls = "up"
-        status_text = "Світло є"
-        status_icon = "icon_on.png"
+    status = get_display_status()
+    status_cls = status["status_cls"]
+    status_text = status["status_text"]
+    status_icon = status["icon"]
 
     plug_state_raw = kv_get("plug_dashboard_state", "unknown")
     plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)

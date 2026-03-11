@@ -592,13 +592,19 @@ def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
     return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]
 
 
-def deye_voltage_trend(n: int = 1000, threshold_v: float = 5.0) -> str | None:
+def deye_voltage_trend(
+    n: int = 1000,
+    threshold_v: float = 5.0,
+    high_v_threshold: float = 240.0,
+    is_scheduled: bool | None = None,
+    all_absent_n: int = 23,
+    all_absent_drop: int = 3,
+) -> str | None:
     """
-    Висока/низька тільки при змішаному стані: є присутні й відсутні фази.
-    Тренд дивимось виключно по ВІДСУТНІХ фазах — останні n ненульових показників до зникнення. Медіана (стійка до викидів).
-    high = тренд по відсутнім РОСТЕ (висока напруга → Зубр вирубив)
-    low = тренд по відсутнім ПАДАЄ (низька напруга)
-    Якщо тренд невизначений: fallback по рівню присутніх фаз (≥250 → high, ≤190 → low).
+    Висока/низька при змішаному або повністю відсутньому стані.
+    high: 1) змішаний стан і хоча б одна присутня > 240; 2) змішаний стан і 2 відсутні фази — обидві мали
+      (23, -3, середнє 20) > 240; 3) всі відсутні, не за графіком, хоча б 2 з 3 фаз так само > 240.
+    low: тренд по відсутніх падає або present_avg ≤ 190.
     """
     latest_row = recent_deye_log(1)
     if not latest_row:
@@ -607,10 +613,57 @@ def deye_voltage_trend(n: int = 1000, threshold_v: float = 5.0) -> str | None:
     phase_keys = [("grid_v_l1", latest.get("grid_v_l1")), ("grid_v_l2", latest.get("grid_v_l2")), ("grid_v_l3", latest.get("grid_v_l3"))]
     absent_keys = [k for k, v in phase_keys if v is None or v == 0]
     present_keys = [k for k, v in phase_keys if v is not None and v > 0]
-    if not absent_keys or not present_keys:
+
+    if not absent_keys:
         return None
 
-    present_avg = sum(latest.get(k) for k in present_keys) / len(present_keys)
+    if not present_keys:
+        # Усі фази зникли — перевіряємо чи була висока напруга перед зникненням
+        # high якщо: всі 3 фази мають avg>240; або хоча б 2 з 3 фаз (будь-яка комбінація)
+        if is_scheduled is not False:
+            return None
+        need = all_absent_n
+        use_count = need - all_absent_drop
+        all_phase_keys = ["grid_v_l1", "grid_v_l2", "grid_v_l3"]
+        high_count = 0
+        for key in all_phase_keys:
+            vals_ts = _last_nonzero_for_phase(key, limit=need)
+            if len(vals_ts) < need:
+                continue
+            values = [v for v, _ in vals_ts[:need]]
+            kept = values[all_absent_drop:need]
+            avg = sum(kept) / use_count
+            if avg > high_v_threshold:
+                high_count += 1
+        if high_count >= 2:
+            return "high"
+        return None
+
+    present_values = [latest.get(k) for k in present_keys]
+    present_max = max(present_values)
+    if present_max > high_v_threshold:
+        return "high"
+
+    # Змішаний стан: 2 фази відсутні — якщо обидві мали avg>240 перед зникненням → high (незалежно від присутньої)
+    if len(absent_keys) == 2:
+        need = all_absent_n
+        use_count = need - all_absent_drop
+        both_high = True
+        for key in absent_keys:
+            vals_ts = _last_nonzero_for_phase(key, limit=need)
+            if len(vals_ts) < need:
+                both_high = False
+                break
+            values = [v for v, _ in vals_ts[:need]]
+            kept = values[all_absent_drop:need]
+            avg = sum(kept) / use_count
+            if avg <= high_v_threshold:
+                both_high = False
+                break
+        if both_high:
+            return "high"
+
+    present_avg = sum(present_values) / len(present_values)
 
     all_val_ts: list[tuple[float, float]] = []
     for key in absent_keys:
