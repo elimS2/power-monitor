@@ -154,7 +154,7 @@ async def update_chat_photo(is_down: bool, voltage: str | None = None):
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
             if DELETE_PHOTO_MSG and r.status_code == 200:
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
                 await _delete_service_msg(client, api)
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
