@@ -9,7 +9,7 @@ import re
 import statistics
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from config import CLEANUP_KEEP_DAYS, DB_PATH, UA_TZ
 
@@ -371,7 +371,9 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
 def deye_daily_load_kwh() -> list[dict]:
     """Compute load energy (kWh) per day for current month.
     Returns [{"date", "load_kwh", "grid_kwh", "integrated_kwh", "samples", "hours"}, ...].
-    load_kwh = MAX(day_load_kwh), grid_kwh = MAX(day_grid_import_kwh), integrated = trapezoidal load_power_w."""
+    load_kwh = MAX(day_load_kwh), grid_kwh = MAX(day_grid_import_kwh), integrated = trapezoidal load_power_w.
+    Inverter resets at 00:00 UTC; Kyiv = UTC+2. So for "day D Kyiv" we take Load/Grid only from rows
+    with ts >= midnight UTC on D (inverter has reset). Integration uses full Kyiv-day window."""
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
@@ -388,7 +390,7 @@ def deye_daily_load_kwh() -> list[dict]:
     if len(rows) < 2:
         return []
 
-    # Group rows by date (Kyiv timezone)
+    # Group rows by date (Kyiv timezone) — full day window 00:00–24:00 Kyiv
     by_date: dict[str, list] = {}
     for r in rows:
         dt = datetime.fromtimestamp(r["ts"], tz=UA_TZ)
@@ -403,10 +405,15 @@ def deye_daily_load_kwh() -> list[dict]:
         if len(day_rows) < 2:
             continue
         integrated_kwh = round(_integrate_kwh(day_rows), 1)
-        load_kwh = max((r.get("day_load_kwh") for r in day_rows if r.get("day_load_kwh") is not None), default=None)
+
+        # Load/Grid from inverter: use only rows after inverter reset (00:00 UTC on this date)
+        y, m, d = (int(x) for x in date_str.split("-"))
+        utc_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=timezone.utc).timestamp()
+        inv_rows = [r for r in day_rows if r["ts"] >= utc_midnight]
+        load_kwh = max((r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None), default=None)
         if load_kwh is not None:
             load_kwh = round(load_kwh, 1)
-        grid_kwh = max((r.get("day_grid_import_kwh") for r in day_rows if r.get("day_grid_import_kwh") is not None), default=None)
+        grid_kwh = max((r.get("day_grid_import_kwh") for r in inv_rows if r.get("day_grid_import_kwh") is not None), default=None)
         if grid_kwh is not None:
             grid_kwh = round(grid_kwh, 1)
 
