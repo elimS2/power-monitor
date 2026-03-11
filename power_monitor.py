@@ -601,19 +601,21 @@ def get_display_status() -> dict:
     if plugs_dead and has_voltage:
         trend = deye_voltage_trend(1000)
         s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
-        return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"]}
+        return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
 
     # Voltage anomaly: all phases gone but we detected high — condition 2
     if voltage_anomaly and plugs_dead and not has_voltage:
         trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
         if trend == "high":
-            return {"status_cls": "down", "status_text": VOLTAGE_STATUS["high"]["text"], "icon": VOLTAGE_STATUS["high"]["icon"]}
-        return {"status_cls": "down", "status_text": VOLTAGE_STATUS[None]["text"], "icon": VOLTAGE_STATUS[None]["icon"]}
+            s = VOLTAGE_STATUS["high"]
+            return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
+        s = VOLTAGE_STATUS[None]
+        return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
 
     if is_down:
-        return {"status_cls": "down", "status_text": "Світло ВІДСУТНЄ", "icon": "icon_off.png"}
+        return {"status_cls": "down", "status_text": "Світло ВІДСУТНЄ", "icon": "icon_off.png", "voltage": None}
 
-    return {"status_cls": "up", "status_text": "Світло є", "icon": "icon_on.png"}
+    return {"status_cls": "up", "status_text": "Світло є", "icon": "icon_on.png", "voltage": None}
 
 
 def _build_update_fragments() -> dict:
