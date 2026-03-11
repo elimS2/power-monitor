@@ -127,18 +127,22 @@ def _photo_for_voltage(kind: str) -> bytes | None:
     return path.read_bytes() if path.exists() else None
 
 
-async def _delete_service_msg(client: httpx.AsyncClient, api: str):
-    """Send temp message, delete it and the service message before it."""
-    r = await client.post(f"{api}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": "."})
+async def _delete_service_msg(client: httpx.AsyncClient, api: str, message: str | None = None):
+    """Send message (or '.'), delete service msg before it. If message provided, keep it; else delete our msg too."""
+    text = message if message is not None else "."
+    r = await client.post(f"{api}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text})
     if r.status_code == 200:
+        if message is not None:
+            save_tg_log(TG_CHAT_ID, text, r.status_code)
         tid = r.json().get("result", {}).get("message_id", 0)
         if tid:
             await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid - 1})
-            await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
+            if message is None:
+                await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
 
 
-async def update_chat_photo(is_down: bool, voltage: str | None = None):
-    """voltage='high'|'low' overrides is_down for voltage anomaly icons."""
+async def update_chat_photo(is_down: bool, voltage: str | None = None, message_to_send: str | None = None):
+    """voltage='high'|'low' overrides is_down. If message_to_send, send it instead of dot and keep it."""
     if voltage:
         pic = _photo_for_voltage(voltage)
         photo = pic if pic else _PHOTO_OFF
@@ -154,8 +158,10 @@ async def update_chat_photo(is_down: bool, voltage: str | None = None):
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
             if DELETE_PHOTO_MSG and r.status_code == 200:
-                await asyncio.sleep(1)
-                await _delete_service_msg(client, api)
+                await asyncio.sleep(0.5)
+                await _delete_service_msg(client, api, message_to_send)
+            elif message_to_send:
+                await tg_send(message_to_send)
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
@@ -225,8 +231,7 @@ async def analyze():
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
                         msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
-                    await update_chat_photo(False)
-                    await tg_send(msg)
+                    await update_chat_photo(False, message_to_send=msg)
                 elif is_down:
                     now = time.time()
                     prev = recent_events(1)
@@ -246,8 +251,7 @@ async def analyze():
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
                         msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
-                    await update_chat_photo(False)
-                    await tg_send(msg)
+                    await update_chat_photo(False, message_to_send=msg)
             else:
                 if voltage_alerted and phases_mixed:
                     return
@@ -262,8 +266,7 @@ async def analyze():
                     msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло"
                     if since_ts:
                         msg += f"\n\U0001f553 Проблема тривала {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-                    await update_chat_photo(True)
-                    await tg_send(msg)
+                    await update_chat_photo(True, message_to_send=msg)
                     return
                 if is_down:
                     return
@@ -280,13 +283,12 @@ async def analyze():
                         v_str = ", ".join(parts_v) if parts_v else ""
                         s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
                         msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
-                        await update_chat_photo(s["voltage"] is None, voltage=s["voltage"])
-                        save_event(s["event"])
                         if v_str:
                             msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                        save_event(s["event"])
                         kv_set("voltage_anomaly", "1")
                         log.warning("VOLTAGE ANOMALY detected (phases_only)")
-                        await tg_send(msg)
+                        await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
                     else:
                         slot = dtek.current_slot_status()
                         is_scheduled = slot in ("maybe", "off") if slot else False
@@ -297,8 +299,7 @@ async def analyze():
                             save_event(s["event"])
                             log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
                             msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
-                            await update_chat_photo(False, voltage=s["voltage"])
-                            await tg_send(msg)
+                            await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg)
                         else:
                             kv_set("voltage_anomaly", "0")
                             prev = recent_events(1)
@@ -317,8 +318,7 @@ async def analyze():
                             nxt = dtek.next_schedule_transition(looking_for_on=True)
                             if nxt:
                                 msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
-                            await update_chat_photo(True)
-                            await tg_send(msg)
+                            await update_chat_photo(True, message_to_send=msg)
             return
 
         all_dead = all(r["plug204"] == 0 and r["plug175"] == 0 for r in rows)
@@ -341,13 +341,12 @@ async def analyze():
 
                 s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
                 msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
-                await update_chat_photo(s["voltage"] is None, voltage=s["voltage"])
-                save_event(s["event"])
                 if v_str:
                     msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                save_event(s["event"])
                 kv_set("voltage_anomaly", "1")
                 log.warning("VOLTAGE ANOMALY detected (not power outage)")
-                await tg_send(msg)
+                await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
                 return
 
             if voltage_alerted and has_grid_voltage_now():
@@ -371,8 +370,7 @@ async def analyze():
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
                         msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
-                    await update_chat_photo(False)
-                    await tg_send(msg)
+                    await update_chat_photo(False, message_to_send=msg)
                 return
 
             # Справжнє відключення: напруги немає або немає даних Deye
@@ -385,8 +383,7 @@ async def analyze():
                 save_event(s["event"])
                 log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
                 msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
-                await update_chat_photo(False, voltage=s["voltage"])
-                await tg_send(msg)
+                await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg)
                 return
             kv_set("voltage_anomaly", "0")
             prev = recent_events(1)
@@ -428,8 +425,7 @@ async def analyze():
                 nxt = dtek.next_schedule_transition(looking_for_on=True)
                 if nxt:
                     msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
-            await update_chat_photo(True)
-            await tg_send(msg)
+            await update_chat_photo(True, message_to_send=msg)
 
         elif latest_alive:
             kv_set("voltage_anomaly", "0")
@@ -464,8 +460,7 @@ async def analyze():
             nxt = dtek.next_schedule_transition(looking_for_on=False)
             if nxt:
                 msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
-            await update_chat_photo(False)
-            await tg_send(msg)
+            await update_chat_photo(False, message_to_send=msg)
 
 
 async def watchdog():

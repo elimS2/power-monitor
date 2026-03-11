@@ -54,17 +54,11 @@ def ep_events(key: str = Query(""), limit: int = Query(50)):
 async def ep_refresh_status(key: str = Query("")):
     """Оновити аватарку та надіслати повідомлення про поточний стан у канал."""
     check_admin(key)
-    from power_monitor import _ts_fmt_hm, get_display_status, tg_send, update_chat_photo
+    from power_monitor import _ts_fmt_hm, get_display_status, update_chat_photo
     from database import last_nonzero_grid_voltage
 
     now = time.time()
     status = get_display_status()
-    # Avatar: voltage overrides is_down; when voltage is None and down → icon_off
-    await update_chat_photo(
-        is_down=(status["voltage"] is None and status["status_cls"] == "down"),
-        voltage=status.get("voltage"),
-    )
-
     v = last_nonzero_grid_voltage()
     parts = []
     if v:
@@ -84,5 +78,9 @@ async def ep_refresh_status(key: str = Query("")):
     if v_str:
         msg += f"\n\U0001f4a0 Напруга: {v_str}"
 
-    await tg_send(msg)
+    await update_chat_photo(
+        is_down=(status["voltage"] is None and status["status_cls"] == "down"),
+        voltage=status.get("voltage"),
+        message_to_send=msg,
+    )
     return {"ok": True, "sent": True, "status": status["status_text"]}
