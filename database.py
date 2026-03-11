@@ -9,7 +9,7 @@ import re
 import statistics
 import sqlite3
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from config import CLEANUP_KEEP_DAYS, DB_PATH, UA_TZ
 
@@ -406,10 +406,10 @@ def deye_daily_load_kwh() -> list[dict]:
             continue
         integrated_kwh = round(_integrate_kwh(day_rows), 1)
 
-        # Load/Grid from inverter: use only rows after inverter reset (00:00 UTC on this date)
+        # Load/Grid from inverter: use only rows after inverter reset (00:00 Kyiv = 22:00 UTC in winter)
         y, m, d = (int(x) for x in date_str.split("-"))
-        utc_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=timezone.utc).timestamp()
-        inv_rows = [r for r in day_rows if r["ts"] >= utc_midnight]
+        kyiv_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=UA_TZ).timestamp()
+        inv_rows = [r for r in day_rows if r["ts"] >= kyiv_midnight]
         load_kwh = max((r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None), default=None)
         if load_kwh is not None:
             load_kwh = round(load_kwh, 1)
