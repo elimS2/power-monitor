@@ -372,8 +372,8 @@ def deye_daily_load_kwh() -> list[dict]:
     """Compute load energy (kWh) per day for current month.
     Returns [{"date", "load_kwh", "grid_kwh", "integrated_kwh", "samples", "hours"}, ...].
     load_kwh = MAX(day_load_kwh), grid_kwh = MAX(day_grid_import_kwh), integrated = trapezoidal load_power_w.
-    Inverter resets at 00:00 UTC; Kyiv = UTC+2. So for "day D Kyiv" we take Load/Grid only from rows
-    with ts >= midnight UTC on D (inverter has reset). Integration uses full Kyiv-day window."""
+    Deye resets at ~00:00 Kyiv; may take a few min. We exclude first 10 min after midnight to avoid
+    stale pre-reset values (e.g. 38.1 from previous day). Integration uses full Kyiv-day."""
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
@@ -406,15 +406,11 @@ def deye_daily_load_kwh() -> list[dict]:
             continue
         integrated_kwh = round(_integrate_kwh(day_rows), 1)
 
-        # Load/Grid from inverter: use only rows after inverter reset (00:00 Kyiv = 22:00 UTC in winter)
+        # Load/Grid from inverter: reset at ~00:00 Kyiv, exclude first 10 min to skip stale values
         y, m, d = (int(x) for x in date_str.split("-"))
         kyiv_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=UA_TZ).timestamp()
-        inv_rows = [r for r in day_rows if r["ts"] >= kyiv_midnight]
-        if date_str >= "2026-03-12":  # debug
-            load_vals = [r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None]
-            log.info("deye_daily date=%s kyiv_midnight_ts=%.0f day_rows=%d inv_rows=%d load_vals=%s",
-                     date_str, kyiv_midnight, len(day_rows), len(inv_rows),
-                     load_vals[:5] if len(load_vals) > 5 else load_vals)
+        RESET_GRACE_SEC = 600  # 10 min
+        inv_rows = [r for r in day_rows if r["ts"] >= kyiv_midnight + RESET_GRACE_SEC]
         load_kwh = max((r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None), default=None)
         if load_kwh is not None:
             load_kwh = round(load_kwh, 1)
