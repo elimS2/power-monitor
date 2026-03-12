@@ -371,7 +371,7 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
 def deye_daily_load_kwh() -> list[dict]:
     """Compute load energy (kWh) per day for current month.
     Returns [{"date", "load_kwh", "grid_kwh", "integrated_kwh", "samples", "hours"}, ...].
-    load_kwh = MAX(day_load_kwh), grid_kwh = MAX(day_grid_import_kwh), integrated = trapezoidal load_power_w.
+    load_kwh, grid_kwh = last reading in interval (cumulative counters). integrated = trapezoidal load_power_w.
     Deye resets at ~00:00 Kyiv; may take a few min. We exclude first 10 min after midnight to avoid
     stale pre-reset values (e.g. 38.1 from previous day). Integration uses full Kyiv-day."""
     now = datetime.now(UA_TZ)
@@ -411,10 +411,11 @@ def deye_daily_load_kwh() -> list[dict]:
         kyiv_midnight = datetime(y, m, d, 0, 0, 0, tzinfo=UA_TZ).timestamp()
         RESET_GRACE_SEC = 600  # 10 min
         inv_rows = [r for r in day_rows if r["ts"] >= kyiv_midnight + RESET_GRACE_SEC]
-        load_kwh = max((r.get("day_load_kwh") for r in inv_rows if r.get("day_load_kwh") is not None), default=None)
+        last_row = max(inv_rows, key=lambda r: r["ts"]) if inv_rows else None
+        load_kwh = last_row.get("day_load_kwh") if last_row else None
         if load_kwh is not None:
             load_kwh = round(load_kwh, 1)
-        grid_kwh = max((r.get("day_grid_import_kwh") for r in inv_rows if r.get("day_grid_import_kwh") is not None), default=None)
+        grid_kwh = last_row.get("day_grid_import_kwh") if last_row else None
         if grid_kwh is not None:
             grid_kwh = round(grid_kwh, 1)
 
