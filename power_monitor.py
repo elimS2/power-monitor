@@ -231,7 +231,7 @@ async def analyze():
                         msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
-                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
                 elif is_down:
                     now = time.time()
@@ -251,7 +251,7 @@ async def analyze():
                         msg += f"\n\U0001f553 Його не було {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
-                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
             else:
                 if voltage_alerted and phases_mixed:
@@ -393,7 +393,7 @@ async def analyze():
                         msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
-                        msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
                 return
 
@@ -483,7 +483,7 @@ async def analyze():
             # Планове відключення — завжди показуємо (корисно навіть якщо включення було позаплановим)
             nxt = dtek.next_schedule_transition(looking_for_on=False)
             if nxt:
-                msg += f"\n\U0001f4c5 Відключення за графіком: {nxt}"
+                msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
             await update_chat_photo(False, message_to_send=msg)
 
 
@@ -1666,7 +1666,7 @@ async def dashboard(key: str = Query("")):
 <tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
 <tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
 <tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Відключення за графіком: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
+<tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Наступне відключення: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
 <tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
 <tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr>
 <tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr>
