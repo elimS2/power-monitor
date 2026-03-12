@@ -218,13 +218,14 @@ async def analyze():
                     kv_set("voltage_anomaly", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
-                    dev = dtek.schedule_deviation(is_down_event=False)
-                    if dev is not None:
-                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
-                    else:
-                        slot = dtek.current_slot_status()
-                        sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
-                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась{sched_label}"
+                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
+                    v = last_nonzero_grid_voltage()
+                    if v:
+                        parts = []
+                        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                            val = v.get(key)
+                            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
                     if prev:
                         dur = _format_duration(int(now - prev[0]["ts"]))
                         msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
@@ -240,7 +241,7 @@ async def analyze():
                     log.info("POWER RESTORED")
                     dev = dtek.schedule_deviation(is_down_event=False)
                     if dev is not None:
-                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else (f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})" if abs(dev) <= 60 else " (\u26a1Позапланове)")
                     else:
                         slot = dtek.current_slot_status()
                         sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
@@ -379,14 +380,14 @@ async def analyze():
                     kv_set("voltage_anomaly", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
-                    dev = dtek.schedule_deviation(is_down_event=False)
-                    sched_label = ""
-                    if dev is not None:
-                        sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
-                    else:
-                        slot = dtek.current_slot_status()
-                        sched_label = " (\U0001f4c5 За графіком)" if slot in ("maybe", "off") else " (\u26a1Позапланове)" if slot == "ok" else ""
-                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась{sched_label}"
+                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
+                    v = last_nonzero_grid_voltage()
+                    if v:
+                        parts = []
+                        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                            val = v.get(key)
+                            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
                     if prev:
                         dur = _format_duration(int(now - prev[0]["ts"]))
                         msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
@@ -465,7 +466,7 @@ async def analyze():
                 if abs(dev) <= 30:
                     sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})"
                 else:
-                    sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                    sched_label = f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})" if abs(dev) <= 60 else " (\u26a1Позапланове)"
             else:
                 slot = dtek.current_slot_status()
                 if slot == "ok":
