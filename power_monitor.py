@@ -256,17 +256,40 @@ async def analyze():
                 if voltage_alerted and phases_mixed:
                     return
                 if voltage_alerted and not phases_mixed:
+                    # Була вже висока напруга (напр. 1 фаза працювала з >240В), тепер усі фази 0.
+                    # Той самий тип проблеми — не дублюємо повідомлення в Telegram.
                     now = time.time()
-                    kv_set("voltage_anomaly", "0")
+                    slot = dtek.current_slot_status()
+                    is_scheduled = slot in ("maybe", "off") if slot else False
+                    trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
                     prev = recent_events(1)
                     since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
                     kv_set("power_down", "1")
-                    save_event("down")
-                    log.warning("POWER OUTAGE (was anomaly, now no voltage)")
-                    msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло"
-                    if since_ts:
-                        msg += f"\n\U0001f553 Проблема тривала {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-                    await update_chat_photo(True, message_to_send=msg)
+                    if trend is not None:
+                        # Той самий тип аномалії (high/low/issue) — не дублюємо повідомлення в Telegram
+                        kv_set("voltage_anomaly", "1")
+                        log.info("All phases gone (was voltage anomaly) — no new TG message")
+                    else:
+                        kv_set("voltage_anomaly", "0")
+                        kv_set("power_down", "1")
+                        save_event("down")
+                        log.warning("POWER OUTAGE (was anomaly, now no voltage)")
+                        dev = dtek.schedule_deviation(is_down_event=True)
+                        sched_label = ""
+                        if dev is not None:
+                            sched_label = f" (\U0001f4c5 За графіком, відхилення {dtek.fmt_deviation(dev)})" if abs(dev) <= 30 else f" (\u26a1Позапланове, відхилення {dtek.fmt_deviation(dev, signed=False)})"
+                        elif slot == "ok":
+                            sched_label = " (\u26a1Позапланове)"
+                        elif slot in ("maybe", "off"):
+                            sched_label = " (\U0001f4c5 За графіком)"
+                        msg = f"\u274c {_ts_fmt_hm(now)} Світло зникло{sched_label}"
+                        if since_ts:
+                            msg += f"\n\U0001f553 Проблема тривала {_format_duration(int(now - since_ts))} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
+                        if dev is None or abs(dev) <= 30:
+                            nxt = dtek.next_schedule_transition(looking_for_on=True)
+                            if nxt:
+                                msg += f"\n\U0001f4c5 Включення за графіком: {nxt}"
+                        await update_chat_photo(True, message_to_send=msg)
                     return
                 if is_down:
                     return
