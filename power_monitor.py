@@ -216,6 +216,7 @@ async def analyze():
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
+                    kv_set("power_down", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
                     msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
@@ -378,6 +379,7 @@ async def analyze():
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
+                    kv_set("power_down", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
                     msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
