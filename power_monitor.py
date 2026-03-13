@@ -764,8 +764,6 @@ def _build_update_fragments() -> dict:
         if grid_w is not None:
             sign = "+" if grid_w >= 0 else "−"
             parts_rt.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
-        if soc is not None:
-            parts_rt.append(f"АКБ: {int(soc)}%")
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             parts_rt.append("Напруга " + " ".join(v_parts) + " В")
@@ -793,14 +791,11 @@ def _build_update_fragments() -> dict:
             cap_kwh = DEYE_BATTERY_KWH
             consumed_kwh = cap_kwh * (100 - soc) / 100
             remaining_kwh = cap_kwh * soc / 100
-            parts2 = [f"{cap_kwh:.0f} кВт·год", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
+            parts2 = [f"{cap_kwh:.0f} кВт·год", f"АКБ: {int(soc)}%", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
             if load_w is not None and load_w > 0 and remaining_kwh > 0:
                 hrs = remaining_kwh / (load_w / 1000)
                 time_str = f"{int(hrs//24)}д {int(hrs%24)}год" if hrs >= 24 else f"{int(hrs)}год {int((hrs%1)*60)}хв" if hrs >= 1 else f"{int(hrs*60)}хв"
                 parts2.append(f"~{time_str} до 0")
-            if any(x is not None for x in (v1, v2, v3)):
-                v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
-                parts2.append(" ".join(v_parts) + " В")
             deye_summary_line2 = sep.join(parts2)
         for r in deye_log:
             load_w = r.get("load_power_w")
@@ -1336,8 +1331,6 @@ async def dashboard(key: str = Query("")):
         if grid_w is not None:
             sign = "+" if grid_w >= 0 else "−"
             parts1.append(f"Мережа: {sign}{abs(int(grid_w))} Вт")
-        if soc is not None:
-            parts1.append(f"АКБ: {int(soc)}%")
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             parts1.append("Напруга " + " ".join(v_parts) + " В")
@@ -1363,7 +1356,7 @@ async def dashboard(key: str = Query("")):
             cap_kwh = DEYE_BATTERY_KWH
             consumed_kwh = cap_kwh * (100 - soc) / 100
             remaining_kwh = cap_kwh * soc / 100
-            parts2 = [f"{cap_kwh:.0f} кВт·год", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
+            parts2 = [f"{cap_kwh:.0f} кВт·год", f"АКБ: {int(soc)}%", f"спожито {consumed_kwh:.1f}", f"залиш. {remaining_kwh:.1f}"]
             if load_w is not None and load_w > 0 and remaining_kwh > 0:
                 hrs = remaining_kwh / (load_w / 1000)
                 if hrs >= 24:
@@ -1376,9 +1369,6 @@ async def dashboard(key: str = Query("")):
                     m = int(hrs * 60)
                     time_str = f"{m}хв"
                 parts2.append(f"~{time_str} до 0")
-            if any(x is not None for x in (v1, v2, v3)):
-                v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
-                parts2.append(" ".join(v_parts) + " В")
             deye_summary_line2 = sep.join(parts2)
         deye_daily_rows = ""
         for d in deye_daily_load_kwh():
