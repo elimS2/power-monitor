@@ -607,25 +607,24 @@ VOLTAGE_STATUS = {
 def get_display_status() -> dict:
     """
     Single source of truth for power/voltage status. Used by dashboard (and must match Telegram logic).
-    Returns: {status_cls, status_text, icon}
+    Uses Deye phases only (no plugs). Returns: {status_cls, status_text, icon}
     """
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
-    hb = recent_heartbeats(30)
-    plugs_dead = bool(hb) and hb[0]["plug204"] == 0 and hb[0]["plug175"] == 0
-    has_voltage = has_grid_voltage_now()
+    phases_ok = has_all_three_phases_voltage()
+    phases_mixed = has_grid_voltage_now() and not phases_ok
 
     slot = dtek.current_slot_status()
     is_scheduled = slot in ("maybe", "off") if slot else False
 
-    # Voltage anomaly: mixed state (plugs dead, we have voltage) — conditions 1,3,4,5
-    if plugs_dead and has_voltage:
+    # Voltage anomaly: mixed phases (e.g. L1+L3 ok, L2=0)
+    if phases_mixed:
         trend = deye_voltage_trend(1000)
         s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
         return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
 
-    # Voltage anomaly: all phases gone but we detected high — condition 2
-    if voltage_anomaly and plugs_dead and not has_voltage:
+    # Voltage anomaly: all phases gone, was high before
+    if voltage_anomaly and not phases_ok and not phases_mixed:
         trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
         if trend == "high":
             s = VOLTAGE_STATUS["high"]
