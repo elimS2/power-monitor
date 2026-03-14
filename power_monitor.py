@@ -91,6 +91,17 @@ _REPO = Path(__file__).resolve().parent
 _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
 
 
+def _do_deploy_sync() -> bool:
+    """Pull and restart. Returns True on success."""
+    try:
+        subprocess.run(["git", "pull", "origin", "main"], cwd=_REPO, check=True, timeout=60)
+        subprocess.run(["sudo", "systemctl", "restart", "power-monitor"], check=True, timeout=10)
+        return True
+    except Exception as e:
+        log.warning("Deploy failed: %s", e)
+        return False
+
+
 def _check_and_deploy_sync() -> bool:
     """Check if remote has new commit with deploy tag; if so, pull and restart. Returns True if restart triggered."""
     try:
@@ -115,9 +126,7 @@ def _check_and_deploy_sync() -> bool:
             log.info("Auto-deploy: origin/main %s has no #autodeploy tag, skipping", remote[:8])
             return False
         log.info("Auto-deploy: pulling %s and restarting", remote[:8])
-        subprocess.run(["git", "pull", "origin", "main"], cwd=_REPO, check=True, timeout=60)
-        subprocess.run(["sudo", "systemctl", "restart", "power-monitor"], check=True, timeout=10)
-        return True
+        return _do_deploy_sync()
     except Exception as e:
         log.warning("Auto-deploy check failed: %s", e)
         return False
@@ -712,6 +721,7 @@ app = FastAPI(title="Power Monitor", lifespan=lifespan)
 from api import (
     admin_router,
     dashboard_router,
+    deploy_router,
     deye_router,
     debug_router,
     heartbeat_router,
@@ -721,6 +731,7 @@ from api import (
 )
 
 app.include_router(admin_router)
+app.include_router(deploy_router)
 app.include_router(heartbeat_router)
 app.include_router(dashboard_router)
 app.include_router(debug_router)

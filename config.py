@@ -139,6 +139,9 @@ ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
 AUTO_DEPLOY_ENABLED = os.getenv("AUTO_DEPLOY", "1") == "1"
 AUTO_DEPLOY_INTERVAL_SEC = int(os.getenv("AUTO_DEPLOY_INTERVAL_SEC", "60") or "60")
 
+# GitHub webhook: secret for X-Hub-Signature-256 verification. If set, /api/deploy-hook accepts pushes.
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+
 # ─── Dashboard ────────────────────────────────────────────────
 
 DASHBOARD_SECTION_ORDER = [
