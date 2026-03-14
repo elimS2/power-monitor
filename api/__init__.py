@@ -1,4 +1,5 @@
 """API routers for Power Monitor."""
+from .admin import router as admin_router
 from .heartbeat import router as heartbeat_router
 from .dashboard import router as dashboard_router
 from .debug import router as debug_router
@@ -8,6 +9,7 @@ from .plug import router as plug_router
 from .static import router as static_router
 
 __all__ = [
+    "admin_router",
     "heartbeat_router",
     "dashboard_router",
     "debug_router",

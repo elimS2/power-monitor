@@ -658,13 +658,9 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Power Monitor", lifespan=lifespan)
 
 
-def _check_key(key: str):
-    if key not in API_KEYS:
-        raise HTTPException(403, "forbidden")
-
-
 # Include API routers
 from api import (
+    admin_router,
     dashboard_router,
     deye_router,
     debug_router,
@@ -674,6 +670,7 @@ from api import (
     telegram_router,
 )
 
+app.include_router(admin_router)
 app.include_router(heartbeat_router)
 app.include_router(dashboard_router)
 app.include_router(debug_router)
@@ -1173,7 +1170,8 @@ def _build_schedule_html(is_down: bool) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(key: str = Query("")):
-    _check_key(key)
+    from api.deps import check_permission
+    check_permission(key, "dashboard")
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
     hb = recent_heartbeats(30)
@@ -1630,6 +1628,8 @@ async def dashboard(key: str = Query("")):
     plug_state_raw = kv_get("plug_dashboard_state", "unknown")
     plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)
 
+    is_admin = key in API_KEYS and API_KEYS.get(key) == "admin"
+
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
 <meta charset="utf-8">
@@ -1767,6 +1767,8 @@ async def dashboard(key: str = Query("")):
 </table>
 </details>
 </div>
+
+{_wrap_dashboard_section("admin_keys_details", '<details id="admin_keys_details" data-ls-key="admin_keys_open" data-default-open="0"><summary><h2 style="display:inline">Керування ключами</h2></summary><div id="admin-keys-container" style="margin:0.5rem 0">Завантаження…</div></details>') if is_admin else ""}
 </div>
 
 <div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a></div>

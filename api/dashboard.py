@@ -4,7 +4,7 @@ import time
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from api.deps import check_admin, check_key
+from api.deps import check_admin, check_permission
 from database import kv_get, recent_deye_log, recent_events, recent_heartbeats
 import dtek
 
@@ -13,7 +13,7 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/api/status")
 async def ep_status(key: str = Query("")):
-    check_key(key)
+    check_permission(key, "dashboard")
     deye_last = None
     rows = recent_deye_log(1)
     if rows:
@@ -35,7 +35,7 @@ async def ep_status(key: str = Query("")):
 
 @router.get("/api/dashboard-fragments")
 def ep_dashboard_fragments(key: str = Query("")):
-    check_key(key)
+    check_permission(key, "dashboard")
     from power_monitor import _build_update_fragments
 
     return JSONResponse(

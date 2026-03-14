@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from api.deps import check_key
+from api.deps import check_permission
 router = APIRouter(tags=["static"])
 
 _ICONS_DIR = Path(__file__).resolve().parent.parent
@@ -45,7 +45,7 @@ async def serve_icon(name: str):
 
 @router.get("/manifest.json")
 async def pwa_manifest(key: str = Query("")):
-    check_key(key)
+    check_permission(key, "dashboard")
     return JSONResponse(
         {
             "name": "Power Monitor — ЗК 6",

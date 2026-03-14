@@ -150,6 +150,16 @@ def init_db():
                 db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
             except sqlite3.OperationalError:
                 pass  # column exists
+        # API key permissions (label = API_KEYS value, e.g. admin, vasyl)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS api_key_config (
+                label     TEXT PRIMARY KEY,
+                enabled   INTEGER NOT NULL DEFAULT 1,
+                sections  TEXT,
+                endpoints TEXT,
+                updated_at REAL
+            )
+        """)
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -164,6 +174,73 @@ def kv_set(key: str, val: str):
             "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
             (key, val),
         )
+
+
+# ─── API key config ─────────────────────────────────────────────
+
+# Permission groups for endpoints: dashboard, dashboard_full, heartbeat, deye, plug, debug, admin
+# Sections: sched_details, boiler_details, ev_details, links_details, plug_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
+ALL_SECTIONS = [
+    "sched_details", "boiler_details", "ev_details", "links_details",
+    "plug_details", "alert_ev_details", "tg_details", "deye_details",
+    "hb_details", "legend_details", "avatars_details",
+]
+
+
+def api_key_config_get(label: str) -> dict | None:
+    """Get config for key label. Returns None if no row (full access by default)."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT label, enabled, sections, endpoints, updated_at FROM api_key_config WHERE label=?",
+            (label,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "label": row["label"],
+        "enabled": bool(row["enabled"]),
+        "sections": json.loads(row["sections"]) if row["sections"] else None,
+        "endpoints": json.loads(row["endpoints"]) if row["endpoints"] else None,
+        "updated_at": row["updated_at"],
+    }
+
+
+def api_key_config_set_enabled(label: str, enabled: bool):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO api_key_config(label, enabled, updated_at)
+               VALUES(?, ?, ?) ON CONFLICT(label) DO UPDATE SET
+               enabled=excluded.enabled, updated_at=excluded.updated_at""",
+            (label, 1 if enabled else 0, time.time()),
+        )
+
+
+def api_key_config_set_permissions(label: str, sections: list | None, endpoints: list | None):
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO api_key_config(label, enabled, sections, endpoints, updated_at)
+               VALUES(?, 1, ?, ?, ?) ON CONFLICT(label) DO UPDATE SET
+               sections=excluded.sections, endpoints=excluded.endpoints, updated_at=excluded.updated_at""",
+            (label, json.dumps(sections) if sections else None, json.dumps(endpoints) if endpoints else None, time.time()),
+        )
+
+
+def api_key_config_list() -> list[dict]:
+    """List all configured keys (only those with a row in api_key_config)."""
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT label, enabled, sections, endpoints, updated_at FROM api_key_config ORDER BY label"
+        ).fetchall()
+    return [
+        {
+            "label": r["label"],
+            "enabled": bool(r["enabled"]),
+            "sections": json.loads(r["sections"]) if r["sections"] else None,
+            "endpoints": json.loads(r["endpoints"]) if r["endpoints"] else None,
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
 
 
 def save_heartbeat(p204: int, p175: int):

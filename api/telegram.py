@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Query, Request, HTTPException
 
-from api.deps import check_key
+from api.deps import check_permission
 from config import TG_CHAT_ID, TG_TEST_CHAT_ID, TG_WEBHOOK_SECRET
 from database import _conn, parse_boiler_schedule, save_boiler_schedule
 
@@ -15,7 +15,7 @@ log = logging.getLogger("power_monitor")
 
 @router.post("/api/test-telegram")
 async def ep_test_telegram(key: str = Query("")):
-    check_key(key)
+    check_permission(key, "dashboard")
     from power_monitor import _power_status_text, tg_send
 
     target = TG_TEST_CHAT_ID or TG_CHAT_ID

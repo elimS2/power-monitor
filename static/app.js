@@ -171,6 +171,41 @@
   if (plugBtnOn) plugBtnOn.addEventListener('click', function() { plugSet('on'); });
   if (plugBtnOff) plugBtnOff.addEventListener('click', function() { plugSet('off'); });
 
+  // Admin keys (only for admin)
+  var adminKeysContainer = document.getElementById('admin-keys-container');
+  if (adminKeysContainer && key) {
+    fetch('/api/admin/keys?key=' + encodeURIComponent(key), { cache: 'no-store' })
+      .then(function(r) {
+        if (!r.ok) { adminKeysContainer.innerHTML = ''; adminKeysContainer.closest('.dashboard-section') && adminKeysContainer.closest('.dashboard-section').remove(); return; }
+        return r.json();
+      })
+      .then(function(keys) {
+        if (!keys || !keys.length) return;
+        var html = '<table><tr><th>Ключ</th><th>Стан</th><th>Дії</th></tr>';
+        keys.forEach(function(k) {
+          var status = k.enabled ? '\u2705 Увімкнено' : '\u274c Вимкнено';
+          var btn = k.label === 'admin' ? '—' : '<button type="button" class="admin-key-toggle btn" data-label="' + k.label + '" data-enabled="' + k.enabled + '">' + (k.enabled ? 'Вимкнути' : 'Увімкнути') + '</button>';
+          html += '<tr><td>' + k.label + ' <small>(' + k.key_preview + ')</small></td><td>' + status + '</td><td>' + btn + '</td></tr>';
+        });
+        html += '</table>';
+        adminKeysContainer.innerHTML = html;
+        adminKeysContainer.querySelectorAll('.admin-key-toggle').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var label = btn.dataset.label;
+            var enabled = btn.dataset.enabled !== 'true';
+            fetch('/api/admin/keys/' + encodeURIComponent(label) + '/enabled?key=' + encodeURIComponent(key) + '&enabled=' + enabled, { method: 'POST' })
+              .then(function(r) { return r.json(); })
+              .then(function() {
+                btn.dataset.enabled = enabled;
+                btn.textContent = enabled ? 'Вимкнути' : 'Увімкнути';
+                var statusTd = btn.closest('tr').querySelector('td:nth-child(2)');
+                if (statusTd) statusTd.textContent = enabled ? '\u2705 Увімкнено' : '\u274c Вимкнено';
+              });
+          });
+        });
+      });
+  }
+
   // Fragment fetch + live update
   document.body.classList.add('pm-ready');
   if (key) {

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from api.deps import check_admin, check_key
+from api.deps import check_admin, check_permission
 from config import UA_TZ
 from database import DOWN_LIKE_EVENTS, _conn, events_in_range, parse_boiler_schedule
 
@@ -19,7 +19,7 @@ _SQL_FORBIDDEN = re.compile(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE
 
 @router.get("/api/debug-webhooks")
 def ep_debug_webhooks(key: str = Query(""), limit: int = Query(20)):
-    check_key(key)
+    check_permission(key, "debug")
     with _conn() as db:
         rows = db.execute(
             "SELECT id, chat_id, text, ts FROM webhook_log ORDER BY id DESC LIMIT ?",
@@ -38,7 +38,7 @@ def ep_debug_webhooks(key: str = Query(""), limit: int = Query(20)):
 
 @router.get("/api/debug-boiler-parse")
 def ep_debug_boiler_parse(key: str = Query(""), text: str = Query("")):
-    check_key(key)
+    check_permission(key, "debug")
     result = parse_boiler_schedule(text)
     return {"input_len": len(text), "parsed": result}
 
@@ -46,7 +46,7 @@ def ep_debug_boiler_parse(key: str = Query(""), text: str = Query("")):
 @router.get("/api/debug-deye-battery")
 def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31)):
     """Debug battery episodes: raw deye_log rows (battery_soc, battery_power_w) per discharge/charge episode."""
-    check_key(key)
+    check_permission(key, "debug")
     now = datetime.now(UA_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ts_start = month_start.timestamp()
@@ -121,7 +121,7 @@ def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31
 @router.get("/api/debug-sql")
 def ep_debug_sql(key: str = Query(""), query: str = Query(""), limit: int = Query(500, ge=1, le=1000)):
     """Execute read-only SQL (SELECT only). For agent/CI access to DB."""
-    check_key(key)
+    check_permission(key, "debug")
     q = query.strip()
     if not _SQL_READONLY.match(q):
         return {"error": "only SELECT (or WITH ... AS) allowed"}

@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, Query, Request, HTTPException
 
-from api.deps import check_key
+from api.deps import check_permission
 from database import save_deye_log
 
 router = APIRouter(tags=["deye"])
@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 async def ep_deye_heartbeat(request: Request, key: str = Query("")):
     """Receive Deye inverter data from local script. Requires API key."""
     try:
-        check_key(key)
+        check_permission(key, "deye")
         data = await request.json()
         save_deye_log(
             load_power_w=data.get("load_power_w"),
