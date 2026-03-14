@@ -1,5 +1,6 @@
 .env
 deye_to_power_monitor.log
+logs/
 *.db
 *.db-wal
 *.db-shm

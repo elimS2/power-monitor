@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.handlers
 import os
 import sqlite3
 import time
@@ -27,6 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from config import (
     API_KEYS,
     AVATAR_ON_START,
+    DEYE_POLL_LOG,
     DELETE_PHOTO_MSG,
     DTEK_QUEUE,
     DB_PATH,
@@ -93,6 +95,26 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger("power_monitor")
+
+# Dedicated Deye poll logger with rotating file
+deye_poll_log = logging.getLogger("power_monitor.deye_poll")
+
+
+def _setup_deye_poll_log():
+    """Configure deye_poll_log to write to rotating file."""
+    deye_poll_log.setLevel(logging.INFO)
+    deye_poll_log.handlers.clear()
+    deye_poll_log.propagate = False
+    log_dir = DEYE_POLL_LOG.parent
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        DEYE_POLL_LOG,
+        maxBytes=2 * 1024 * 1024,  # 2 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    deye_poll_log.addHandler(handler)
 
 
 # ─── Channel photo ───────────────────────────────────────────
@@ -553,10 +575,14 @@ async def _poll_deye():
             grid_w = data.get("grid_power_w")
             day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
             grid_str = f" grid={int(grid_w)}W" if grid_w is not None else ""
-            log.info("Deye poll OK: load=%sW soc=%s%%%s%s", load, soc, day_str, grid_str)
+            msg = f"Deye poll OK: load={load}W soc={soc}%{day_str}{grid_str}"
+            log.info(msg)
+            deye_poll_log.info(msg)
         else:
+            deye_poll_log.warning("Deye poll failed (no data)")
             log.warning("Deye poll failed (no data)")
     except Exception as e:
+        deye_poll_log.warning("Deye poll error: %s", e)
         log.warning("Deye poll error: %s", e)
 
 
@@ -622,6 +648,7 @@ async def lifespan(_app: FastAPI):
         log.info("Skipping avatar update on start (AVATAR_ON_START=0)")
     log.info("Power monitor started, DB=%s", DB_PATH)
     if DEYE_POLL_IP:
+        _setup_deye_poll_log()
         port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
         log.info("Deye server-side polling enabled: %s:%s every %ds", DEYE_POLL_IP, port, DEYE_POLL_INTERVAL_SEC)
     yield

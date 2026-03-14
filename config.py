@@ -85,6 +85,7 @@ DEYE_POLL_IP = os.getenv("DEYE_POLL_IP", "").strip()
 DEYE_POLL_PORT = int(os.getenv("DEYE_POLL_PORT", "0") or "0")
 DEYE_POLL_SERIAL = os.getenv("DEYE_POLL_SERIAL", "").strip()  # Required for Solarman (8899)
 DEYE_POLL_INTERVAL_SEC = int(os.getenv("DEYE_POLL_INTERVAL_SEC", "30") or "30")
+DEYE_POLL_LOG = Path(os.getenv("DEYE_POLL_LOG", str(Path(__file__).parent / "logs" / "deye_poll.log")))
 
 # ─── Weather ────────────────────────────────────────────────
 
