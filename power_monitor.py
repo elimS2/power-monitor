@@ -1241,11 +1241,30 @@ def _build_schedule_html(is_down: bool) -> str:
 """
 
 
+def _key_expired_html() -> str:
+    """HTML page shown when key is invalid/expired."""
+    return """<!DOCTYPE html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Термін дії посилання — Power Monitor</title>
+<link rel="stylesheet" href="/style.css">
+</head><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;padding:1.5rem;text-align:center">
+<div style="max-width:360px">
+<p style="font-size:1.2rem;margin:0 0 1rem;color:#f87171">⚠️ Термін дії посилання закінчився</p>
+<p style="color:var(--muted);margin:0">Отримайте нове посилання там, де отримали це.</p>
+</div>
+</body></html>"""
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(key: str = Query("")):
     from api.deps import allowed_sections, check_permission
 
-    check_permission(key, "dashboard")
+    try:
+        check_permission(key, "dashboard")
+    except HTTPException as e:
+        if e.status_code == 403:
+            return HTMLResponse(_key_expired_html(), status_code=200)
+        raise
     allowed = allowed_sections(key)
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
