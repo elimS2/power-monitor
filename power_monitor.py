@@ -1003,7 +1003,6 @@ def _build_update_fragments() -> dict:
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
-    voltage_rows = ""
     voltage_summary = "Немає даних"
     if deye_log:
         last_v = deye_log[0]
@@ -1012,17 +1011,7 @@ def _build_update_fragments() -> dict:
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
-        for r in deye_log[:20]:
-            v1_s = f"{int(r['grid_v_l1'])}" if r.get("grid_v_l1") is not None else "—"
-            v2_s = f"{int(r['grid_v_l2'])}" if r.get("grid_v_l2") is not None else "—"
-            v3_s = f"{int(r['grid_v_l3'])}" if r.get("grid_v_l3") is not None else "—"
-            voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
-    voltage_html = (
-        f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
-        f'<details data-ls-key="voltage_history_open" data-default-open="0">'
-        f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
-        f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
-    )
+    voltage_html = f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
 
     alert_html = ""
     if dtek.alert_cache:
@@ -1609,7 +1598,6 @@ async def dashboard(key: str = Query("")):
             )
 
     # ─── Voltage (L1/L2/L3) standalone block ───
-    voltage_rows = ""
     voltage_summary = "Немає даних"
     if deye_log:
         last_v = deye_log[0]
@@ -1618,17 +1606,7 @@ async def dashboard(key: str = Query("")):
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
-        for r in deye_log[:20]:
-            v1_s = f"{int(r['grid_v_l1'])}" if r.get("grid_v_l1") is not None else "—"
-            v2_s = f"{int(r['grid_v_l2'])}" if r.get("grid_v_l2") is not None else "—"
-            v3_s = f"{int(r['grid_v_l3'])}" if r.get("grid_v_l3") is not None else "—"
-            voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
-    voltage_html = (
-        f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
-        f'<details data-ls-key="voltage_history_open" data-default-open="0">'
-        f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
-        f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
-    )
+    voltage_html = f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
