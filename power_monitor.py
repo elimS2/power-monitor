@@ -665,7 +665,8 @@ async def bg_loop():
                 deploy_tick += 1
                 if deploy_tick * 30 >= AUTO_DEPLOY_INTERVAL_SEC:
                     deploy_tick = 0
-                    if await asyncio.to_thread(_check_and_deploy_sync):
+                    loop = asyncio.get_running_loop()
+                    if await loop.run_in_executor(None, _check_and_deploy_sync):
                         return  # restart triggered, we're about to die
         except Exception as e:
             log.error("bg_loop: %s", e)
