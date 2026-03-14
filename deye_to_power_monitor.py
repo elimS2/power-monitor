@@ -131,16 +131,22 @@ def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
     return val
 
 
-def read_deye_solarman() -> dict | None:
-    """Read via Solarman V5 (port 8899). Requires DEYE_SERIAL."""
+def read_deye_solarman(host: str | None = None, port: int | None = None, serial: str | None = None) -> dict | None:
+    """Read via Solarman V5 (port 8899). Requires serial number."""
     try:
         from pysolarmanv5 import PySolarmanV5
     except ImportError:
         print("Install: pip install pysolarmanv5", file=sys.stderr)
         return None
 
+    h = host or DEYE_IP
+    p = port if port is not None else DEYE_PORT
+    s = serial or DEYE_SERIAL
+    if not h or not s:
+        return None
+
     try:
-        modbus = PySolarmanV5(DEYE_IP, int(DEYE_SERIAL), port=DEYE_PORT, mb_slave_id=1)
+        modbus = PySolarmanV5(h, int(s), port=p, mb_slave_id=1)
     except Exception as e:
         print(f"Solarman connect error: {e}", file=sys.stderr)
         return None
@@ -184,7 +190,7 @@ def read_deye_solarman() -> dict | None:
     return data if data else None
 
 
-def read_deye_modbus() -> dict | None:
+def read_deye_modbus(host: str | None = None, port: int | None = None) -> dict | None:
     """Read via Modbus TCP (port 502)."""
     try:
         from pymodbus.client import ModbusTcpClient
@@ -192,7 +198,12 @@ def read_deye_modbus() -> dict | None:
         print("Install: pip install pymodbus", file=sys.stderr)
         return None
 
-    client = ModbusTcpClient(DEYE_IP, port=DEYE_PORT)
+    h = host or DEYE_IP
+    p = port if port is not None else DEYE_PORT
+    if not h:
+        return None
+
+    client = ModbusTcpClient(h, port=p)
     try:
         if not client.connect():
             return None
@@ -225,11 +236,15 @@ def read_deye_modbus() -> dict | None:
     return data if data else None
 
 
-def read_deye() -> dict | None:
-    """Read registers. Uses Solarman if DEYE_SERIAL set, else Modbus TCP."""
-    if DEYE_SERIAL and DEYE_PORT == 8899:
-        return read_deye_solarman()
-    return read_deye_modbus()
+def read_deye(host: str | None = None, port: int | None = None, serial: str | None = None) -> dict | None:
+    """Read registers. Uses Solarman if serial set and port 8899, else Modbus TCP.
+    All params optional — fallback to DEYE_IP, DEYE_PORT, DEYE_SERIAL from env."""
+    h = host or DEYE_IP
+    p = port if port is not None else DEYE_PORT
+    s = serial or DEYE_SERIAL
+    if s and p == 8899:
+        return read_deye_solarman(host=h, port=p, serial=s)
+    return read_deye_modbus(host=h, port=p)
 
 
 def send_to_server(data: dict, log: logging.Logger | None = None) -> bool:

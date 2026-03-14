@@ -31,6 +31,10 @@ from config import (
     DTEK_QUEUE,
     DB_PATH,
     DEYE_BATTERY_KWH,
+    DEYE_POLL_IP,
+    DEYE_POLL_INTERVAL_SEC,
+    DEYE_POLL_PORT,
+    DEYE_POLL_SERIAL,
     GIT_COMMIT,
     OUTAGE_CONFIRM_COUNT,
     PHASES_ONLY,
@@ -510,10 +514,52 @@ async def watchdog():
 
 # ─── Background loop ─────────────────────────────────────────
 
+async def _poll_deye():
+    """Poll Deye inverter and save to DB. Runs in executor (blocking I/O)."""
+    try:
+        from deye_to_power_monitor import read_deye
+
+        port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
+        data = await asyncio.to_thread(
+            read_deye,
+            host=DEYE_POLL_IP,
+            port=port,
+            serial=DEYE_POLL_SERIAL or None,
+        )
+        if data:
+            save_deye_log(
+                load_power_w=data.get("load_power_w"),
+                load_l1_w=data.get("load_l1_w"),
+                load_l2_w=data.get("load_l2_w"),
+                load_l3_w=data.get("load_l3_w"),
+                grid_power_w=data.get("grid_power_w"),
+                grid_v_l1=data.get("grid_v_l1"),
+                grid_v_l2=data.get("grid_v_l2"),
+                grid_v_l3=data.get("grid_v_l3"),
+                battery_soc=data.get("battery_soc"),
+                battery_power_w=data.get("battery_power_w"),
+                battery_voltage=data.get("battery_voltage"),
+                day_load_kwh=data.get("day_load_kwh"),
+                total_load_kwh=data.get("total_load_kwh"),
+                month_load_kwh=data.get("month_load_kwh"),
+                year_load_kwh=data.get("year_load_kwh"),
+                day_grid_import_kwh=data.get("day_grid_import_kwh"),
+                day_grid_export_kwh=data.get("day_grid_export_kwh"),
+                total_grid_import_kwh=data.get("total_grid_import_kwh"),
+                total_grid_export_kwh=data.get("total_grid_export_kwh"),
+            )
+            log.debug("Deye poll OK: load=%s soc=%s", data.get("load_power_w"), data.get("battery_soc"))
+        else:
+            log.warning("Deye poll failed (no data)")
+    except Exception as e:
+        log.warning("Deye poll error: %s", e)
+
+
 async def bg_loop():
     cleanup_tick = 0
     schedule_tick = 0
     alert_tick = 0
+    deye_poll_tick = 0
     while True:
         try:
             await watchdog()
@@ -521,6 +567,11 @@ async def bg_loop():
             if cleanup_tick >= 2880:  # ~24h at 30s interval
                 cleanup_old()
                 cleanup_tick = 0
+            if DEYE_POLL_IP:
+                deye_poll_tick += 1
+                if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
+                    await _poll_deye()
+                    deye_poll_tick = 0
             date_rolled = (
                 dtek.schedule_cache
                 and dtek.schedule_cache.get("today")
@@ -565,6 +616,9 @@ async def lifespan(_app: FastAPI):
     else:
         log.info("Skipping avatar update on start (AVATAR_ON_START=0)")
     log.info("Power monitor started, DB=%s", DB_PATH)
+    if DEYE_POLL_IP:
+        port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
+        log.info("Deye server-side polling enabled: %s:%s every %ds", DEYE_POLL_IP, port, DEYE_POLL_INTERVAL_SEC)
     yield
     task.cancel()
 

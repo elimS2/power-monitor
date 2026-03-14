@@ -78,6 +78,14 @@ DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
 
 DEYE_BATTERY_KWH = float(os.getenv("DEYE_BATTERY_KWH", "0") or "0")
 
+# Server-side polling: when set, GCP server polls Deye directly (via port forward)
+# DEYE_POLL_IP = your public IP or DynDNS hostname
+# DEYE_POLL_PORT = external port (e.g. 18899 for Solarman, 1502 for Modbus)
+DEYE_POLL_IP = os.getenv("DEYE_POLL_IP", "").strip()
+DEYE_POLL_PORT = int(os.getenv("DEYE_POLL_PORT", "0") or "0")
+DEYE_POLL_SERIAL = os.getenv("DEYE_POLL_SERIAL", "").strip()  # Required for Solarman (8899)
+DEYE_POLL_INTERVAL_SEC = int(os.getenv("DEYE_POLL_INTERVAL_SEC", "30") or "30")
+
 # ─── Weather ────────────────────────────────────────────────
 
 WEATHER_LAT = 50.5114
