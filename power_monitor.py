@@ -50,6 +50,7 @@ from config import (
     WMO_EMOJI,
 )
 from database import (
+    api_key_config_list,
     boiler_schedule_for_dates,
     cleanup_old,
     deye_battery_episodes_for_month,
@@ -1779,9 +1780,30 @@ async def dashboard(key: str = Query("")):
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_keys_page(key: str = Query("")):
     """Admin-only page: view and manage API keys. Link from dashboard footer."""
+    from html import escape
+    from urllib.parse import quote
+
     from api.deps import check_admin
 
     check_admin(key)
+    configs = {c["label"]: c for c in api_key_config_list()}
+    qk = quote(key, safe="")
+    rows = []
+    for api_key, label in API_KEYS.items():
+        cfg = configs.get(label)
+        enabled = cfg["enabled"] if cfg else True
+        status = "✅ Увімкнено" if enabled else "❌ Вимкнено"
+        preview = api_key[:8] + "…" if len(api_key) > 8 else api_key
+        open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
+        btn = '—' if label == "admin" else (
+            f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" '
+            f'data-enabled="{str(enabled).lower()}">{ "Вимкнути" if enabled else "Увімкнути" }</button>'
+        )
+        rows.append(
+            f'<tr><td>{escape(label)} <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">'
+            f'{escape(preview)}</a>)</small></td><td class="{"up" if enabled else "down"}">{status}</td><td>{btn}</td></tr>'
+        )
+    table_rows = "\n".join(rows)
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
 <meta charset="utf-8">
@@ -1789,11 +1811,35 @@ async def admin_keys_page(key: str = Query("")):
 <meta name="theme-color" content="#0f172a">
 <title>Керування ключами — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
-</head><body data-pm-key="{key}">
+</head><body data-pm-key="{escape(key)}">
 <h1>Power Monitor — Адмін-портал</h1>
-<p style="margin-bottom:1rem"><a href="/?key={key}" style="color:#6ee7b7">← Назад на дашборд</a></p>
+<p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
 <h2>Ключі API</h2>
-<div id="admin-keys-container" style="margin:0.5rem 0">Завантаження…</div>
-<div class="ver" style="margin-top:1.5rem"><a href="/?key={key}">Дашборд</a></div>
+<table>
+<tr><th>Ключ</th><th>Стан</th><th>Дії</th></tr>
+{table_rows}
+</table>
+<div class="ver" style="margin-top:1.5rem"><a href="/?key={escape(qk)}">Дашборд</a></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
+<script>
+(function() {{
+  var key = document.body.getAttribute('data-pm-key') || '';
+  if (!key) return;
+  document.querySelectorAll('.admin-key-toggle').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      var label = btn.dataset.label;
+      var enabled = btn.dataset.enabled !== 'true';
+      fetch('/api/admin/keys/' + encodeURIComponent(label) + '/enabled?key=' + encodeURIComponent(key) + '&enabled=' + enabled, {{ method: 'POST' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function() {{
+          btn.dataset.enabled = enabled;
+          btn.textContent = enabled ? 'Вимкнути' : 'Увімкнути';
+          var td = btn.closest('tr').querySelector('td:nth-child(2)');
+          if (td) td.innerHTML = enabled ? '\\u2705 Увімкнено' : '\\u274c Вимкнено';
+          td.className = enabled ? 'up' : 'down';
+        }});
+    }});
+  }});
+}})();
+</script>
 </body></html>"""
