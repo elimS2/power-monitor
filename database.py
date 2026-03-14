@@ -179,10 +179,17 @@ def init_db():
             )
         """)
         # Migration: old schema had label as PK. Migrate to new schema.
-        cols = [r[1] for r in db.execute("PRAGMA table_info(api_keys)").fetchall()]
-        if "deactivated_at" not in cols:
-            db.execute("ALTER TABLE api_keys ADD COLUMN deactivated_at REAL")
-        if "id" not in cols:
+        try:
+            cols = [r[1] for r in db.execute("PRAGMA table_info(api_keys)").fetchall()]
+        except sqlite3.OperationalError:
+            cols = []
+        # api_keys_new exists = partial migration: complete it
+        if db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='api_keys_new'").fetchone():
+            db.execute("DROP TABLE IF EXISTS api_keys")
+            db.execute("ALTER TABLE api_keys_new RENAME TO api_keys")
+        elif "id" not in cols:
+            if "deactivated_at" not in cols:
+                db.execute("ALTER TABLE api_keys ADD COLUMN deactivated_at REAL")
             db.execute("""
                 CREATE TABLE api_keys_new (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,6 +207,8 @@ def init_db():
             """)
             db.execute("DROP TABLE api_keys")
             db.execute("ALTER TABLE api_keys_new RENAME TO api_keys")
+        elif "deactivated_at" not in cols:
+            db.execute("ALTER TABLE api_keys ADD COLUMN deactivated_at REAL")
         # Roles (user-createable, sections per role). Built-in roles are seeded.
         db.execute("""
             CREATE TABLE IF NOT EXISTS roles (
