@@ -1,10 +1,12 @@
 """Dashboard API routes."""
 import time
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from api.deps import check_admin, check_permission
+from config import API_KEYS, GIT_COMMIT
 from database import kv_get, recent_deye_log, recent_events, recent_heartbeats
 import dtek
 
@@ -38,8 +40,19 @@ def ep_dashboard_fragments(key: str = Query("")):
     check_permission(key, "dashboard")
     from power_monitor import _build_update_fragments
 
+    frags = _build_update_fragments()
+    key_label = API_KEYS.get(key, "")
+    is_admin = API_KEYS.get(key) == "admin"
+    qk = quote(key, safe="")
+    ver_parts = [frags["pm_ver"]]
+    if key_label:
+        ver_parts.append(f" · {key_label}")
+    if is_admin:
+        ver_parts.append(f' · <a href="/admin?key={qk}" style="color:var(--muted)">Адмін</a>')
+    frags["pm_ver"] = "".join(ver_parts)
+
     return JSONResponse(
-        _build_update_fragments(),
+        frags,
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 

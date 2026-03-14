@@ -241,6 +241,10 @@
           el = document.getElementById('pm-voltage');
           if (el) el.innerHTML = d.pm_voltage;
         }
+        if (d.pm_ver !== undefined) {
+          el = document.getElementById('pm-ver');
+          if (el) el.innerHTML = d.pm_ver;
+        }
         if (d.pm_deye) {
           el = document.getElementById('pm-deye');
           if (el) {
