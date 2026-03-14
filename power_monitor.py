@@ -520,11 +520,10 @@ async def _poll_deye():
         from deye_to_power_monitor import read_deye
 
         port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
-        data = await asyncio.to_thread(
-            read_deye,
-            host=DEYE_POLL_IP,
-            port=port,
-            serial=DEYE_POLL_SERIAL or None,
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(
+            None,
+            lambda: read_deye(host=DEYE_POLL_IP, port=port, serial=DEYE_POLL_SERIAL or None),
         )
         if data:
             save_deye_log(
