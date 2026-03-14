@@ -94,6 +94,7 @@ _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
 def _check_and_deploy_sync() -> bool:
     """Check if remote has new commit with deploy tag; if so, pull and restart. Returns True if restart triggered."""
     try:
+        log.info("Auto-deploy: checking...")
         r = subprocess.run(["git", "fetch", "origin"], cwd=_REPO, capture_output=True, text=True, check=False, timeout=30)
         if r.returncode != 0:
             log.warning("Auto-deploy: git fetch failed: %s", r.stderr or r.stdout or r.returncode)
