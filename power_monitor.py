@@ -1629,6 +1629,7 @@ async def dashboard(key: str = Query("")):
     plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)
 
     is_admin = key in API_KEYS and API_KEYS.get(key) == "admin"
+    key_label = API_KEYS.get(key, "")
 
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
@@ -1771,6 +1772,6 @@ async def dashboard(key: str = Query("")):
 {_wrap_dashboard_section("admin_keys_details", '<details id="admin_keys_details" data-ls-key="admin_keys_open" data-default-open="0"><summary><h2 style="display:inline">Керування ключами</h2></summary><div id="admin-keys-container" style="margin:0.5rem 0">Завантаження…</div></details>') if is_admin else ""}
 </div>
 
-<div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a></div>
+<div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}</div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
