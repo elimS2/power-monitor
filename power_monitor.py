@@ -117,9 +117,11 @@ def _check_and_deploy_sync() -> bool:
         return False
 
 
-def _wrap_dashboard_section(section_id: str, content: str) -> str:
-    """Wrap section HTML in draggable container. Returns empty string if content empty."""
+def _wrap_dashboard_section(section_id: str, content: str, allowed: list[str] | None = None) -> str:
+    """Wrap section HTML in draggable container. If allowed provided and section_id not in it, return ''."""
     if not content or not content.strip():
+        return ""
+    if allowed is not None and section_id not in allowed:
         return ""
     return f'<div class="dashboard-section" data-section-id="{section_id}"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>{content}</div>'
 
@@ -1211,8 +1213,10 @@ def _build_schedule_html(is_down: bool) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(key: str = Query("")):
-    from api.deps import check_permission
+    from api.deps import allowed_sections, check_permission
+
     check_permission(key, "dashboard")
+    allowed = allowed_sections(key)
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
     hb = recent_heartbeats(30)
@@ -1693,128 +1697,37 @@ async def dashboard(key: str = Query("")):
 <div id="pm-alert">{alert_html}</div>
 
 <div id="dashboard-sections">
-{_wrap_dashboard_section("sched_details", schedule_html) if schedule_html else ""}
-{_wrap_dashboard_section("boiler_details", boiler_html) if boiler_html else ""}
-<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="ev_details" open data-ls-key="ev_open" data-default-open="1">
-<summary><h2 style="display:inline">Події</h2></summary>
-<table>
-<tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr>
-<tbody id="pm-events-tbody">{ev_rows}</tbody></table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="links_details" open data-ls-key="links_open" data-default-open="1">
-<summary><h2 style="display:inline">Посилання</h2></summary>
-<table>
-<tr><th>Опис</th><th>Посилання</th></tr>
-<tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr>
-<tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr>
-<tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr>
-<tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr>
-<tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr>
-</table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="plug_details" open data-ls-key="plug_open" data-default-open="1">
-<summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary>
-<div id="pm-plug" style="margin:0.5rem 0">
-  <span id="plug-state" style="color:var(--muted)">{plug_state}</span>
-  <button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button>
-  <button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button>
-</div>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0">
-<summary><h2 style="display:inline">Тривоги</h2></summary>
-<table>
-<tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr>
-<tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="tg_details" data-ls-key="tg_open" data-default-open="0">
-<summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary>
-<table>
-<tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr>
-<tbody id="pm-tg-tbody">{tg_rows}</tbody></table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="deye_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="deye_details" data-ls-key="deye_open" data-default-open="0">
-<summary><h2 style="display:inline">Deye інвертор</h2></summary>
-<div id="pm-deye"><div class="{'mk up' if deye_log else 'mk'}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f'<br>{deye_summary_line2}' if deye_summary_line2 else ''}</div>
-{deye_battery_html}
-{deye_cumulative_table}
-{deye_grid_html}
-<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1">
-<summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>
-<table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>
-{deye_daily_rows}</table>
-</details>
-<details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1">
-<summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>
-<table>
-<tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>
-{deye_rows}</table>
-</details></div>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="hb_details" data-ls-key="hb_open" data-default-open="0">
-<summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary>
-<div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div>
-<table>
-<tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr>
-<tbody id="pm-hb-tbody">{hb_rows}</tbody></table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="legend_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="legend_details" data-ls-key="legend_open" data-default-open="0">
-<summary><h2 style="display:inline">Легенда повідомлень</h2></summary>
-<table>
-<tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr>
-<tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr>
-<tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr>
-<tr><td>Світло з'явилось</td><td>\u2705 16:34 Світло з'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Наступне відключення: ~завтра 10:00 - 13:30</td><td>prod</td></tr>
-<tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr>
-<tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr>
-<tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr>
-</table>
-</details>
-</div>
-
-<div class="dashboard-section" data-section-id="avatars_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span>
-<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0">
-<summary><h2 style="display:inline">Аватарки каналу</h2></summary>
-<table>
-<tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr>
-<tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr>
-<tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr>
-<tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr>
-<tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr>
-<tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr>
-<tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr>
-<tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr>
-<tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr>
-</table>
-</details>
-</div>
+{_wrap_dashboard_section("sched_details", schedule_html, allowed) if schedule_html else ""}
+{_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
+{f'<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="ev_details" open data-ls-key="ev_open" data-default-open="1"><summary><h2 style="display:inline">Події</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr><tbody id="pm-events-tbody">{ev_rows}</tbody></table></details></div>' if "ev_details" in allowed else ""}
+{f'<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="links_details" open data-ls-key="links_open" data-default-open="1"><summary><h2 style="display:inline">Посилання</h2></summary><table><tr><th>Опис</th><th>Посилання</th></tr><tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr><tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr><tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr><tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr><tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr></table></details></div>' if "links_details" in allowed else ""}
+{(f'<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="plug_details" open data-ls-key="plug_open" data-default-open="1"><summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary><div id="pm-plug" style="margin:0.5rem 0"><span id="plug-state" style="color:var(--muted)">{plug_state}</span><button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button><button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button></div></details></div>' if "plug_details" in allowed else "")}
+{(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
+{(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
+{(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
+{(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
+{_wrap_dashboard_section("legend_details", '<details id="legend_details" data-ls-key="legend_open" data-default-open="0"><summary><h2 style="display:inline">Легенда повідомлень</h2></summary><table><tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr><tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr><tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr><tr><td>Світло з\'явилось</td><td>\u2705 16:34 Світло з\'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Наступне відключення: ~завтра 10:00 - 13:30</td><td>prod</td></tr><tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr><tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr><tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr></table></details>', allowed) if "legend_details" in allowed else ""}
+{_wrap_dashboard_section("avatars_details", '<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0"><summary><h2 style="display:inline">Аватарки каналу</h2></summary><table><tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr><tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr><tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr><tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr><tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr><tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr><tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr><tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr><tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr></table></details>', allowed) if "avatars_details" in allowed else ""}
 
 </div>
 
 <div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Ключі</a>' if is_admin else ''}</div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
+
+
+def _infer_role(sections: list | None) -> str:
+    """Infer role name from sections list."""
+    from config import ROLES
+    if sections is None or len(sections) == 0:
+        return "full"
+    sec_set = set(sections)
+    for name, role_sec in ROLES.items():
+        if role_sec is None:
+            continue
+        if sec_set == set(role_sec):
+            return name
+    return "full"
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -1824,6 +1737,7 @@ async def admin_keys_page(key: str = Query("")):
     from urllib.parse import quote
 
     from api.deps import check_admin
+    from config import ROLES
 
     check_admin(key)
     configs = {c["label"]: c for c in api_key_config_list()}
@@ -1839,9 +1753,19 @@ async def admin_keys_page(key: str = Query("")):
             f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" '
             f'data-enabled="{str(enabled).lower()}">{ "Вимкнути" if enabled else "Увімкнути" }</button>'
         )
+        current_role = _infer_role(cfg["sections"] if cfg else None)
+        if label == "admin":
+            role_sel = "—"
+        else:
+            role_sel = f'<select class="admin-role-select" data-label="{escape(label)}" style="font-size:0.85rem;padding:0.2rem">'
+            for r in ROLES:
+                sel = ' selected' if r == current_role else ''
+                lbl = "Усі" if r == "full" else "Без Deye" if r == "without_deye" else "Базове" if r == "basic" else r
+                role_sel += f'<option value="{r}"{sel}>{lbl}</option>'
+            role_sel += "</select>"
         rows.append(
             f'<tr><td>{escape(label)} <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">'
-            f'{escape(preview)}</a>)</small></td><td class="{"up" if enabled else "down"}">{status}</td><td>{btn}</td></tr>'
+            f'{escape(preview)}</a>)</small></td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td>{btn}</td></tr>'
         )
     table_rows = "\n".join(rows)
     return f"""<!DOCTYPE html>
@@ -1856,7 +1780,7 @@ async def admin_keys_page(key: str = Query("")):
 <p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
 <h2>Ключі API</h2>
 <table>
-<tr><th>Ключ</th><th>Стан</th><th>Дії</th></tr>
+<tr><th>Ключ</th><th>Стан</th><th>Роль</th><th>Дії</th></tr>
 {table_rows}
 </table>
 <div class="ver" style="margin-top:1.5rem"><a href="/?key={escape(qk)}">Дашборд</a></div>
@@ -1875,9 +1799,25 @@ async def admin_keys_page(key: str = Query("")):
           btn.dataset.enabled = enabled;
           btn.textContent = enabled ? 'Вимкнути' : 'Увімкнути';
           var td = btn.closest('tr').querySelector('td:nth-child(2)');
-          if (td) td.innerHTML = enabled ? '\\u2705 Увімкнено' : '\\u274c Вимкнено';
-          td.className = enabled ? 'up' : 'down';
+          if (td) {{ td.innerHTML = enabled ? '\\u2705 Увімкнено' : '\\u274c Вимкнено'; td.className = enabled ? 'up' : 'down'; }}
         }});
+    }});
+  }});
+  fetch('/api/admin/roles?key=' + encodeURIComponent(key)).then(function(r) {{ return r.json(); }}).then(function(data) {{
+    var roles = data.roles || {{}};
+    document.querySelectorAll('.admin-role-select').forEach(function(sel) {{
+      sel.addEventListener('change', function() {{
+        var label = sel.dataset.label;
+        var role = sel.value;
+        var sections = roles[role] || null;
+        fetch('/api/admin/keys/' + encodeURIComponent(label) + '/permissions?key=' + encodeURIComponent(key), {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ sections: sections }})
+        }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
+          if (data.ok) {{ var t = document.createElement('span'); t.textContent = ' Збережено'; t.style.color='var(--accent)'; sel.parentElement.appendChild(t); setTimeout(function() {{ t.remove(); }}, 1500); }}
+        }});
+      }});
     }});
   }});
 }})();

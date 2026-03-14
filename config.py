@@ -139,6 +139,16 @@ ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
 AUTO_DEPLOY_ENABLED = os.getenv("AUTO_DEPLOY", "1") == "1"
 AUTO_DEPLOY_INTERVAL_SEC = int(os.getenv("AUTO_DEPLOY_INTERVAL_SEC", "60") or "60")
 
+# ─── Roles (presets for dashboard sections) ─────────────────────
+
+# Role name -> list of section IDs (None = all). Must match database.ALL_SECTIONS.
+_SECTIONS = ["sched_details", "boiler_details", "ev_details", "links_details", "plug_details", "alert_ev_details", "tg_details", "deye_details", "hb_details", "legend_details", "avatars_details"]
+ROLES = {
+    "full": None,
+    "without_deye": [s for s in _SECTIONS if s != "deye_details"],
+    "basic": ["sched_details", "boiler_details", "ev_details", "links_details", "alert_ev_details"],
+}
+
 # ─── Dashboard ────────────────────────────────────────────────
 
 DASHBOARD_SECTION_ORDER = [

@@ -5,10 +5,17 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.deps import check_admin
-from config import API_KEYS
+from config import API_KEYS, ROLES
 from database import api_key_config_list, api_key_config_set_enabled, api_key_config_set_permissions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@router.get("/roles")
+def ep_admin_roles(key: str = Query("")):
+    """List role presets (name -> sections). Admin only."""
+    check_admin(key)
+    return {"roles": {k: v for k, v in ROLES.items()}}
 
 
 @router.get("/keys")
