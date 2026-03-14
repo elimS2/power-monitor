@@ -50,7 +50,6 @@ from config import (
     WMO_EMOJI,
 )
 from database import (
-    api_key_config_list,
     boiler_schedule_for_dates,
     cleanup_old,
     deye_battery_episodes_for_month,
@@ -1770,7 +1769,6 @@ async def dashboard(key: str = Query("")):
 </details>
 </div>
 
-{_wrap_dashboard_section("admin_keys_details", '<details id="admin_keys_details" data-ls-key="admin_keys_open" data-default-open="0"><summary><h2 style="display:inline">Керування ключами</h2></summary><div id="admin-keys-container" style="margin:0.5rem 0">Завантаження…</div></details>') if is_admin else ""}
 </div>
 
 <div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Ключі</a>' if is_admin else ''}</div>
@@ -1784,23 +1782,6 @@ async def admin_keys_page(key: str = Query("")):
     from api.deps import check_admin
 
     check_admin(key)
-    configs = {c["label"]: c for c in api_key_config_list()}
-    rows = []
-    for api_key, label in API_KEYS.items():
-        cfg = configs.get(label)
-        enabled = cfg["enabled"] if cfg else True
-        status = "✅ Увімкнено" if enabled else "❌ Вимкнено"
-        preview = api_key[:8] + "…" if len(api_key) > 8 else api_key
-        sec = cfg.get("sections") if cfg else None
-        ep = cfg.get("endpoints") if cfg else None
-        sec_str = (", ".join(sec) if sec else "усі") if sec is not None else "усі"
-        ep_str = (", ".join(ep) if ep else "усі") if ep is not None else "усі"
-        rows.append(
-            f'<tr><td>{label}</td><td><code>{preview}</code></td><td class="{"up" if enabled else "down"}">{status}</td>'
-            f'<td style="font-size:0.85rem;color:var(--muted)">{sec_str}</td>'
-            f'<td style="font-size:0.85rem;color:var(--muted)">{ep_str}</td></tr>'
-        )
-    table_rows = "\n".join(rows)
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
 <meta charset="utf-8">
@@ -1808,14 +1789,11 @@ async def admin_keys_page(key: str = Query("")):
 <meta name="theme-color" content="#0f172a">
 <title>Керування ключами — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
-</head><body>
+</head><body data-pm-key="{key}">
 <h1>Power Monitor — Адмін-портал</h1>
 <p style="margin-bottom:1rem"><a href="/?key={key}" style="color:#6ee7b7">← Назад на дашборд</a></p>
 <h2>Ключі API</h2>
-<table>
-<tr><th>Label</th><th>Ключ (превʼю)</th><th>Стан</th><th>Секції</th><th>Ендпоінти</th></tr>
-{table_rows}
-</table>
+<div id="admin-keys-container" style="margin:0.5rem 0">Завантаження…</div>
 <div class="ver" style="margin-top:1.5rem"><a href="/?key={key}">Дашборд</a></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
