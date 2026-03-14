@@ -3,6 +3,7 @@ Power Monitor — database operations (SQLite).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -165,6 +166,15 @@ def init_db():
             db.execute("ALTER TABLE api_key_config ADD COLUMN role_id INTEGER")
         except sqlite3.OperationalError:
             pass
+        # API keys stored in DB (generated from admin UI, not from .env)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                label     TEXT PRIMARY KEY,
+                key_hash  TEXT NOT NULL UNIQUE,
+                key_prefix TEXT,
+                created_at REAL NOT NULL
+            )
+        """)
         # Roles (user-createable, sections per role). Built-in roles are seeded.
         db.execute("""
             CREATE TABLE IF NOT EXISTS roles (
@@ -374,6 +384,50 @@ def api_key_config_set_permissions(
                sections=excluded.sections, endpoints=excluded.endpoints, role_id=excluded.role_id, updated_at=excluded.updated_at""",
             (label, sec_json, ep_json, role_id, ts),
         )
+
+
+def _key_hash(plain_key: str) -> str:
+    return hashlib.sha256(plain_key.encode()).hexdigest()
+
+
+def api_key_lookup(plain_key: str) -> str | None:
+    """Look up key in DB. Returns label if valid, else None."""
+    h = _key_hash(plain_key)
+    with _conn() as db:
+        row = db.execute("SELECT label FROM api_keys WHERE key_hash=?", (h,)).fetchone()
+    return row["label"] if row else None
+
+
+def api_key_create(label: str, plain_key: str) -> dict:
+    """Store new key in DB. Creates api_key_config. Returns {label, key_preview}."""
+    key_hash = _key_hash(plain_key)
+    key_prefix = plain_key[:8] + "…" if len(plain_key) > 8 else plain_key
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO api_keys(label, key_hash, key_prefix, created_at) VALUES(?,?,?,?)",
+            (label, key_hash, key_prefix, time.time()),
+        )
+    api_key_config_set_enabled(label, True)
+    return {"label": label, "key_preview": key_prefix}
+
+
+def api_key_list() -> list[dict]:
+    """List all keys stored in DB."""
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT label, key_prefix, created_at FROM api_keys ORDER BY label"
+        ).fetchall()
+    return [{"label": r["label"], "key_preview": r["key_prefix"], "source": "db", "created_at": r["created_at"]} for r in rows]
+
+
+def api_key_delete(label: str) -> bool:
+    """Delete key from DB. Returns True if deleted. Also removes api_key_config for that label."""
+    with _conn() as db:
+        cur = db.execute("DELETE FROM api_keys WHERE label=?", (label,))
+        if cur.rowcount > 0:
+            db.execute("DELETE FROM api_key_config WHERE label=?", (label,))
+            return True
+        return False
 
 
 def api_key_config_list() -> list[dict]:

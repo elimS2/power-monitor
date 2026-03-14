@@ -4,19 +4,21 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from config import API_KEYS
-from database import ALL_SECTIONS, api_key_config_get
+from database import ALL_SECTIONS, api_key_config_get, api_key_lookup
 
 
 def get_key_label(key: str) -> str | None:
-    """Return label for key (e.g. admin, vasyl), or None if invalid."""
-    return API_KEYS.get(key) if key in API_KEYS else None
+    """Return label for key. Checks API_KEYS (env) first, then DB."""
+    if key in API_KEYS:
+        return API_KEYS[key]
+    return api_key_lookup(key)
 
 
 def check_key(key: str) -> None:
     """Verify key exists and is enabled."""
-    if key not in API_KEYS:
+    label = get_key_label(key)
+    if label is None:
         raise HTTPException(403, "forbidden")
-    label = API_KEYS[key]
     if label == "admin":
         return  # admin is always enabled
     cfg = api_key_config_get(label)
@@ -27,7 +29,7 @@ def check_key(key: str) -> None:
 def check_admin(key: str) -> None:
     """Verify key is admin."""
     check_key(key)
-    if API_KEYS.get(key) != "admin":
+    if get_key_label(key) != "admin":
         raise HTTPException(403, "admin only")
 
 
@@ -38,7 +40,7 @@ def check_admin(key: str) -> None:
 def check_permission(key: str, required: str) -> None:
     """Verify key has permission. Calls check_key first. Use after check_key for non-admin endpoints."""
     check_key(key)
-    label = API_KEYS.get(key)
+    label = get_key_label(key)
     if label == "admin":
         return
     cfg = api_key_config_get(label or "")
@@ -49,9 +51,9 @@ def check_permission(key: str, required: str) -> None:
 
 def allowed_sections(key: str) -> list[str]:
     """Return list of section IDs this key can see. Admin sees all."""
-    if key not in API_KEYS:
+    label = get_key_label(key)
+    if label is None:
         return []
-    label = API_KEYS[key]
     if label == "admin":
         return ALL_SECTIONS
     cfg = api_key_config_get(label)

@@ -1,6 +1,8 @@
 """Admin API — key management. Admin only."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -12,6 +14,9 @@ from database import (
     api_key_config_list,
     api_key_config_set_enabled,
     api_key_config_set_permissions,
+    api_key_create,
+    api_key_delete,
+    api_key_list,
     role_create,
     role_delete,
     role_get,
@@ -86,9 +91,35 @@ def ep_admin_role_delete(role_id: int, key: str = Query("")):
     return {"ok": True}
 
 
+def _all_key_labels() -> set[str]:
+    """Labels from env + DB."""
+    labels = set(API_KEYS.values())
+    for row in api_key_list():
+        labels.add(row["label"])
+    return labels
+
+
+@router.post("/keys")
+async def ep_admin_key_create(request: Request, key: str = Query("")):
+    """Generate new API key, store in DB. Body: {label}. Returns key (show once). Admin only."""
+    check_admin(key)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    label = (body.get("label") or "").strip()
+    if not label:
+        return JSONResponse({"error": "label required"}, status_code=400)
+    if label in _all_key_labels():
+        return JSONResponse({"error": f"label {label!r} already exists"}, status_code=400)
+    new_key = secrets.token_urlsafe(24)
+    api_key_create(label, new_key)
+    return {"ok": True, "label": label, "key": new_key}
+
+
 @router.get("/keys")
 def ep_admin_keys(key: str = Query("")):
-    """List all keys from API_KEYS with their config (enabled, sections, role_id, endpoints). Admin only."""
+    """List all keys: from API_KEYS (env) + DB, with config. Admin only."""
     check_admin(key)
     configs = {c["label"]: c for c in api_key_config_list()}
     result = []
@@ -97,6 +128,18 @@ def ep_admin_keys(key: str = Query("")):
         result.append({
             "label": label,
             "key_preview": api_key[:8] + "…" if len(api_key) > 8 else api_key,
+            "source": "env",
+            "enabled": cfg["enabled"] if cfg else True,
+            "sections": cfg["sections"] if cfg else None,
+            "role_id": cfg.get("role_id") if cfg else None,
+            "endpoints": cfg["endpoints"] if cfg else None,
+        })
+    for row in api_key_list():
+        cfg = configs.get(row["label"])
+        result.append({
+            "label": row["label"],
+            "key_preview": row["key_preview"],
+            "source": "db",
             "enabled": cfg["enabled"] if cfg else True,
             "sections": cfg["sections"] if cfg else None,
             "role_id": cfg.get("role_id") if cfg else None,
@@ -107,19 +150,30 @@ def ep_admin_keys(key: str = Query("")):
 
 @router.get("/keys/{label}/open-dashboard")
 def ep_admin_key_open_dashboard(label: str, key: str = Query("")):
-    """Redirect to dashboard with the full key for this label. Admin only. Opens in new tab."""
+    """Redirect to dashboard with the full key. Only for env keys (DB keys are not stored)."""
     check_admin(key)
     for api_key, lbl in API_KEYS.items():
         if lbl == label:
             return RedirectResponse(url=f"/?key={api_key}", status_code=302)
-    return JSONResponse({"error": f"unknown label: {label}"}, status_code=404)
+    return JSONResponse({"error": "key from DB — use saved key, open link not available"}, status_code=400)
+
+
+@router.delete("/keys/{label}")
+def ep_admin_key_delete(label: str, key: str = Query("")):
+    """Delete key from DB. Only for keys created in admin (not env keys). Admin only."""
+    check_admin(key)
+    if label in API_KEYS.values():
+        return JSONResponse({"error": "cannot delete env key — remove from .env"}, status_code=400)
+    if not api_key_delete(label):
+        return JSONResponse({"error": f"unknown label: {label}"}, status_code=404)
+    return {"ok": True, "label": label}
 
 
 @router.post("/keys/{label}/enabled")
 def ep_admin_key_set_enabled(label: str, key: str = Query(""), enabled: bool = Query(True)):
     """Enable or disable a key by label. Admin only."""
     check_admin(key)
-    if label not in [v for v in API_KEYS.values()]:
+    if label not in _all_key_labels():
         return JSONResponse({"error": f"unknown label: {label}"}, status_code=400)
     api_key_config_set_enabled(label, enabled)
     return {"ok": True, "label": label, "enabled": enabled}
@@ -129,7 +183,7 @@ def ep_admin_key_set_enabled(label: str, key: str = Query(""), enabled: bool = Q
 async def ep_admin_key_set_permissions(label: str, request: Request, key: str = Query("")):
     """Set permissions for a key. Body: {sections?, role_id?, endpoints?}. If role_id set, sections come from role."""
     check_admin(key)
-    if label not in [v for v in API_KEYS.values()]:
+    if label not in _all_key_labels():
         return JSONResponse({"error": f"unknown label: {label}"}, status_code=400)
     try:
         body = await request.json()

@@ -1768,39 +1768,47 @@ async def admin_page(key: str = Query("")):
     from urllib.parse import quote
 
     from api.deps import check_admin
-    from database import ALL_SECTIONS, SECTION_LABELS, api_key_config_list, role_list
+    from database import ALL_SECTIONS, SECTION_LABELS, api_key_config_list, api_key_list, role_list
 
     check_admin(key)
     configs = {c["label"]: c for c in api_key_config_list()}
     roles_data = role_list()
     qk = quote(key, safe="")
+    db_keys = {r["label"]: r for r in api_key_list()}
 
-    # Keys table rows
-    rows = []
-    for api_key, label in API_KEYS.items():
-        cfg = configs.get(label)
+    def _key_row(label: str, preview: str, source: str, cfg: dict | None, roles: list, is_admin: bool) -> str:
         enabled = cfg["enabled"] if cfg else True
         status = "✅ Увімкнено" if enabled else "❌ Вимкнено"
-        preview = api_key[:8] + "…" if len(api_key) > 8 else api_key
-        open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
-        btn = '—' if label == "admin" else (
-            f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" '
-            f'data-enabled="{str(enabled).lower()}">{"Вимкнути" if enabled else "Увімкнути"}</button>'
-        )
-        current_role_id = cfg.get("role_id") if cfg else None
-        if label == "admin":
-            role_sel = "—"
+        src_badge = ' <small style="color:var(--muted)">(з .env)</small>' if source == "env" else ' <small style="color:var(--muted)">(з БД)</small>'
+        open_part = ""
+        if source == "env":
+            open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
+            open_part = f' <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">{escape(preview)}</a>)</small>'
         else:
-            role_sel = '<select class="admin-role-select" data-label="' + escape(label) + '" style="font-size:0.85rem;padding:0.2rem">'
-            role_sel += '<option value="">— Не встановлено</option>'
-            for r in roles_data:
-                sel = ' selected' if current_role_id == r["id"] else ''
-                role_sel += f'<option value="{r["id"]}"{sel}>{escape(r["name"])}</option>'
-            role_sel += "</select>"
-        rows.append(
-            f'<tr><td>{escape(label)} <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">'
-            f'{escape(preview)}</a>)</small></td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td>{btn}</td></tr>'
+            open_part = f' <small>({escape(preview)})</small>'
+        toggle_btn = ""
+        if not is_admin:
+            toggle_btn = f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" data-enabled="{str(enabled).lower()}">{"Вимкнути" if enabled else "Увімкнути"}</button>'
+        current_role_id = cfg.get("role_id") if cfg else None
+        role_sel = "—" if is_admin else (
+            '<select class="admin-role-select" data-label="' + escape(label) + '" style="font-size:0.85rem;padding:0.2rem">'
+            + '<option value="">— Не встановлено</option>'
+            + "".join(f'<option value="{r["id"]}"{" selected" if current_role_id == r["id"] else ""}>{escape(r["name"])}</option>' for r in roles)
+            + "</select>"
         )
+        del_btn = ""
+        if source == "db":
+            del_btn = f' <button type="button" class="admin-key-del btn" data-label="{escape(label)}" style="margin-left:0.3rem">Видалити</button>'
+        actions = (toggle_btn or "—") + del_btn
+        return f'<tr><td>{escape(label)}{src_badge}{open_part}</td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td>{actions}</td></tr>'
+
+    rows = []
+    for api_key, label in API_KEYS.items():
+        preview = api_key[:8] + "…" if len(api_key) > 8 else api_key
+        rows.append(_key_row(label, preview, "env", configs.get(label), roles_data, label == "admin"))
+    for r in db_keys.values():
+        if r["label"] not in API_KEYS.values():
+            rows.append(_key_row(r["label"], r["key_preview"], "db", configs.get(r["label"]), roles_data, False))
     table_rows = "\n".join(rows)
 
     # Roles table rows
@@ -1837,6 +1845,7 @@ async def admin_page(key: str = Query("")):
 </div>
 <div id="admin-tab-keys">
 <h2>Ключі API</h2>
+<button type="button" class="admin-key-create btn" style="margin-bottom:1rem">+ Додати ключ</button>
 <table>
 <tr><th>Ключ</th><th>Стан</th><th>Роль</th><th>Дії</th></tr>
 {table_rows}
@@ -1850,6 +1859,19 @@ async def admin_page(key: str = Query("")):
 <tr><th>Назва</th><th>Секції</th><th>Тип</th><th>Дії</th></tr>
 {roles_table_rows}
 </table>
+</div>
+<div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
+<div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
+<h3 style="margin-top:0">Додати ключ</h3>
+<input type="text" id="admin-key-label" placeholder="Назва (наприклад, petro)" style="width:100%;margin-bottom:1rem;padding:0.4rem">
+<div id="admin-key-result" style="display:none;margin-bottom:1rem;padding:0.5rem;background:var(--card);border-radius:6px;font-size:0.9rem">
+<p style="margin:0 0 0.5rem;color:var(--muted)">Ключ збережено в БД. Збереж його — більше не покажемо.</p>
+<code id="admin-key-display" style="display:block;word-break:break-all;margin-bottom:0.5rem"></code>
+<button type="button" class="admin-key-copy btn" style="font-size:0.85rem">Копіювати</button>
+</div>
+<button type="button" class="admin-key-generate btn">Згенерувати</button>
+<button type="button" class="admin-key-close btn" style="margin-left:0.5rem">Закрити</button>
+</div>
 </div>
 <div id="admin-role-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:400px;width:90%">
@@ -1959,6 +1981,42 @@ async def admin_page(key: str = Query("")):
       }});
   }});
   document.querySelector('.admin-role-cancel').addEventListener('click', function() {{ modal.style.display = 'none'; }});
+  var keyModal = document.getElementById('admin-key-modal');
+  document.querySelector('.admin-key-create').addEventListener('click', function() {{
+    document.getElementById('admin-key-result').style.display = 'none';
+    document.getElementById('admin-key-label').value = '';
+    keyModal.style.display = 'flex';
+  }});
+  document.querySelector('.admin-key-generate').addEventListener('click', function() {{
+    var label = document.getElementById('admin-key-label').value.trim();
+    if (!label) return;
+    fetch('/api/admin/keys' + qs(), {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify({{ label: label }}) }})
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        if (d.error) {{ alert(d.error); return; }}
+        document.getElementById('admin-key-display').textContent = d.key;
+        document.getElementById('admin-key-result').style.display = 'block';
+        document.querySelector('.admin-key-copy').dataset.copy = d.key;
+      }});
+  }});
+  document.querySelector('.admin-key-copy').addEventListener('click', function() {{
+    var txt = this.dataset.copy || '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(txt).then(function() {{ /* copied */ }});
+    }} else {{
+      var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }}
+  }});
+  document.querySelector('.admin-key-close').addEventListener('click', function() {{ keyModal.style.display = 'none'; }});
+  document.body.addEventListener('click', function(e) {{
+    var btn = e.target.closest('.admin-key-del');
+    if (!btn) return;
+    var label = btn.dataset.label;
+    if (!label || !confirm('Видалити ключ ' + label + '? Доступ буде відключено.')) return;
+    fetch('/api/admin/keys/' + encodeURIComponent(label) + qs(), {{ method: 'DELETE' }})
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{ if (d.ok) location.reload(); else alert(d.error || 'Помилка'); }});
+  }});
   document.querySelectorAll('.admin-role-del').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
       if (!confirm('Видалити цю роль? Ключі з цією роллю отримають порожній доступ.')) return;
