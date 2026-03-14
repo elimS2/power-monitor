@@ -94,7 +94,10 @@ _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
 def _check_and_deploy_sync() -> bool:
     """Check if remote has new commit with deploy tag; if so, pull and restart. Returns True if restart triggered."""
     try:
-        subprocess.run(["git", "fetch", "origin"], cwd=_REPO, capture_output=True, check=False, timeout=30)
+        r = subprocess.run(["git", "fetch", "origin"], cwd=_REPO, capture_output=True, text=True, check=False, timeout=30)
+        if r.returncode != 0:
+            log.warning("Auto-deploy: git fetch failed: %s", r.stderr or r.stdout or r.returncode)
+            return False
         local = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=_REPO, capture_output=True, text=True, check=False, timeout=5
         ).stdout.strip()
@@ -108,7 +111,9 @@ def _check_and_deploy_sync() -> bool:
             cwd=_REPO, capture_output=True, text=True, check=False, timeout=5,
         ).stdout.strip()
         if not _DEPLOY_TAGS.search(msg):
+            log.info("Auto-deploy: origin/main %s has no #autodeploy tag, skipping", remote[:8])
             return False
+        log.info("Auto-deploy: pulling %s and restarting", remote[:8])
         subprocess.run(["git", "pull", "origin", "main"], cwd=_REPO, check=True, timeout=60)
         subprocess.run(["sudo", "systemctl", "restart", "power-monitor"], check=True, timeout=10)
         return True
