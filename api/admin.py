@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.deps import check_admin
 from config import API_KEYS
@@ -28,6 +28,16 @@ def ep_admin_keys(key: str = Query("")):
             "endpoints": cfg["endpoints"] if cfg else None,
         })
     return result
+
+
+@router.get("/keys/{label}/open-dashboard")
+def ep_admin_key_open_dashboard(label: str, key: str = Query("")):
+    """Redirect to dashboard with the full key for this label. Admin only. Opens in new tab."""
+    check_admin(key)
+    for api_key, lbl in API_KEYS.items():
+        if lbl == label:
+            return RedirectResponse(url=f"/?key={api_key}", status_code=302)
+    return JSONResponse({"error": f"unknown label: {label}"}, status_code=404)
 
 
 @router.post("/keys/{label}/enabled")

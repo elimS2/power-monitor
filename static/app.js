@@ -185,7 +185,8 @@
         keys.forEach(function(k) {
           var status = k.enabled ? '\u2705 Увімкнено' : '\u274c Вимкнено';
           var btn = k.label === 'admin' ? '—' : '<button type="button" class="admin-key-toggle btn" data-label="' + k.label + '" data-enabled="' + k.enabled + '">' + (k.enabled ? 'Вимкнути' : 'Увімкнути') + '</button>';
-          html += '<tr><td>' + k.label + ' <small>(' + k.key_preview + ')</small></td><td>' + status + '</td><td>' + btn + '</td></tr>';
+          var openUrl = '/api/admin/keys/' + encodeURIComponent(k.label) + '/open-dashboard?key=' + encodeURIComponent(key);
+          html += '<tr><td>' + k.label + ' <small>(<a href="' + openUrl + '" target="_blank" rel="noopener" style="color:#6ee7b7">' + k.key_preview + '</a>)</small></td><td>' + status + '</td><td>' + btn + '</td></tr>';
         });
         html += '</table>';
         adminKeysContainer.innerHTML = html;
