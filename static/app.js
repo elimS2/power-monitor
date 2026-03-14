@@ -211,9 +211,27 @@
   document.body.classList.add('pm-ready');
   if (key) {
     var urlBase = '/api/dashboard-fragments?key=' + encodeURIComponent(key);
+    var keyExpiredShown = false;
+    function showKeyExpired() {
+      if (keyExpiredShown) return;
+      keyExpiredShown = true;
+      var banner = document.createElement('div');
+      banner.className = 'pm-key-expired';
+      banner.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.95);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:1.5rem;text-align:center';
+      banner.innerHTML = '<p style="font-size:1.2rem;margin:0 0 1rem;color:#f87171">\u26a0\ufe0f Термін дії посилання закінчився</p>' +
+        '<p style="color:var(--muted);margin:0;max-width:320px">Отримайте нове посилання там, де отримали це.</p>';
+      document.body.appendChild(banner);
+    }
     function doFetch() {
       var url = urlBase + '&_=' + Date.now();
-      fetch(url, { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
+      fetch(url, { cache: 'no-store' }).then(function(r) {
+        if (r.status === 403) {
+          showKeyExpired();
+          return null;
+        }
+        return r.json();
+      }).then(function(d) {
+        if (!d) return;
         var el;
         if (d.pm_status_block) {
           el = document.getElementById('pm-status-block');
@@ -294,7 +312,10 @@
         }
       }).catch(function() {});
     }
-    setInterval(doFetch, 10000);
+    var fetchInterval = setInterval(function() {
+      doFetch();
+      if (keyExpiredShown) clearInterval(fetchInterval);
+    }, 10000);
     setTimeout(doFetch, 500);
   }
 })();
