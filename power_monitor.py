@@ -547,7 +547,13 @@ async def _poll_deye():
                 total_grid_import_kwh=data.get("total_grid_import_kwh"),
                 total_grid_export_kwh=data.get("total_grid_export_kwh"),
             )
-            log.debug("Deye poll OK: load=%s soc=%s", data.get("load_power_w"), data.get("battery_soc"))
+            load = data.get("load_power_w", "?")
+            soc = data.get("battery_soc", "?")
+            day_kwh = data.get("day_load_kwh")
+            grid_w = data.get("grid_power_w")
+            day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
+            grid_str = f" grid={int(grid_w)}W" if grid_w is not None else ""
+            log.info("Deye poll OK: load=%sW soc=%s%%%s%s", load, soc, day_str, grid_str)
         else:
             log.warning("Deye poll failed (no data)")
     except Exception as e:
