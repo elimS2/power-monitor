@@ -166,15 +166,40 @@ def init_db():
             db.execute("ALTER TABLE api_key_config ADD COLUMN role_id INTEGER")
         except sqlite3.OperationalError:
             pass
-        # API keys stored in DB (generated from admin UI, not from .env)
+        # API keys stored in DB. Multiple keys per label (history); deactivated_at=NULL = active.
         db.execute("""
             CREATE TABLE IF NOT EXISTS api_keys (
-                label     TEXT PRIMARY KEY,
-                key_hash  TEXT NOT NULL UNIQUE,
-                key_prefix TEXT,
-                created_at REAL NOT NULL
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                label         TEXT NOT NULL,
+                key_hash      TEXT NOT NULL UNIQUE,
+                key           TEXT NOT NULL,
+                key_prefix    TEXT,
+                created_at    REAL NOT NULL,
+                deactivated_at REAL
             )
         """)
+        # Migration: old schema had label as PK. Migrate to new schema.
+        cols = [r[1] for r in db.execute("PRAGMA table_info(api_keys)").fetchall()]
+        if "deactivated_at" not in cols:
+            db.execute("ALTER TABLE api_keys ADD COLUMN deactivated_at REAL")
+        if "id" not in cols:
+            db.execute("""
+                CREATE TABLE api_keys_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label TEXT NOT NULL,
+                    key_hash TEXT NOT NULL UNIQUE,
+                    key TEXT NOT NULL,
+                    key_prefix TEXT,
+                    created_at REAL NOT NULL,
+                    deactivated_at REAL
+                )
+            """)
+            db.execute("""
+                INSERT INTO api_keys_new(label, key_hash, key, key_prefix, created_at, deactivated_at)
+                SELECT label, key_hash, key, key_prefix, created_at, NULL FROM api_keys
+            """)
+            db.execute("DROP TABLE api_keys")
+            db.execute("ALTER TABLE api_keys_new RENAME TO api_keys")
         # Roles (user-createable, sections per role). Built-in roles are seeded.
         db.execute("""
             CREATE TABLE IF NOT EXISTS roles (
@@ -391,10 +416,13 @@ def _key_hash(plain_key: str) -> str:
 
 
 def api_key_lookup(plain_key: str) -> str | None:
-    """Look up key in DB. Returns label if valid, else None."""
+    """Look up key in DB. Returns label if valid and active, else None."""
     h = _key_hash(plain_key)
     with _conn() as db:
-        row = db.execute("SELECT label FROM api_keys WHERE key_hash=?", (h,)).fetchone()
+        row = db.execute(
+            "SELECT label FROM api_keys WHERE key_hash=? AND (deactivated_at IS NULL OR deactivated_at = 0)",
+            (h,),
+        ).fetchone()
     return row["label"] if row else None
 
 
@@ -402,26 +430,80 @@ def api_key_create(label: str, plain_key: str) -> dict:
     """Store new key in DB. Creates api_key_config. Returns {label, key_preview}."""
     key_hash = _key_hash(plain_key)
     key_prefix = plain_key[:8] + "…" if len(plain_key) > 8 else plain_key
+    ts = time.time()
     with _conn() as db:
         db.execute(
-            "INSERT INTO api_keys(label, key_hash, key_prefix, created_at) VALUES(?,?,?,?)",
-            (label, key_hash, key_prefix, time.time()),
+            "INSERT INTO api_keys(label, key_hash, key, key_prefix, created_at, deactivated_at) VALUES(?,?,?,?,?,?)",
+            (label, key_hash, plain_key, key_prefix, ts, None),
         )
     api_key_config_set_enabled(label, True)
-    return {"label": label, "key_preview": key_prefix}
+    return {"label": label, "key_preview": key_prefix, "created_at": ts}
+
+
+def api_key_regenerate(label: str) -> dict | None:
+    """Deactivate current key, create new one. Returns {label, key, key_preview, created_at} or None."""
+    import secrets
+
+    ts = time.time()
+    new_key = secrets.token_urlsafe(24)
+    key_hash = _key_hash(new_key)
+    key_prefix = new_key[:8] + "…" if len(new_key) > 8 else new_key
+    with _conn() as db:
+        db.execute(
+            "UPDATE api_keys SET deactivated_at=? WHERE label=? AND (deactivated_at IS NULL OR deactivated_at = 0)",
+            (ts, label),
+        )
+        db.execute(
+            "INSERT INTO api_keys(label, key_hash, key, key_prefix, created_at, deactivated_at) VALUES(?,?,?,?,?,?)",
+            (label, key_hash, new_key, key_prefix, ts, None),
+        )
+    return {"label": label, "key": new_key, "key_preview": key_prefix, "created_at": ts}
+
+
+def api_key_get_plain(label: str) -> str | None:
+    """Get plain key for active DB key (for open-dashboard redirect)."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT key FROM api_keys WHERE label=? AND (deactivated_at IS NULL OR deactivated_at = 0) AND key IS NOT NULL AND key != ''",
+            (label,),
+        ).fetchone()
+    return row["key"] if row else None
 
 
 def api_key_list() -> list[dict]:
-    """List all keys stored in DB."""
+    """List active keys stored in DB (one per label)."""
     with _conn() as db:
         rows = db.execute(
-            "SELECT label, key_prefix, created_at FROM api_keys ORDER BY label"
+            """SELECT label, key_prefix, created_at FROM api_keys
+               WHERE deactivated_at IS NULL OR deactivated_at = 0
+               ORDER BY label"""
         ).fetchall()
-    return [{"label": r["label"], "key_preview": r["key_prefix"], "source": "db", "created_at": r["created_at"]} for r in rows]
+    return [
+        {"label": r["label"], "key_preview": r["key_prefix"], "source": "db", "created_at": r["created_at"]}
+        for r in rows
+    ]
+
+
+def api_key_history(label: str) -> list[dict]:
+    """List all keys for label (active + deactivated) with created_at, deactivated_at."""
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT key_prefix, created_at, deactivated_at FROM api_keys
+               WHERE label=? ORDER BY created_at DESC""",
+            (label,),
+        ).fetchall()
+    return [
+        {
+            "key_preview": r["key_prefix"],
+            "created_at": r["created_at"],
+            "deactivated_at": r["deactivated_at"],
+        }
+        for r in rows
+    ]
 
 
 def api_key_delete(label: str) -> bool:
-    """Delete key from DB. Returns True if deleted. Also removes api_key_config for that label."""
+    """Delete all keys for label from DB (active + history). Also removes api_key_config."""
     with _conn() as db:
         cur = db.execute("DELETE FROM api_keys WHERE label=?", (label,))
         if cur.rowcount > 0:

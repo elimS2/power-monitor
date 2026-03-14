@@ -16,7 +16,10 @@ from database import (
     api_key_config_set_permissions,
     api_key_create,
     api_key_delete,
+    api_key_get_plain,
+    api_key_history,
     api_key_list,
+    api_key_regenerate,
     role_create,
     role_delete,
     role_get,
@@ -148,14 +151,39 @@ def ep_admin_keys(key: str = Query("")):
     return result
 
 
+@router.post("/keys/{label}/regenerate")
+def ep_admin_key_regenerate(label: str, key: str = Query("")):
+    """Regenerate key: deactivate old, create new. Returns new key. DB keys only. Admin only."""
+    check_admin(key)
+    if label in API_KEYS.values():
+        return JSONResponse({"error": "cannot regenerate env key"}, status_code=400)
+    result = api_key_regenerate(label)
+    if not result:
+        return JSONResponse({"error": f"unknown label: {label}"}, status_code=404)
+    return {"ok": True, **result}
+
+
+@router.get("/keys/{label}/history")
+def ep_admin_key_history(label: str, key: str = Query("")):
+    """Get key history (created_at, deactivated_at) for label. DB keys only. Admin only."""
+    check_admin(key)
+    if label in API_KEYS.values():
+        return JSONResponse({"error": "env keys have no history"}, status_code=400)
+    history = api_key_history(label)
+    return {"label": label, "history": history}
+
+
 @router.get("/keys/{label}/open-dashboard")
 def ep_admin_key_open_dashboard(label: str, key: str = Query("")):
-    """Redirect to dashboard with the full key. Only for env keys (DB keys are not stored)."""
+    """Redirect to dashboard with the full key. Works for env and DB keys."""
     check_admin(key)
     for api_key, lbl in API_KEYS.items():
         if lbl == label:
             return RedirectResponse(url=f"/?key={api_key}", status_code=302)
-    return JSONResponse({"error": "key from DB — use saved key, open link not available"}, status_code=400)
+    plain = api_key_get_plain(label)
+    if plain:
+        return RedirectResponse(url=f"/?key={plain}", status_code=302)
+    return JSONResponse({"error": "key not found or not stored"}, status_code=404)
 
 
 @router.delete("/keys/{label}")

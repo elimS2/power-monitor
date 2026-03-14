@@ -1776,16 +1776,20 @@ async def admin_page(key: str = Query("")):
     qk = quote(key, safe="")
     db_keys = {r["label"]: r for r in api_key_list()}
 
-    def _key_row(label: str, preview: str, source: str, cfg: dict | None, roles: list, is_admin: bool) -> str:
+    def _fmt_ts(ts):
+        if ts is None:
+            return "—"
+        return datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%d.%m.%Y %H:%M")
+
+    def _key_row(label: str, preview: str, source: str, cfg: dict | None, roles: list, is_admin: bool, created_at=None) -> str:
         enabled = cfg["enabled"] if cfg else True
         status = "✅ Увімкнено" if enabled else "❌ Вимкнено"
         src_badge = ' <small style="color:var(--muted)">(з .env)</small>' if source == "env" else ' <small style="color:var(--muted)">(з БД)</small>'
-        open_part = ""
-        if source == "env":
-            open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
-            open_part = f' <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">{escape(preview)}</a>)</small>'
-        else:
-            open_part = f' <small>({escape(preview)})</small>'
+        open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
+        hist_url = f"/api/admin/keys/{quote(label, safe='')}/history?key={qk}"
+        open_part = f' <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">{escape(preview)}</a>)</small>'
+        if source == "db":
+            open_part += f' <small><a href="#" class="admin-key-history" data-label="{escape(label)}" data-url="{escape(hist_url)}" style="color:var(--muted)">історія</a></small>'
         toggle_btn = ""
         if not is_admin:
             toggle_btn = f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" data-enabled="{str(enabled).lower()}">{"Вимкнути" if enabled else "Увімкнути"}</button>'
@@ -1796,19 +1800,22 @@ async def admin_page(key: str = Query("")):
             + "".join(f'<option value="{r["id"]}"{" selected" if current_role_id == r["id"] else ""}>{escape(r["name"])}</option>' for r in roles)
             + "</select>"
         )
+        regen_btn = ""
         del_btn = ""
         if source == "db":
+            regen_btn = f'<button type="button" class="admin-key-regen btn" data-label="{escape(label)}" style="margin-left:0.3rem">Перевипустити</button>'
             del_btn = f' <button type="button" class="admin-key-del btn" data-label="{escape(label)}" style="margin-left:0.3rem">Видалити</button>'
-        actions = (toggle_btn or "—") + del_btn
-        return f'<tr><td>{escape(label)}{src_badge}{open_part}</td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td>{actions}</td></tr>'
+        actions = (toggle_btn or "—") + regen_btn + del_btn
+        active_ts = _fmt_ts(created_at) if created_at else "—"
+        return f'<tr><td>{escape(label)}{src_badge}{open_part}</td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td style="font-size:0.85rem;color:var(--muted)">{active_ts}</td><td>{actions}</td></tr>'
 
     rows = []
     for api_key, label in API_KEYS.items():
         preview = api_key[:8] + "…" if len(api_key) > 8 else api_key
-        rows.append(_key_row(label, preview, "env", configs.get(label), roles_data, label == "admin"))
+        rows.append(_key_row(label, preview, "env", configs.get(label), roles_data, label == "admin", None))
     for r in db_keys.values():
         if r["label"] not in API_KEYS.values():
-            rows.append(_key_row(r["label"], r["key_preview"], "db", configs.get(r["label"]), roles_data, False))
+            rows.append(_key_row(r["label"], r["key_preview"], "db", configs.get(r["label"]), roles_data, False, r.get("created_at")))
     table_rows = "\n".join(rows)
 
     # Roles table rows
@@ -1847,7 +1854,7 @@ async def admin_page(key: str = Query("")):
 <h2>Ключі API</h2>
 <button type="button" class="admin-key-create btn" style="margin-bottom:1rem">+ Додати ключ</button>
 <table>
-<tr><th>Ключ</th><th>Стан</th><th>Роль</th><th>Дії</th></tr>
+<tr><th>Ключ</th><th>Стан</th><th>Роль</th><th>Активовано</th><th>Дії</th></tr>
 {table_rows}
 </table>
 </div>
@@ -1862,11 +1869,11 @@ async def admin_page(key: str = Query("")):
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
-<h3 style="margin-top:0">Додати ключ</h3>
+<h3 id="admin-key-modal-title" style="margin-top:0">Додати ключ</h3>
 <input type="text" id="admin-key-label" placeholder="Назва (наприклад, petro)" style="width:100%;margin-bottom:1rem;padding:0.4rem">
 <div id="admin-key-result" style="display:none;margin-bottom:1rem;padding:0.5rem;background:var(--card);border-radius:6px;font-size:0.9rem">
 <p style="margin:0 0 0.5rem;color:var(--muted)">Ключ збережено в БД. Збереж його — більше не покажемо.</p>
-<code id="admin-key-display" style="display:block;word-break:break-all;margin-bottom:0.5rem"></code>
+<code id="admin-key-display" style="display:block;word-break:break-all;margin-bottom:0.5rem;cursor:pointer;user-select:all" title="Клік — копіювати"></code>
 <button type="button" class="admin-key-copy btn" style="font-size:0.85rem">Копіювати</button>
 </div>
 <button type="button" class="admin-key-generate btn">Згенерувати</button>
@@ -1880,6 +1887,13 @@ async def admin_page(key: str = Query("")):
 <div id="admin-role-sections" style="margin-bottom:1rem;max-height:200px;overflow-y:auto"></div>
 <button type="button" class="admin-role-save btn">Зберегти</button>
 <button type="button" class="admin-role-cancel btn" style="margin-left:0.5rem">Скасувати</button>
+</div>
+</div>
+<div id="admin-history-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:101;align-items:center;justify-content:center" class="admin-modal">
+<div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:400px;width:90%">
+<h3 id="admin-history-title" style="margin-top:0">Історія ключа</h3>
+<div id="admin-history-content" style="max-height:200px;overflow-y:auto;font-size:0.9rem"></div>
+<button type="button" class="admin-history-close btn" style="margin-top:1rem">Закрити</button>
 </div>
 </div>
 <div class="ver" style="margin-top:1.5rem"><a href="/?key={escape(qk)}">Дашборд</a></div>
@@ -1983,8 +1997,11 @@ async def admin_page(key: str = Query("")):
   document.querySelector('.admin-role-cancel').addEventListener('click', function() {{ modal.style.display = 'none'; }});
   var keyModal = document.getElementById('admin-key-modal');
   document.querySelector('.admin-key-create').addEventListener('click', function() {{
+    document.getElementById('admin-key-modal-title').textContent = 'Додати ключ';
     document.getElementById('admin-key-result').style.display = 'none';
     document.getElementById('admin-key-label').value = '';
+    document.getElementById('admin-key-label').style.display = 'block';
+    document.querySelector('.admin-key-generate').style.display = 'inline-block';
     keyModal.style.display = 'flex';
   }});
   document.querySelector('.admin-key-generate').addEventListener('click', function() {{
@@ -1999,16 +2016,65 @@ async def admin_page(key: str = Query("")):
         document.querySelector('.admin-key-copy').dataset.copy = d.key;
       }});
   }});
-  document.querySelector('.admin-key-copy').addEventListener('click', function() {{
-    var txt = this.dataset.copy || '';
+  function copyKey(txt) {{
+    if (!txt) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {{
-      navigator.clipboard.writeText(txt).then(function() {{ /* copied */ }});
+      navigator.clipboard.writeText(txt);
     }} else {{
       var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
     }}
+  }}
+  document.querySelector('.admin-key-copy').addEventListener('click', function() {{ copyKey(this.dataset.copy); }});
+  document.getElementById('admin-key-display').addEventListener('click', function() {{
+    var txt = document.querySelector('.admin-key-copy').dataset.copy;
+    if (txt) {{ copyKey(txt); this.title = 'Скопійовано!'; setTimeout(function() {{ document.getElementById('admin-key-display').title = 'Клік — копіювати'; }}, 1000); }}
   }});
-  document.querySelector('.admin-key-close').addEventListener('click', function() {{ keyModal.style.display = 'none'; }});
+  document.querySelector('.admin-history-close').addEventListener('click', function() {{ histModal.style.display = 'none'; }});
+  document.querySelector('.admin-key-close').addEventListener('click', function() {{
+    keyModal.style.display = 'none';
+    document.getElementById('admin-key-modal-title').textContent = 'Додати ключ';
+    document.getElementById('admin-key-label').style.display = 'block';
+    document.querySelector('.admin-key-generate').style.display = 'inline-block';
+  }});
+  var histModal = document.getElementById('admin-history-modal');
   document.body.addEventListener('click', function(e) {{
+    var histBtn = e.target.closest('.admin-key-history');
+    if (histBtn) {{
+      e.preventDefault();
+      var url = histBtn.dataset.url;
+      var label = histBtn.dataset.label;
+      if (!url) return;
+      fetch(url).then(function(r) {{ return r.json(); }}).then(function(d) {{
+        if (d.error) {{ alert(d.error); return; }}
+        document.getElementById('admin-history-title').textContent = 'Історія: ' + (label || '');
+        var rows = (d.history || []).map(function(h) {{
+          var act = h.created_at ? new Date(h.created_at*1000).toLocaleString('uk-UA') : '—';
+          var deact = h.deactivated_at ? new Date(h.deactivated_at*1000).toLocaleString('uk-UA') : 'активний';
+          return '<div style="margin:0.3rem 0;padding:0.3rem;background:var(--card);border-radius:4px"><small>' + (h.key_preview||'') + '</small><br>Активовано: ' + act + '<br>Деактивовано: ' + deact + '</div>';
+        }});
+        document.getElementById('admin-history-content').innerHTML = rows.length ? rows.join('') : '<p style="color:var(--muted)">Немає історії</p>';
+        histModal.style.display = 'flex';
+      }});
+      return;
+    }}
+    var regenBtn = e.target.closest('.admin-key-regen');
+    if (regenBtn) {{
+      var label = regenBtn.dataset.label;
+      if (!label || !confirm('Перевипустити ключ ' + label + '? Старий ключ перестане працювати.')) return;
+      fetch('/api/admin/keys/' + encodeURIComponent(label) + '/regenerate' + qs(), {{ method: 'POST' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{
+          if (d.error) {{ alert(d.error); return; }}
+          document.getElementById('admin-key-modal-title').textContent = 'Ключ перевипущено';
+          document.getElementById('admin-key-label').style.display = 'none';
+          document.querySelector('.admin-key-generate').style.display = 'none';
+          document.getElementById('admin-key-display').textContent = d.key;
+          document.getElementById('admin-key-result').style.display = 'block';
+          document.querySelector('.admin-key-copy').dataset.copy = d.key;
+          keyModal.style.display = 'flex';
+        }});
+      return;
+    }}
     var btn = e.target.closest('.admin-key-del');
     if (!btn) return;
     var label = btn.dataset.label;
