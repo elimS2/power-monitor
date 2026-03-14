@@ -133,6 +133,12 @@ WMO_EMOJI = {
 ALERT_API_URL = "https://alerts.com.ua/api/states"
 ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
 
+# ─── Auto-deploy ──────────────────────────────────────────────
+
+# When 1: bg_loop periodically checks for commits with #автооновити and runs pull + restart
+AUTO_DEPLOY_ENABLED = os.getenv("AUTO_DEPLOY", "1") == "1"
+AUTO_DEPLOY_INTERVAL_SEC = int(os.getenv("AUTO_DEPLOY_INTERVAL_SEC", "60") or "60")
+
 # ─── Dashboard ────────────────────────────────────────────────
 
 DASHBOARD_SECTION_ORDER = [

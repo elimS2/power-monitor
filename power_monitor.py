@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import subprocess
 import logging.handlers
 import os
 import sqlite3
@@ -27,6 +29,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 
 from config import (
     API_KEYS,
+    AUTO_DEPLOY_ENABLED,
+    AUTO_DEPLOY_INTERVAL_SEC,
     AVATAR_ON_START,
     DEYE_POLL_LOG,
     DELETE_PHOTO_MSG,
@@ -82,6 +86,35 @@ from database import (
 )
 
 import dtek
+
+_REPO = Path(__file__).resolve().parent
+_DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
+
+
+def _check_and_deploy_sync() -> bool:
+    """Check if remote has new commit with deploy tag; if so, pull and restart. Returns True if restart triggered."""
+    try:
+        subprocess.run(["git", "fetch", "origin"], cwd=_REPO, capture_output=True, check=False, timeout=30)
+        local = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=_REPO, capture_output=True, text=True, check=False, timeout=5
+        ).stdout.strip()
+        remote = subprocess.run(
+            ["git", "rev-parse", "origin/main"], cwd=_REPO, capture_output=True, text=True, check=False, timeout=5
+        ).stdout.strip()
+        if local == remote or not remote:
+            return False
+        msg = subprocess.run(
+            ["git", "log", "-1", "--format=%B", "origin/main"],
+            cwd=_REPO, capture_output=True, text=True, check=False, timeout=5,
+        ).stdout.strip()
+        if not _DEPLOY_TAGS.search(msg):
+            return False
+        subprocess.run(["git", "pull", "origin", "main"], cwd=_REPO, check=True, timeout=60)
+        subprocess.run(["sudo", "systemctl", "restart", "power-monitor"], check=True, timeout=10)
+        return True
+    except Exception as e:
+        log.warning("Auto-deploy check failed: %s", e)
+        return False
 
 
 def _wrap_dashboard_section(section_id: str, content: str) -> str:
@@ -592,6 +625,7 @@ async def bg_loop():
     schedule_tick = 0
     alert_tick = 0
     deye_poll_tick = 0
+    deploy_tick = 0
     while True:
         try:
             await watchdog()
@@ -619,6 +653,12 @@ async def bg_loop():
             if alert_tick >= 4:  # ~2min at 30s interval
                 await dtek.fetch_alert()
                 alert_tick = 0
+            if AUTO_DEPLOY_ENABLED:
+                deploy_tick += 1
+                if deploy_tick * 30 >= AUTO_DEPLOY_INTERVAL_SEC:
+                    deploy_tick = 0
+                    if await asyncio.to_thread(_check_and_deploy_sync):
+                        return  # restart triggered, we're about to die
         except Exception as e:
             log.error("bg_loop: %s", e)
         await asyncio.sleep(30)
