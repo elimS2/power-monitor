@@ -24,6 +24,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # Optional: load .env from power-monitor folder
 try:
@@ -131,7 +132,7 @@ def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
     return val
 
 
-def read_deye_solarman(host: str | None = None, port: int | None = None, serial: str | None = None) -> dict | None:
+def read_deye_solarman(host: Optional[str] = None, port: Optional[int] = None, serial: Optional[str] = None) -> Optional[dict]:
     """Read via Solarman V5 (port 8899). Requires serial number."""
     try:
         from pysolarmanv5 import PySolarmanV5
@@ -190,7 +191,7 @@ def read_deye_solarman(host: str | None = None, port: int | None = None, serial:
     return data if data else None
 
 
-def read_deye_modbus(host: str | None = None, port: int | None = None) -> dict | None:
+def read_deye_modbus(host: Optional[str] = None, port: Optional[int] = None) -> Optional[dict]:
     """Read via Modbus TCP (port 502)."""
     try:
         from pymodbus.client import ModbusTcpClient
@@ -236,7 +237,7 @@ def read_deye_modbus(host: str | None = None, port: int | None = None) -> dict |
     return data if data else None
 
 
-def read_deye(host: str | None = None, port: int | None = None, serial: str | None = None) -> dict | None:
+def read_deye(host: Optional[str] = None, port: Optional[int] = None, serial: Optional[str] = None) -> Optional[dict]:
     """Read registers. Uses Solarman if serial set and port 8899, else Modbus TCP.
     All params optional — fallback to DEYE_IP, DEYE_PORT, DEYE_SERIAL from env."""
     h = host or DEYE_IP
@@ -247,7 +248,7 @@ def read_deye(host: str | None = None, port: int | None = None, serial: str | No
     return read_deye_modbus(host=h, port=p)
 
 
-def send_to_server(data: dict, log: logging.Logger | None = None) -> bool:
+def send_to_server(data: dict, log: Optional[logging.Logger] = None) -> bool:
     """POST data to Power Monitor API."""
     try:
         import requests
