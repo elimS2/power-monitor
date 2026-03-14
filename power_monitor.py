@@ -1718,37 +1718,27 @@ async def dashboard(key: str = Query("")):
 
 </div>
 
-<div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Ключі</a>' if is_admin else ''}</div>
+<div class="ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Адмін</a>' if is_admin else ''}</div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
 
 
-def _infer_role(sections: list | None) -> str:
-    """Infer role name from sections list."""
-    from config import ROLES
-    if sections is None or len(sections) == 0:
-        return "full"
-    sec_set = set(sections)
-    for name, role_sec in ROLES.items():
-        if role_sec is None:
-            continue
-        if sec_set == set(role_sec):
-            return name
-    return "full"
-
-
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_keys_page(key: str = Query("")):
-    """Admin-only page: view and manage API keys. Link from dashboard footer."""
+async def admin_page(key: str = Query("")):
+    """Admin-only page: keys and roles management. Link from dashboard footer."""
     from html import escape
+    from json import dumps
     from urllib.parse import quote
 
     from api.deps import check_admin
-    from config import ROLES
+    from database import ALL_SECTIONS, SECTION_LABELS, api_key_config_list, role_list
 
     check_admin(key)
     configs = {c["label"]: c for c in api_key_config_list()}
+    roles_data = role_list()
     qk = quote(key, safe="")
+
+    # Keys table rows
     rows = []
     for api_key, label in API_KEYS.items():
         cfg = configs.get(label)
@@ -1758,49 +1748,103 @@ async def admin_keys_page(key: str = Query("")):
         open_url = f"/api/admin/keys/{quote(label, safe='')}/open-dashboard?key={qk}"
         btn = '—' if label == "admin" else (
             f'<button type="button" class="admin-key-toggle btn" data-label="{escape(label)}" '
-            f'data-enabled="{str(enabled).lower()}">{ "Вимкнути" if enabled else "Увімкнути" }</button>'
+            f'data-enabled="{str(enabled).lower()}">{"Вимкнути" if enabled else "Увімкнути"}</button>'
         )
-        current_role = _infer_role(cfg["sections"] if cfg else None)
+        current_role_id = cfg.get("role_id") if cfg else None
         if label == "admin":
             role_sel = "—"
         else:
-            role_sel = f'<select class="admin-role-select" data-label="{escape(label)}" style="font-size:0.85rem;padding:0.2rem">'
-            for r in ROLES:
-                sel = ' selected' if r == current_role else ''
-                lbl = "Усі" if r == "full" else "Без Deye" if r == "without_deye" else "Базове" if r == "basic" else r
-                role_sel += f'<option value="{r}"{sel}>{lbl}</option>'
+            role_sel = '<select class="admin-role-select" data-label="' + escape(label) + '" style="font-size:0.85rem;padding:0.2rem">'
+            role_sel += '<option value="">— Не встановлено</option>'
+            for r in roles_data:
+                sel = ' selected' if current_role_id == r["id"] else ''
+                role_sel += f'<option value="{r["id"]}"{sel}>{escape(r["name"])}</option>'
             role_sel += "</select>"
         rows.append(
             f'<tr><td>{escape(label)} <small>(<a href="{escape(open_url)}" target="_blank" rel="noopener" style="color:#6ee7b7">'
             f'{escape(preview)}</a>)</small></td><td class="{"up" if enabled else "down"}">{status}</td><td>{role_sel}</td><td>{btn}</td></tr>'
         )
     table_rows = "\n".join(rows)
+
+    # Roles table rows
+    role_rows = []
+    for r in roles_data:
+        sec_list = r["sections"] if r["sections"] else ["(усі)"]
+        sec_display = ", ".join(SECTION_LABELS.get(s, s) for s in sec_list[:5])
+        if len(sec_list) > 5:
+            sec_display += "…"
+        edit_btn = "" if r["is_builtin"] else f'<button type="button" class="admin-role-edit btn" data-id="{r["id"]}" data-name="{escape(r["name"])}" data-sections=\'{dumps(r["sections"] or [])}\'>Змінити</button>'
+        del_btn = "" if r["is_builtin"] else f'<button type="button" class="admin-role-del btn" data-id="{r["id"]}">Видалити</button>'
+        role_rows.append(
+            f'<tr><td>{escape(r["name"])}</td><td style="font-size:0.85rem;color:var(--muted)">{escape(sec_display)}</td>'
+            f'<td>{"Вбудована" if r["is_builtin"] else "Користувацька"}</td><td>{edit_btn} {del_btn}</td></tr>'
+        )
+    roles_table_rows = "\n".join(role_rows)
+
+    all_sections_json = dumps(ALL_SECTIONS)
+    section_labels_json = dumps(SECTION_LABELS)
+
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f172a">
-<title>Керування ключами — Power Monitor</title>
+<title>Адмін-портал — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
 </head><body data-pm-key="{escape(key)}">
 <h1>Power Monitor — Адмін-портал</h1>
 <p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
+<div class="admin-tabs" style="margin-bottom:1.5rem">
+  <button type="button" class="admin-tab btn active" data-tab="keys">Ключі API</button>
+  <button type="button" class="admin-tab btn" data-tab="roles">Ролі</button>
+</div>
+<div id="admin-tab-keys">
 <h2>Ключі API</h2>
 <table>
 <tr><th>Ключ</th><th>Стан</th><th>Роль</th><th>Дії</th></tr>
 {table_rows}
 </table>
+</div>
+<div id="admin-tab-roles" style="display:none">
+<h2>Ролі</h2>
+<p style="margin-bottom:0.5rem;color:var(--muted)">Ролі визначають, які секції дашборду бачить ключ.</p>
+<button type="button" class="admin-role-create btn" style="margin-bottom:1rem">+ Створити роль</button>
+<table>
+<tr><th>Назва</th><th>Секції</th><th>Тип</th><th>Дії</th></tr>
+{roles_table_rows}
+</table>
+</div>
+<div id="admin-role-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
+<div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:400px;width:90%">
+<h3 id="admin-role-modal-title" style="margin-top:0">Нова роль</h3>
+<input type="text" id="admin-role-name" placeholder="Назва ролі" style="width:100%;margin-bottom:1rem;padding:0.4rem">
+<div id="admin-role-sections" style="margin-bottom:1rem;max-height:200px;overflow-y:auto"></div>
+<button type="button" class="admin-role-save btn">Зберегти</button>
+<button type="button" class="admin-role-cancel btn" style="margin-left:0.5rem">Скасувати</button>
+</div>
+</div>
 <div class="ver" style="margin-top:1.5rem"><a href="/?key={escape(qk)}">Дашборд</a></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 <script>
 (function() {{
   var key = document.body.getAttribute('data-pm-key') || '';
   if (!key) return;
+  var allSections = {all_sections_json};
+  var sectionLabels = {section_labels_json};
+  function qs() {{ return '?key=' + encodeURIComponent(key); }}
+  document.querySelectorAll('.admin-tab').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      document.querySelectorAll('.admin-tab').forEach(function(b) {{ b.classList.remove('active'); }});
+      btn.classList.add('active');
+      document.getElementById('admin-tab-keys').style.display = btn.dataset.tab === 'keys' ? 'block' : 'none';
+      document.getElementById('admin-tab-roles').style.display = btn.dataset.tab === 'roles' ? 'block' : 'none';
+    }});
+  }});
   document.querySelectorAll('.admin-key-toggle').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
       var label = btn.dataset.label;
       var enabled = btn.dataset.enabled !== 'true';
-      fetch('/api/admin/keys/' + encodeURIComponent(label) + '/enabled?key=' + encodeURIComponent(key) + '&enabled=' + enabled, {{ method: 'POST' }})
+      fetch('/api/admin/keys/' + encodeURIComponent(label) + '/enabled' + qs() + '&enabled=' + enabled, {{ method: 'POST' }})
         .then(function(r) {{ return r.json(); }})
         .then(function() {{
           btn.dataset.enabled = enabled;
@@ -1810,21 +1854,80 @@ async def admin_keys_page(key: str = Query("")):
         }});
     }});
   }});
-  fetch('/api/admin/roles?key=' + encodeURIComponent(key)).then(function(r) {{ return r.json(); }}).then(function(data) {{
-    var roles = data.roles || {{}};
-    document.querySelectorAll('.admin-role-select').forEach(function(sel) {{
-      sel.addEventListener('change', function() {{
-        var label = sel.dataset.label;
-        var role = sel.value;
-        var sections = roles[role] || null;
-        fetch('/api/admin/keys/' + encodeURIComponent(label) + '/permissions?key=' + encodeURIComponent(key), {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ sections: sections }})
-        }}).then(function(r) {{ return r.json(); }}).then(function(data) {{
-          if (data.ok) {{ var t = document.createElement('span'); t.textContent = ' Збережено'; t.style.color='var(--accent)'; sel.parentElement.appendChild(t); setTimeout(function() {{ t.remove(); }}, 1500); }}
-        }});
+  document.querySelectorAll('.admin-role-select').forEach(function(sel) {{
+    sel.addEventListener('change', function() {{
+      var label = sel.dataset.label;
+      var roleId = sel.value;
+      var body = roleId ? {{ role_id: parseInt(roleId) }} : {{ role_id: null }};
+      fetch('/api/admin/keys/' + encodeURIComponent(label) + '/permissions' + qs(), {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify(body)
+      }}).then(function(r) {{ return r.json(); }}).then(function(d) {{
+        if (d.ok) {{ var t = document.createElement('span'); t.textContent = ' Збережено'; t.style.color='var(--accent)'; sel.parentElement.appendChild(t); setTimeout(function() {{ t.remove(); }}, 1500); }}
       }});
+    }});
+  }});
+  function buildSectionsCheckboxes(container, selected) {{
+    container.innerHTML = '';
+    var addAll = document.createElement('label');
+    addAll.innerHTML = '<input type="checkbox" id="role-all" ' + (!selected || selected.length === 0 ? 'checked' : '') + '> Усі секції';
+    addAll.style.display = 'block';
+    addAll.style.marginBottom = '0.5rem';
+    container.appendChild(addAll);
+    allSections.forEach(function(sid) {{
+      var lbl = sectionLabels[sid] || sid;
+      var cb = document.createElement('label');
+      cb.style.display = 'block';
+      cb.style.marginBottom = '0.25rem';
+      var checked = !selected || selected.length === 0 || selected.indexOf(sid) >= 0;
+      cb.innerHTML = '<input type="checkbox" class="role-section-cb" data-id="' + sid + '" ' + (checked ? 'checked' : '') + '> ' + lbl;
+      container.appendChild(cb);
+    }});
+    addAll.querySelector('input').addEventListener('change', function() {{
+      container.querySelectorAll('.role-section-cb').forEach(function(c) {{ c.checked = addAll.querySelector('input').checked; }});
+    }});
+  }}
+  var modal = document.getElementById('admin-role-modal');
+  var editingRoleId = null;
+  document.querySelector('.admin-role-create').addEventListener('click', function() {{
+    editingRoleId = null;
+    document.getElementById('admin-role-modal-title').textContent = 'Нова роль';
+    document.getElementById('admin-role-name').value = '';
+    buildSectionsCheckboxes(document.getElementById('admin-role-sections'), null);
+    modal.style.display = 'flex';
+  }});
+  document.querySelectorAll('.admin-role-edit').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      editingRoleId = parseInt(btn.dataset.id);
+      document.getElementById('admin-role-modal-title').textContent = 'Редагувати роль';
+      document.getElementById('admin-role-name').value = btn.dataset.name;
+      var sections = JSON.parse(btn.dataset.sections || '[]');
+      buildSectionsCheckboxes(document.getElementById('admin-role-sections'), sections);
+      modal.style.display = 'flex';
+    }});
+  }});
+  document.querySelector('.admin-role-save').addEventListener('click', function() {{
+    var name = document.getElementById('admin-role-name').value.trim();
+    if (!name) return;
+    var allCb = document.getElementById('role-all');
+    var sections = allCb.checked ? null : Array.from(document.querySelectorAll('.role-section-cb:checked')).map(function(c) {{ return c.dataset.id; }});
+    var url = editingRoleId ? '/api/admin/roles/' + editingRoleId + qs() : '/api/admin/roles' + qs();
+    var method = editingRoleId ? 'PUT' : 'POST';
+    var body = {{ name: name, sections: sections }};
+    fetch(url, {{ method: method, headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(body) }})
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        if (d.ok) {{ location.reload(); }}
+      }});
+  }});
+  document.querySelector('.admin-role-cancel').addEventListener('click', function() {{ modal.style.display = 'none'; }});
+  document.querySelectorAll('.admin-role-del').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      if (!confirm('Видалити цю роль? Ключі з цією роллю отримають порожній доступ.')) return;
+      fetch('/api/admin/roles/' + btn.dataset.id + qs(), {{ method: 'DELETE' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{ if (d.ok) location.reload(); }});
     }});
   }});
 }})();

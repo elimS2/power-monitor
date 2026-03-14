@@ -157,9 +157,35 @@ def init_db():
                 enabled   INTEGER NOT NULL DEFAULT 1,
                 sections  TEXT,
                 endpoints TEXT,
+                role_id   INTEGER,
                 updated_at REAL
             )
         """)
+        try:
+            db.execute("ALTER TABLE api_key_config ADD COLUMN role_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        # Roles (user-createable, sections per role). Built-in roles are seeded.
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS roles (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                sections   TEXT,
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+        """)
+        # Seed built-in roles if empty
+        if db.execute("SELECT COUNT(*) FROM roles").fetchone()[0] == 0:
+            for name, sections in [
+                ("Усі", None),
+                ("Без Deye", json.dumps([s for s in ALL_SECTIONS if s != "deye_details"])),
+                ("Базове", json.dumps(["sched_details", "boiler_details", "ev_details", "links_details", "alert_ev_details"])),
+            ]:
+                db.execute(
+                    "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,1,?)",
+                    (name, sections, time.time()),
+                )
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -186,20 +212,132 @@ ALL_SECTIONS = [
     "hb_details", "legend_details", "avatars_details",
 ]
 
+SECTION_LABELS = {
+    "sched_details": "Графік відключень",
+    "boiler_details": "Графік котельні",
+    "ev_details": "Події",
+    "links_details": "Посилання",
+    "plug_details": "Розумна розетка",
+    "alert_ev_details": "Тривоги",
+    "tg_details": "Історія Telegram",
+    "deye_details": "Deye інвертор",
+    "hb_details": "Роутер / Heartbeats",
+    "legend_details": "Легенда повідомлень",
+    "avatars_details": "Аватарки каналу",
+}
+
+
+# ─── Roles ─────────────────────────────────────────────────────
+
+def role_list() -> list[dict]:
+    """List all roles (built-in + custom)."""
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT id, name, sections, is_builtin, created_at FROM roles ORDER BY is_builtin DESC, name"
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "sections": json.loads(r["sections"]) if r["sections"] else None,
+            "is_builtin": bool(r["is_builtin"]),
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+def role_get(role_id: int) -> dict | None:
+    """Get role by id."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT id, name, sections, is_builtin, created_at FROM roles WHERE id=?",
+            (role_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "sections": json.loads(row["sections"]) if row["sections"] else None,
+        "is_builtin": bool(row["is_builtin"]),
+        "created_at": row["created_at"],
+    }
+
+
+def role_create(name: str, sections: list[str] | None) -> dict:
+    """Create a new role. Returns the created role."""
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,0,?)",
+            (name, json.dumps(sections) if sections else None, time.time()),
+        )
+        rid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return role_get(rid)
+
+
+def role_update(role_id: int, name: str | None, sections: list[str] | None) -> bool:
+    """Update role. Returns True if found and updated."""
+    r = role_get(role_id)
+    if not r or r["is_builtin"]:
+        return False
+    with _conn() as db:
+        if name is not None and sections is not None:
+            db.execute(
+                "UPDATE roles SET name=?, sections=?, created_at=? WHERE id=?",
+                (name, json.dumps(sections) if sections else None, time.time(), role_id),
+            )
+        elif name is not None:
+            db.execute("UPDATE roles SET name=?, created_at=? WHERE id=?", (name, time.time(), role_id))
+        elif sections is not None:
+            db.execute(
+                "UPDATE roles SET sections=?, created_at=? WHERE id=?",
+                (json.dumps(sections) if sections else None, time.time(), role_id),
+            )
+        else:
+            return False
+    return True
+
+
+def role_delete(role_id: int) -> bool:
+    """Delete role. Only custom roles. Returns True if deleted."""
+    r = role_get(role_id)
+    if not r or r["is_builtin"]:
+        return False
+    with _conn() as db:
+        db.execute("DELETE FROM roles WHERE id=?", (role_id,))
+        db.execute("UPDATE api_key_config SET role_id=NULL WHERE role_id=?", (role_id,))
+    return True
+
+
+def role_sections_for_key(role_id: int) -> list[str] | None:
+    """Get sections list for a role. None = all sections."""
+    r = role_get(role_id)
+    if not r:
+        return None
+    return r["sections"]
+
+
+# ─── API key config ─────────────────────────────────────────────
 
 def api_key_config_get(label: str) -> dict | None:
     """Get config for key label. Returns None if no row (full access by default)."""
     with _conn() as db:
         row = db.execute(
-            "SELECT label, enabled, sections, endpoints, updated_at FROM api_key_config WHERE label=?",
+            "SELECT label, enabled, sections, endpoints, role_id, updated_at FROM api_key_config WHERE label=?",
             (label,),
         ).fetchone()
     if not row:
         return None
+    sections = json.loads(row["sections"]) if row["sections"] else None
+    role_id = row["role_id"]
+    if role_id is not None:
+        sections = role_sections_for_key(role_id)
     return {
         "label": row["label"],
         "enabled": bool(row["enabled"]),
-        "sections": json.loads(row["sections"]) if row["sections"] else None,
+        "sections": sections,
+        "role_id": role_id,
         "endpoints": json.loads(row["endpoints"]) if row["endpoints"] else None,
         "updated_at": row["updated_at"],
     }
@@ -215,13 +353,19 @@ def api_key_config_set_enabled(label: str, enabled: bool):
         )
 
 
-def api_key_config_set_permissions(label: str, sections: list | None, endpoints: list | None):
+def api_key_config_set_permissions(
+    label: str, sections: list | None = None, endpoints: list | None = None, role_id: int | None = None
+):
+    """Set permissions. If role_id is set, sections are taken from the role (sections arg ignored for storage)."""
     with _conn() as db:
+        sec_json = None if role_id is not None else (json.dumps(sections) if sections else None)
+        ep_json = json.dumps(endpoints) if endpoints else None
+        ts = time.time()
         db.execute(
-            """INSERT INTO api_key_config(label, enabled, sections, endpoints, updated_at)
-               VALUES(?, 1, ?, ?, ?) ON CONFLICT(label) DO UPDATE SET
-               sections=excluded.sections, endpoints=excluded.endpoints, updated_at=excluded.updated_at""",
-            (label, json.dumps(sections) if sections else None, json.dumps(endpoints) if endpoints else None, time.time()),
+            """INSERT INTO api_key_config(label, enabled, sections, endpoints, role_id, updated_at)
+               VALUES(?, 1, ?, ?, ?, ?) ON CONFLICT(label) DO UPDATE SET
+               sections=excluded.sections, endpoints=excluded.endpoints, role_id=excluded.role_id, updated_at=excluded.updated_at""",
+            (label, sec_json, ep_json, role_id, ts),
         )
 
 
@@ -229,18 +373,23 @@ def api_key_config_list() -> list[dict]:
     """List all configured keys (only those with a row in api_key_config)."""
     with _conn() as db:
         rows = db.execute(
-            "SELECT label, enabled, sections, endpoints, updated_at FROM api_key_config ORDER BY label"
+            "SELECT label, enabled, sections, endpoints, role_id, updated_at FROM api_key_config ORDER BY label"
         ).fetchall()
-    return [
-        {
+    result = []
+    for r in rows:
+        sections = json.loads(r["sections"]) if r["sections"] else None
+        role_id = r["role_id"]
+        if role_id is not None:
+            sections = role_sections_for_key(role_id)
+        result.append({
             "label": r["label"],
             "enabled": bool(r["enabled"]),
-            "sections": json.loads(r["sections"]) if r["sections"] else None,
+            "sections": sections,
+            "role_id": role_id,
             "endpoints": json.loads(r["endpoints"]) if r["endpoints"] else None,
             "updated_at": r["updated_at"],
-        }
-        for r in rows
-    ]
+        })
+    return result
 
 
 def save_heartbeat(p204: int, p175: int):

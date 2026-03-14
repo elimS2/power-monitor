@@ -5,24 +5,91 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.deps import check_admin
-from config import API_KEYS, ROLES
-from database import api_key_config_list, api_key_config_set_enabled, api_key_config_set_permissions
+from config import API_KEYS
+from database import (
+    ALL_SECTIONS,
+    SECTION_LABELS,
+    api_key_config_list,
+    api_key_config_set_enabled,
+    api_key_config_set_permissions,
+    role_create,
+    role_delete,
+    role_get,
+    role_list,
+    role_update,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/roles")
 def ep_admin_roles(key: str = Query("")):
-    """List role presets (name -> sections). Admin only."""
+    """List all roles (from DB). Admin only."""
     check_admin(key)
-    return {"roles": {k: v for k, v in ROLES.items()}}
+    roles = role_list()
+    return {"roles": roles, "all_sections": ALL_SECTIONS, "section_labels": SECTION_LABELS}
+
+
+@router.post("/roles")
+async def ep_admin_role_create(request: Request, key: str = Query("")):
+    """Create a role. Body: {name, sections}. Admin only."""
+    check_admin(key)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    name = body.get("name", "").strip()
+    sections = body.get("sections")
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if sections is not None and not isinstance(sections, list):
+        return JSONResponse({"error": "sections must be list or null"}, status_code=400)
+    role = role_create(name, sections)
+    return {"ok": True, "role": role}
+
+
+@router.get("/roles/{role_id:int}")
+def ep_admin_role_get(role_id: int, key: str = Query("")):
+    """Get single role. Admin only."""
+    check_admin(key)
+    r = role_get(role_id)
+    if not r:
+        return JSONResponse({"error": "role not found"}, status_code=404)
+    return {"role": r}
+
+
+@router.put("/roles/{role_id:int}")
+async def ep_admin_role_update(role_id: int, request: Request, key: str = Query("")):
+    """Update role. Body: {name?, sections?}. Admin only. Built-in roles cannot be edited."""
+    check_admin(key)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    name = body.get("name")
+    if name is not None:
+        name = str(name).strip()
+    sections = body.get("sections")
+    ok = role_update(role_id, name, sections)
+    if not ok:
+        return JSONResponse({"error": "role not found or is built-in"}, status_code=404)
+    return {"ok": True}
+
+
+@router.delete("/roles/{role_id:int}")
+def ep_admin_role_delete(role_id: int, key: str = Query("")):
+    """Delete role. Only custom roles. Admin only."""
+    check_admin(key)
+    ok = role_delete(role_id)
+    if not ok:
+        return JSONResponse({"error": "role not found or is built-in"}, status_code=404)
+    return {"ok": True}
 
 
 @router.get("/keys")
 def ep_admin_keys(key: str = Query("")):
-    """List all keys from API_KEYS with their config (enabled, sections, endpoints). Admin only."""
+    """List all keys from API_KEYS with their config (enabled, sections, role_id, endpoints). Admin only."""
     check_admin(key)
-    # Build list: all labels from API_KEYS, merge with api_key_config
     configs = {c["label"]: c for c in api_key_config_list()}
     result = []
     for api_key, label in API_KEYS.items():
@@ -32,6 +99,7 @@ def ep_admin_keys(key: str = Query("")):
             "key_preview": api_key[:8] + "…" if len(api_key) > 8 else api_key,
             "enabled": cfg["enabled"] if cfg else True,
             "sections": cfg["sections"] if cfg else None,
+            "role_id": cfg.get("role_id") if cfg else None,
             "endpoints": cfg["endpoints"] if cfg else None,
         })
     return result
@@ -59,7 +127,7 @@ def ep_admin_key_set_enabled(label: str, key: str = Query(""), enabled: bool = Q
 
 @router.post("/keys/{label}/permissions")
 async def ep_admin_key_set_permissions(label: str, request: Request, key: str = Query("")):
-    """Set sections and/or endpoints for a key. Admin only. Body: {"sections": [...] or null, "endpoints": [...] or null}"""
+    """Set permissions for a key. Body: {sections?, role_id?, endpoints?}. If role_id set, sections come from role."""
     check_admin(key)
     if label not in [v for v in API_KEYS.values()]:
         return JSONResponse({"error": f"unknown label: {label}"}, status_code=400)
@@ -68,6 +136,9 @@ async def ep_admin_key_set_permissions(label: str, request: Request, key: str = 
     except Exception:
         body = {}
     sec = body.get("sections")
+    role_id = body.get("role_id")
     ep = body.get("endpoints")
-    api_key_config_set_permissions(label, sec, ep)
-    return {"ok": True, "label": label, "sections": sec, "endpoints": ep}
+    if role_id is not None:
+        role_id = int(role_id) if role_id else None
+    api_key_config_set_permissions(label, sections=sec, endpoints=ep, role_id=role_id)
+    return {"ok": True, "label": label, "sections": sec, "role_id": role_id, "endpoints": ep}
