@@ -1003,6 +1003,27 @@ def _build_update_fragments() -> dict:
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
+    voltage_rows = ""
+    voltage_summary = "Немає даних"
+    if deye_log:
+        last_v = deye_log[0]
+        v1, v2, v3 = last_v.get("grid_v_l1"), last_v.get("grid_v_l2"), last_v.get("grid_v_l3")
+        age_v = int(time.time() - last_v["ts"])
+        if any(x is not None for x in (v1, v2, v3)):
+            v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+            voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
+        for r in deye_log[:20]:
+            v1_s = f"{int(r['grid_v_l1'])}" if r.get("grid_v_l1") is not None else "—"
+            v2_s = f"{int(r['grid_v_l2'])}" if r.get("grid_v_l2") is not None else "—"
+            v3_s = f"{int(r['grid_v_l3'])}" if r.get("grid_v_l3") is not None else "—"
+            voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
+    voltage_html = (
+        f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
+        f'<details open data-ls-key="voltage_history_open" data-default-open="0">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
+        f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
+    )
+
     alert_html = ""
     if dtek.alert_cache:
         alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
@@ -1034,6 +1055,7 @@ def _build_update_fragments() -> dict:
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_voltage": voltage_html,
         "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
@@ -1586,6 +1608,28 @@ async def dashboard(key: str = Query("")):
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
+    # ─── Voltage (L1/L2/L3) standalone block ───
+    voltage_rows = ""
+    voltage_summary = "Немає даних"
+    if deye_log:
+        last_v = deye_log[0]
+        v1, v2, v3 = last_v.get("grid_v_l1"), last_v.get("grid_v_l2"), last_v.get("grid_v_l3")
+        age_v = int(time.time() - last_v["ts"])
+        if any(x is not None for x in (v1, v2, v3)):
+            v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
+            voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
+        for r in deye_log[:20]:
+            v1_s = f"{int(r['grid_v_l1'])}" if r.get("grid_v_l1") is not None else "—"
+            v2_s = f"{int(r['grid_v_l2'])}" if r.get("grid_v_l2") is not None else "—"
+            v3_s = f"{int(r['grid_v_l3'])}" if r.get("grid_v_l3") is not None else "—"
+            voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
+    voltage_html = (
+        f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
+        f'<details open data-ls-key="voltage_history_open" data-default-open="0">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
+        f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
+    )
+
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
     alert_ev_rows = ""
@@ -1713,6 +1757,7 @@ async def dashboard(key: str = Query("")):
 {(f'<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="plug_details" open data-ls-key="plug_open" data-default-open="1"><summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary><div id="pm-plug" style="margin:0.5rem 0"><span id="plug-state" style="color:var(--muted)">{plug_state}</span><button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button><button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button></div></details></div>' if "plug_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
+{_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі</h2></summary><div id="pm-voltage">{voltage_html}</div></details>', allowed) if "voltage_details" in allowed else ""}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
 {_wrap_dashboard_section("legend_details", legend_html, allowed) if "legend_details" in allowed else ""}

@@ -143,8 +143,8 @@ AUTO_DEPLOY_INTERVAL_SEC = int(os.getenv("AUTO_DEPLOY_INTERVAL_SEC", "60") or "6
 
 DASHBOARD_SECTION_ORDER = [
     "sched_details", "boiler_details", "ev_details", "links_details",
-    "alert_ev_details", "tg_details", "deye_details", "hb_details",
-    "legend_details", "avatars_details",
+    "alert_ev_details", "tg_details", "voltage_details", "deye_details",
+    "hb_details", "legend_details", "avatars_details",
 ]
 
 GIT_COMMIT = _git_version()

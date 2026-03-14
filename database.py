@@ -186,6 +186,12 @@ def init_db():
                     "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,1,?)",
                     (name, sections, time.time()),
                 )
+        # Migration: add voltage_details to "Без Deye" role if missing
+        for row in db.execute("SELECT id, sections FROM roles WHERE name='Без Deye' AND is_builtin=1").fetchall():
+            sec = json.loads(row["sections"]) if row["sections"] else []
+            if "voltage_details" not in sec:
+                updated = [s for s in ALL_SECTIONS if s != "deye_details"]
+                db.execute("UPDATE roles SET sections=? WHERE id=?", (json.dumps(updated), row["id"]))
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -208,8 +214,8 @@ def kv_set(key: str, val: str):
 # Sections: sched_details, boiler_details, ev_details, links_details, plug_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
-    "plug_details", "alert_ev_details", "tg_details", "deye_details",
-    "hb_details", "legend_details", "avatars_details",
+    "plug_details", "alert_ev_details", "tg_details", "voltage_details",
+    "deye_details", "hb_details", "legend_details", "avatars_details",
 ]
 
 SECTION_LABELS = {
@@ -220,6 +226,7 @@ SECTION_LABELS = {
     "plug_details": "Розумна розетка",
     "alert_ev_details": "Тривоги",
     "tg_details": "Історія Telegram",
+    "voltage_details": "Напруга мережі",
     "deye_details": "Deye інвертор",
     "hb_details": "Роутер / Heartbeats",
     "legend_details": "Легенда повідомлень",

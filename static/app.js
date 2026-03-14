@@ -237,6 +237,10 @@
         if (d.pm_hb_tbody !== undefined) { el = document.getElementById('pm-hb-tbody'); if (el) el.innerHTML = d.pm_hb_tbody; }
         if (d.pm_tg_tbody !== undefined) { el = document.getElementById('pm-tg-tbody'); if (el) el.innerHTML = d.pm_tg_tbody; }
         if (d.pm_alert_ev_tbody !== undefined) { el = document.getElementById('pm-alert-events-tbody'); if (el) el.innerHTML = d.pm_alert_ev_tbody; }
+        if (d.pm_voltage !== undefined) {
+          el = document.getElementById('pm-voltage');
+          if (el) el.innerHTML = d.pm_voltage;
+        }
         if (d.pm_deye) {
           el = document.getElementById('pm-deye');
           if (el) {
