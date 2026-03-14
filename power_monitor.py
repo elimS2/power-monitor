@@ -1019,7 +1019,7 @@ def _build_update_fragments() -> dict:
             voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
     voltage_html = (
         f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
-        f'<details open data-ls-key="voltage_history_open" data-default-open="0">'
+        f'<details data-ls-key="voltage_history_open" data-default-open="0">'
         f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
         f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
     )
@@ -1625,7 +1625,7 @@ async def dashboard(key: str = Query("")):
             voltage_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td></tr>\n'
     voltage_html = (
         f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
-        f'<details open data-ls-key="voltage_history_open" data-default-open="0">'
+        f'<details data-ls-key="voltage_history_open" data-default-open="0">'
         f'<summary style="font-size:0.85rem;color:var(--muted)">Історія напруги</summary>'
         f'<table><tr><th>Час</th><th>L1 В</th><th>L2 В</th><th>L3 В</th></tr>{voltage_rows}</table></details>'
     )
@@ -1750,6 +1750,7 @@ async def dashboard(key: str = Query("")):
 <div id="pm-alert">{alert_html}</div>
 
 <div id="dashboard-sections">
+{_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі</h2></summary><div id="pm-voltage">{voltage_html}</div></details>', allowed) if "voltage_details" in allowed else ""}
 {_wrap_dashboard_section("sched_details", schedule_html, allowed) if schedule_html else ""}
 {_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
 {f'<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="ev_details" open data-ls-key="ev_open" data-default-open="1"><summary><h2 style="display:inline">Події</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr><tbody id="pm-events-tbody">{ev_rows}</tbody></table></details></div>' if "ev_details" in allowed else ""}
@@ -1757,7 +1758,6 @@ async def dashboard(key: str = Query("")):
 {(f'<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="plug_details" open data-ls-key="plug_open" data-default-open="1"><summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary><div id="pm-plug" style="margin:0.5rem 0"><span id="plug-state" style="color:var(--muted)">{plug_state}</span><button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button><button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button></div></details></div>' if "plug_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
-{_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі</h2></summary><div id="pm-voltage">{voltage_html}</div></details>', allowed) if "voltage_details" in allowed else ""}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
 {_wrap_dashboard_section("legend_details", legend_html, allowed) if "legend_details" in allowed else ""}
