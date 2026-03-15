@@ -583,6 +583,17 @@ def events_in_range(ts_start: float, ts_end: float) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def count_voltage_problem_events_since(cutoff_ts: float) -> int:
+    """Count voltage_high, voltage_low, voltage_issue events since cutoff. Used for unstable detection."""
+    with _conn() as db:
+        row = db.execute(
+            """SELECT COUNT(*) as c FROM power_events
+               WHERE ts >= ? AND event IN ('voltage_high','voltage_low','voltage_issue')""",
+            (cutoff_ts,),
+        ).fetchone()
+    return row["c"] if row else 0
+
+
 def save_alert_event(event: str):
     with _conn() as db:
         db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))

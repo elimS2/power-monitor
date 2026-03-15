@@ -30,6 +30,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from config import (
     API_KEYS,
     AUTO_DEPLOY_ENABLED,
+    VOLTAGE_CONFIRM_COUNT,
+    VOLTAGE_PROBLEM_MIN_INTERVAL_SEC,
+    VOLTAGE_RECOVERY_TO_PROBLEM_MIN_SEC,
+    VOLTAGE_UNSTABLE_CHANGES_THRESHOLD,
+    VOLTAGE_UNSTABLE_SUPPRESS_SEC,
+    VOLTAGE_UNSTABLE_WINDOW_SEC,
     AUTO_DEPLOY_INTERVAL_SEC,
     AVATAR_ON_START,
     DEYE_POLL_LOG,
@@ -55,7 +61,9 @@ from config import (
 )
 from database import (
     api_key_config_list,
+    api_key_get_plain,
     boiler_schedule_for_dates,
+    count_voltage_problem_events_since,
     cleanup_old,
     deye_battery_episodes_for_month,
     deye_cumulative_metrics,
@@ -168,13 +176,41 @@ def _setup_deye_poll_log():
     deye_poll_log.addHandler(handler)
 
 
+# ─── Public dashboard URL (for TG button) ─────────────────────
+
+def _get_public_dashboard_url() -> str | None:
+    """Return full dashboard URL for label 'public', or None."""
+    base = (WEBHOOK_HOST or "https://power.elims.pp.ua").rstrip("/")
+    for key, label in API_KEYS.items():
+        if label == "public":
+            return f"{base}/?key={key}"
+    plain = api_key_get_plain("public")
+    if plain:
+        return f"{base}/?key={plain}"
+    return None
+
+
+def _tg_inline_button() -> dict | None:
+    """Inline keyboard with 'Дивитись онлайн' button if public key exists."""
+    url = _get_public_dashboard_url()
+    if not url:
+        return None
+    return {
+        "inline_keyboard": [
+            [{"text": "📊 Дивитись онлайн", "url": url}]
+        ]
+    }
+
+
 # ─── Channel photo ───────────────────────────────────────────
 
-async def tg_send(text: str, chat_id: str = "") -> int:
+async def tg_send(text: str, chat_id: str = "", reply_markup: dict | None = None) -> int:
     """Send message, return message_id (0 on failure)."""
     target = chat_id or TG_CHAT_ID
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": target, "text": text}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(url, json=payload)
@@ -204,10 +240,13 @@ def _photo_for_voltage(kind: str) -> bytes | None:
     return path.read_bytes() if path.exists() else None
 
 
-async def _delete_service_msg(client: httpx.AsyncClient, api: str, message: str | None = None):
+async def _delete_service_msg(client: httpx.AsyncClient, api: str, message: str | None = None, reply_markup: dict | None = None):
     """Send message (or '.'), delete service msg before it. If message provided, keep it; else delete our msg too."""
     text = message if message is not None else "."
-    r = await client.post(f"{api}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text})
+    payload = {"chat_id": TG_CHAT_ID, "text": text}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    r = await client.post(f"{api}/sendMessage", json=payload)
     if r.status_code == 200:
         if message is not None:
             save_tg_log(TG_CHAT_ID, text, r.status_code)
@@ -234,11 +273,12 @@ async def update_chat_photo(is_down: bool, voltage: str | None = None, message_t
                 files={"photo": ("status.png", photo, "image/png")},
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
+            btn = _tg_inline_button() if message_to_send else None
             if DELETE_PHOTO_MSG and r.status_code == 200:
                 await asyncio.sleep(0.5)
-                await _delete_service_msg(client, api, message_to_send)
+                await _delete_service_msg(client, api, message_to_send, reply_markup=btn)
             elif message_to_send:
-                await tg_send(message_to_send)
+                await tg_send(message_to_send, reply_markup=btn)
     except Exception as e:
         log.error("setChatPhoto failed: %s", e)
 
@@ -274,6 +314,42 @@ async def setup_tg_bot():
 _lock = asyncio.Lock()
 
 
+def _voltage_suppressed() -> bool:
+    """True if in unstable suppress window."""
+    until = kv_get("voltage_unstable_until")
+    if not until:
+        return False
+    try:
+        return time.time() < float(until)
+    except (TypeError, ValueError):
+        return False
+
+
+def _voltage_can_send_problem() -> bool:
+    """Check min interval: 5min since last problem, 3min since last recovery."""
+    now = time.time()
+    pt = kv_get("voltage_problem_ts")
+    if pt:
+        try:
+            if now - float(pt) < VOLTAGE_PROBLEM_MIN_INTERVAL_SEC:
+                return False
+        except (TypeError, ValueError):
+            pass
+    rt = kv_get("voltage_recovery_ts")
+    if rt:
+        try:
+            if now - float(rt) < VOLTAGE_RECOVERY_TO_PROBLEM_MIN_SEC:
+                return False
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
+def _voltage_can_send_recovery() -> bool:
+    """Recovery has no min interval, but we check suppress."""
+    return not _voltage_suppressed()
+
+
 async def analyze():
     async with _lock:
         rows = recent_heartbeats(OUTAGE_CONFIRM_COUNT)
@@ -290,9 +366,16 @@ async def analyze():
 
             if phases_ok:
                 if voltage_alerted:
+                    ok_count = int(kv_get("voltage_ok_count") or "0") + 1
+                    kv_set("voltage_ok_count", str(ok_count))
+                    kv_set("voltage_problem_count", "0")
+                    if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
+                        return
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
+                    kv_set("voltage_recovery_ts", str(now))
+                    kv_set("voltage_ok_count", "0")
                     kv_set("power_down", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
@@ -333,6 +416,7 @@ async def analyze():
                     await update_chat_photo(False, message_to_send=msg)
             else:
                 if voltage_alerted and phases_mixed:
+                    kv_set("voltage_ok_count", "0")
                     return
                 if voltage_alerted and not phases_mixed:
                     # Була вже висока напруга (напр. 1 фаза працювала з >240В), тепер усі фази 0.
@@ -375,22 +459,43 @@ async def analyze():
                 if not voltage_alerted:
                     now = time.time()
                     if phases_mixed:
-                        trend = deye_voltage_trend(1000)
-                        v = last_nonzero_grid_voltage()
-                        parts_v = []
-                        if v:
-                            for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
-                                val = v.get(key)
-                                parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
-                        v_str = ", ".join(parts_v) if parts_v else ""
-                        s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
-                        msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
-                        if v_str:
-                            msg += f"\n\U0001f4a0 Напруга: {v_str}"
-                        save_event(s["event"])
-                        kv_set("voltage_anomaly", "1")
-                        log.warning("VOLTAGE ANOMALY detected (phases_only)")
-                        await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
+                        if _voltage_suppressed():
+                            return
+                        if not _voltage_can_send_problem():
+                            return
+                        problem_count = int(kv_get("voltage_problem_count") or "0") + 1
+                        kv_set("voltage_problem_count", str(problem_count))
+                        kv_set("voltage_ok_count", "0")
+                        if problem_count < VOLTAGE_CONFIRM_COUNT:
+                            return
+                        kv_set("voltage_problem_count", "0")
+                        cutoff = now - VOLTAGE_UNSTABLE_WINDOW_SEC
+                        n_recent = count_voltage_problem_events_since(cutoff)
+                        if n_recent >= VOLTAGE_UNSTABLE_CHANGES_THRESHOLD:
+                            kv_set("voltage_unstable_until", str(now + VOLTAGE_UNSTABLE_SUPPRESS_SEC))
+                            kv_set("voltage_anomaly", "1")
+                            save_event("voltage_issue")
+                            log.warning("VOLTAGE UNSTABLE — suppress 15 min")
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
+                            await update_chat_photo(True, voltage=None, message_to_send=msg)
+                        else:
+                            trend = deye_voltage_trend(1000)
+                            v = last_nonzero_grid_voltage()
+                            parts_v = []
+                            if v:
+                                for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                                    val = v.get(key)
+                                    parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                            v_str = ", ".join(parts_v) if parts_v else ""
+                            s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+                            msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
+                            if v_str:
+                                msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                            save_event(s["event"])
+                            kv_set("voltage_anomaly", "1")
+                            kv_set("voltage_problem_ts", str(now))
+                            log.warning("VOLTAGE ANOMALY detected (phases_only)")
+                            await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
                     else:
                         slot = dtek.current_slot_status()
                         is_scheduled = slot in ("maybe", "off") if slot else False
@@ -432,30 +537,57 @@ async def analyze():
 
             # Якщо Deye бачить напругу на будь-якій фазі — це не відключення, а аномалія напруги
             if has_grid_voltage_now() and not voltage_alerted:
-                trend = deye_voltage_trend(1000)
-                v = last_nonzero_grid_voltage()
-                parts_v = []
-                if v:
-                    for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
-                        val = v.get(key)
-                        parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
-                v_str = ", ".join(parts_v) if parts_v else ""
-
-                s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
-                msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
-                if v_str:
-                    msg += f"\n\U0001f4a0 Напруга: {v_str}"
-                save_event(s["event"])
-                kv_set("voltage_anomaly", "1")
-                log.warning("VOLTAGE ANOMALY detected (not power outage)")
-                await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
+                if _voltage_suppressed():
+                    return
+                if not _voltage_can_send_problem():
+                    return
+                problem_count = int(kv_get("voltage_problem_count") or "0") + 1
+                kv_set("voltage_problem_count", str(problem_count))
+                kv_set("voltage_ok_count", "0")
+                if problem_count < VOLTAGE_CONFIRM_COUNT:
+                    return
+                kv_set("voltage_problem_count", "0")
+                cutoff = now - VOLTAGE_UNSTABLE_WINDOW_SEC
+                n_recent = count_voltage_problem_events_since(cutoff)
+                if n_recent >= VOLTAGE_UNSTABLE_CHANGES_THRESHOLD:
+                    kv_set("voltage_unstable_until", str(now + VOLTAGE_UNSTABLE_SUPPRESS_SEC))
+                    kv_set("voltage_anomaly", "1")
+                    save_event("voltage_issue")
+                    log.warning("VOLTAGE UNSTABLE — suppress 15 min")
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
+                    await update_chat_photo(True, voltage=None, message_to_send=msg)
+                else:
+                    trend = deye_voltage_trend(1000)
+                    v = last_nonzero_grid_voltage()
+                    parts_v = []
+                    if v:
+                        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+                            val = v.get(key)
+                            parts_v.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+                    v_str = ", ".join(parts_v) if parts_v else ""
+                    s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
+                    msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
+                    if v_str:
+                        msg += f"\n\U0001f4a0 Напруга: {v_str}"
+                    save_event(s["event"])
+                    kv_set("voltage_anomaly", "1")
+                    kv_set("voltage_problem_ts", str(now))
+                    log.warning("VOLTAGE ANOMALY detected (not power outage)")
+                    await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
                 return
 
             if voltage_alerted and has_grid_voltage_now():
                 if has_all_three_phases_voltage():
+                    ok_count = int(kv_get("voltage_ok_count") or "0") + 1
+                    kv_set("voltage_ok_count", str(ok_count))
+                    kv_set("voltage_problem_count", "0")
+                    if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
+                        return
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
+                    kv_set("voltage_recovery_ts", str(now))
+                    kv_set("voltage_ok_count", "0")
                     kv_set("power_down", "0")
                     save_event("up")
                     log.info("VOLTAGE RESTORED (all 3 phases)")
@@ -474,6 +606,8 @@ async def analyze():
                     if nxt:
                         msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
+                else:
+                    kv_set("voltage_ok_count", "0")
                 return
 
             # Справжнє відключення: напруги немає або немає даних Deye
@@ -579,7 +713,7 @@ async def watchdog():
         kv_set("stale_alerted", "1")
         minutes = int(age // 60)
         log.warning("No heartbeat for %dm", minutes)
-        await tg_send(f"\u26a0\ufe0f Роутер не відповідає вже {minutes} хв")
+        await tg_send(f"\u26a0\ufe0f Роутер не відповідає вже {minutes} хв", reply_markup=_tg_inline_button())
     elif age <= STALE_THRESHOLD_SEC and alerted:
         kv_set("stale_alerted", "0")
 
