@@ -1247,7 +1247,7 @@ def _key_expired_html() -> str:
 <html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Термін дії посилання — Power Monitor</title>
 <link rel="stylesheet" href="/style.css">
-</head><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;padding:1.5rem;text-align:center">
+</head><body class="pm-ready" style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;padding:1.5rem;text-align:center">
 <div style="max-width:360px">
 <p style="font-size:1.2rem;margin:0 0 1rem;color:#f87171">⚠️ Термін дії посилання закінчився</p>
 <p style="color:var(--muted);margin:0">Отримайте нове посилання там, де отримали це.</p>
