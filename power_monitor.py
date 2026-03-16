@@ -1933,6 +1933,8 @@ async def admin_page(key: str = Query("")):
 
     check_admin(key)
     voltage_notify_enabled = kv_get("tg_voltage_notify") != "0"
+    tg_bot_id = TG_BOT_TOKEN.split(":")[0] if TG_BOT_TOKEN and ":" in str(TG_BOT_TOKEN) else "—"
+    tg_chat_id = TG_CHAT_ID if TG_CHAT_ID else "—"
     configs = {c["label"]: c for c in api_key_config_list()}
     roles_data = role_list()
     qk = quote(key, safe="")
@@ -2037,6 +2039,11 @@ async def admin_page(key: str = Query("")):
   <span id="admin-voltage-notify-status" class="{'up' if voltage_notify_enabled else 'down'}">{'✅ Увімкнено' if voltage_notify_enabled else '❌ Вимкнено'}</span>
   <button type="button" id="admin-voltage-notify-toggle" class="btn" data-enabled="{str(voltage_notify_enabled).lower()}">{'Вимкнути' if voltage_notify_enabled else 'Увімкнути'}</button>
 </div>
+<p style="margin-top:1rem;font-size:0.9rem;color:var(--muted)">
+  Бот: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_bot_id))}</code>
+  &nbsp;·&nbsp;
+  Канал: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_chat_id))}</code>
+</p>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
