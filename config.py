@@ -58,12 +58,10 @@ PHASES_ONLY = os.getenv("PHASES_ONLY", "0") == "1"
 # Both plugs must be dead for this many consecutive heartbeats → outage (ignored if PHASES_ONLY)
 OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
 
-# Voltage anti-spam: require N consecutive readings before notify
-VOLTAGE_CONFIRM_COUNT = 2
-# Min 5 min between "problem" notifications
-VOLTAGE_PROBLEM_MIN_INTERVAL_SEC = 300
-# Min 3 min after "recovery" before next "problem"
-VOLTAGE_RECOVERY_TO_PROBLEM_MIN_SEC = 180
+# Voltage anti-spam: require N consecutive readings before notify (3 ≈ 30s at heartbeat rate)
+VOLTAGE_CONFIRM_COUNT = 3
+# One event per episode: 60 min between same-type notifications
+VOLTAGE_EPISODE_MIN_INTERVAL_SEC = 3600
 # Unstable mode: if ≥3 voltage state changes in 10 min → suppress for 15 min
 VOLTAGE_UNSTABLE_CHANGES_THRESHOLD = 3
 VOLTAGE_UNSTABLE_WINDOW_SEC = 600

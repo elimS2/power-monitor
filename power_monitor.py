@@ -31,8 +31,7 @@ from config import (
     API_KEYS,
     AUTO_DEPLOY_ENABLED,
     VOLTAGE_CONFIRM_COUNT,
-    VOLTAGE_PROBLEM_MIN_INTERVAL_SEC,
-    VOLTAGE_RECOVERY_TO_PROBLEM_MIN_SEC,
+    VOLTAGE_EPISODE_MIN_INTERVAL_SEC,
     VOLTAGE_UNSTABLE_CHANGES_THRESHOLD,
     VOLTAGE_UNSTABLE_SUPPRESS_SEC,
     VOLTAGE_UNSTABLE_WINDOW_SEC,
@@ -64,6 +63,7 @@ from database import (
     api_key_get_plain,
     boiler_schedule_for_dates,
     count_voltage_problem_events_since,
+    last_voltage_problem_ts,
     cleanup_old,
     deye_battery_episodes_for_month,
     deye_cumulative_metrics,
@@ -334,28 +334,23 @@ def _voltage_suppressed() -> bool:
 
 
 def _voltage_can_send_problem() -> bool:
-    """Check min interval: 5min since last problem, 3min since last recovery."""
+    """One problem per episode: 60 min since last voltage problem EVENT (from DB)."""
     now = time.time()
-    pt = kv_get("voltage_problem_ts")
-    if pt:
-        try:
-            if now - float(pt) < VOLTAGE_PROBLEM_MIN_INTERVAL_SEC:
-                return False
-        except (TypeError, ValueError):
-            pass
-    rt = kv_get("voltage_recovery_ts")
-    if rt:
-        try:
-            if now - float(rt) < VOLTAGE_RECOVERY_TO_PROBLEM_MIN_SEC:
-                return False
-        except (TypeError, ValueError):
-            pass
+    last_ts = last_voltage_problem_ts()
+    if last_ts is not None and now - last_ts < VOLTAGE_EPISODE_MIN_INTERVAL_SEC:
+        return False
     return True
 
 
 def _voltage_can_send_recovery() -> bool:
-    """Recovery has no min interval, but we check suppress."""
-    return not _voltage_suppressed()
+    """One recovery per episode: 60 min since last voltage problem EVENT (from DB)."""
+    if _voltage_suppressed():
+        return False
+    now = time.time()
+    last_ts = last_voltage_problem_ts()
+    if last_ts is not None and now - last_ts < VOLTAGE_EPISODE_MIN_INTERVAL_SEC:
+        return False
+    return True
 
 
 async def analyze():
@@ -382,7 +377,6 @@ async def analyze():
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
-                    kv_set("voltage_recovery_ts", str(now))
                     kv_set("voltage_ok_count", "0")
                     kv_set("power_down", "0")
                     save_event("up")
@@ -501,7 +495,6 @@ async def analyze():
                                 msg += f"\n\U0001f4a0 Напруга: {v_str}"
                             save_event(s["event"])
                             kv_set("voltage_anomaly", "1")
-                            kv_set("voltage_problem_ts", str(now))
                             log.warning("VOLTAGE ANOMALY detected (phases_only)")
                             await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                     else:
@@ -509,6 +502,16 @@ async def analyze():
                         is_scheduled = slot in ("maybe", "off") if slot else False
                         trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
                         if trend == "high":
+                            if _voltage_suppressed():
+                                return
+                            if not _voltage_can_send_problem():
+                                return
+                            problem_count = int(kv_get("voltage_problem_count") or "0") + 1
+                            kv_set("voltage_problem_count", str(problem_count))
+                            kv_set("voltage_ok_count", "0")
+                            if problem_count < VOLTAGE_CONFIRM_COUNT:
+                                return
+                            kv_set("voltage_problem_count", "0")
                             s = VOLTAGE_STATUS["high"]
                             kv_set("voltage_anomaly", "1")
                             save_event(s["event"])
@@ -579,7 +582,6 @@ async def analyze():
                         msg += f"\n\U0001f4a0 Напруга: {v_str}"
                     save_event(s["event"])
                     kv_set("voltage_anomaly", "1")
-                    kv_set("voltage_problem_ts", str(now))
                     log.warning("VOLTAGE ANOMALY detected (not power outage)")
                     await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                 return
@@ -594,7 +596,6 @@ async def analyze():
                     now = time.time()
                     prev = recent_events(1)
                     kv_set("voltage_anomaly", "0")
-                    kv_set("voltage_recovery_ts", str(now))
                     kv_set("voltage_ok_count", "0")
                     kv_set("power_down", "0")
                     save_event("up")
@@ -623,6 +624,16 @@ async def analyze():
             is_scheduled = slot in ("maybe", "off") if slot else False
             trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
             if trend == "high":
+                if _voltage_suppressed():
+                    return
+                if not _voltage_can_send_problem():
+                    return
+                problem_count = int(kv_get("voltage_problem_count") or "0") + 1
+                kv_set("voltage_problem_count", str(problem_count))
+                kv_set("voltage_ok_count", "0")
+                if problem_count < VOLTAGE_CONFIRM_COUNT:
+                    return
+                kv_set("voltage_problem_count", "0")
                 s = VOLTAGE_STATUS["high"]
                 kv_set("voltage_anomaly", "1")
                 save_event(s["event"])

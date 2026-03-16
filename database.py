@@ -594,6 +594,17 @@ def count_voltage_problem_events_since(cutoff_ts: float) -> int:
     return row["c"] if row else 0
 
 
+def last_voltage_problem_ts() -> float | None:
+    """Timestamp of the most recent voltage_high/low/issue event. For 60-min episode interval."""
+    with _conn() as db:
+        row = db.execute(
+            """SELECT ts FROM power_events
+               WHERE event IN ('voltage_high','voltage_low','voltage_issue')
+               ORDER BY ts DESC LIMIT 1""",
+        ).fetchone()
+    return float(row["ts"]) if row else None
+
+
 def save_alert_event(event: str):
     with _conn() as db:
         db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, time.time()))
