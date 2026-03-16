@@ -14,11 +14,12 @@ log = logging.getLogger("power_monitor")
 
 
 @router.post("/api/test-telegram")
-async def ep_test_telegram(key: str = Query("")):
+async def ep_test_telegram(key: str = Query(""), to_channel: bool = Query(False)):
+    """Send current status to Telegram. to_channel=1 → main channel, else test or main."""
     check_permission(key, "dashboard")
     from power_monitor import _power_status_text, _tg_inline_button, tg_send
 
-    target = TG_TEST_CHAT_ID or TG_CHAT_ID
+    target = TG_CHAT_ID if to_channel else (TG_TEST_CHAT_ID or TG_CHAT_ID)
     status = _power_status_text()
     await tg_send(status, chat_id=target, reply_markup=_tg_inline_button())
     return {"ok": True, "sent_to": target}

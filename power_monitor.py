@@ -2044,6 +2044,8 @@ async def admin_page(key: str = Query("")):
   &nbsp;·&nbsp;
   Канал: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_chat_id))}</code>
 </p>
+<button type="button" id="admin-send-status-btn" class="btn" style="margin-top:0.5rem">Надіслати статус в канал</button>
+<span id="admin-send-status-feedback" style="margin-left:0.5rem;font-size:0.9rem"></span>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
@@ -2107,6 +2109,19 @@ async def admin_page(key: str = Query("")):
             statusEl.className = d.enabled ? 'up' : 'down';
           }}
         }});
+    }});
+  }}
+  var sendStatusBtn = document.getElementById('admin-send-status-btn');
+  if (sendStatusBtn) {{
+    sendStatusBtn.addEventListener('click', function() {{
+      var fb = document.getElementById('admin-send-status-feedback');
+      if (fb) {{ fb.textContent = '…'; fb.style.color = 'var(--muted)'; }}
+      fetch('/api/test-telegram' + qs() + '&to_channel=1', {{ method: 'POST' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{
+          if (fb) {{ fb.textContent = d.ok ? 'Відправлено' : (d.detail || 'Помилка'); fb.style.color = d.ok ? '#6ee7b7' : '#fca5a5'; }}
+        }})
+        .catch(function(e) {{ if (fb) {{ fb.textContent = 'Помилка'; fb.style.color = '#fca5a5'; }} }});
     }});
   }}
   document.querySelectorAll('.admin-key-toggle').forEach(function(btn) {{
