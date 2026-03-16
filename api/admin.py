@@ -10,6 +10,8 @@ from api.deps import check_admin
 from config import API_KEYS
 from database import (
     ALL_SECTIONS,
+    kv_get,
+    kv_set,
     SECTION_LABELS,
     api_key_config_list,
     api_key_config_set_enabled,
@@ -205,6 +207,22 @@ def ep_admin_key_set_enabled(label: str, key: str = Query(""), enabled: bool = Q
         return JSONResponse({"error": f"unknown label: {label}"}, status_code=400)
     api_key_config_set_enabled(label, enabled)
     return {"ok": True, "label": label, "enabled": enabled}
+
+
+@router.get("/voltage-notify")
+def ep_admin_voltage_notify_get(key: str = Query("")):
+    """Get voltage notification setting. Admin only."""
+    check_admin(key)
+    enabled = kv_get("tg_voltage_notify") != "0"
+    return {"enabled": enabled}
+
+
+@router.post("/voltage-notify")
+def ep_admin_voltage_notify_set(key: str = Query(""), enabled: bool = Query(True)):
+    """Enable or disable Telegram voltage notifications. Admin only."""
+    check_admin(key)
+    kv_set("tg_voltage_notify", "1" if enabled else "0")
+    return {"ok": True, "enabled": enabled}
 
 
 @router.post("/keys/{label}/permissions")

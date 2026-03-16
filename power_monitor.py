@@ -257,8 +257,16 @@ async def _delete_service_msg(client: httpx.AsyncClient, api: str, message: str 
                 await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
 
 
-async def update_chat_photo(is_down: bool, voltage: str | None = None, message_to_send: str | None = None):
-    """voltage='high'|'low' overrides is_down. If message_to_send, send it instead of dot and keep it."""
+def _tg_voltage_notify_enabled() -> bool:
+    """Whether to send voltage notifications to Telegram. Admin toggle in /admin."""
+    return kv_get("tg_voltage_notify") != "0"
+
+
+async def update_chat_photo(is_down: bool, voltage: str | None = None, message_to_send: str | None = None, is_voltage_notification: bool = False):
+    """voltage='high'|'low' overrides is_down. If message_to_send, send it instead of dot and keep it.
+    When is_voltage_notification=True and voltage notifications disabled in admin, skip."""
+    if is_voltage_notification and not _tg_voltage_notify_enabled():
+        return
     if voltage:
         pic = _photo_for_voltage(voltage)
         photo = pic if pic else _PHOTO_OFF
@@ -393,7 +401,7 @@ async def analyze():
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
                         msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
-                    await update_chat_photo(False, message_to_send=msg)
+                    await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
                 elif is_down:
                     now = time.time()
                     prev = recent_events(1)
@@ -477,7 +485,7 @@ async def analyze():
                             save_event("voltage_issue")
                             log.warning("VOLTAGE UNSTABLE — suppress 15 min")
                             msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
-                            await update_chat_photo(True, voltage=None, message_to_send=msg)
+                            await update_chat_photo(True, voltage=None, message_to_send=msg, is_voltage_notification=True)
                         else:
                             trend = deye_voltage_trend(1000)
                             v = last_nonzero_grid_voltage()
@@ -495,7 +503,7 @@ async def analyze():
                             kv_set("voltage_anomaly", "1")
                             kv_set("voltage_problem_ts", str(now))
                             log.warning("VOLTAGE ANOMALY detected (phases_only)")
-                            await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
+                            await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                     else:
                         slot = dtek.current_slot_status()
                         is_scheduled = slot in ("maybe", "off") if slot else False
@@ -506,7 +514,7 @@ async def analyze():
                             save_event(s["event"])
                             log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
                             msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
-                            await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg)
+                            await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                         else:
                             kv_set("voltage_anomaly", "0")
                             prev = recent_events(1)
@@ -555,7 +563,7 @@ async def analyze():
                     save_event("voltage_issue")
                     log.warning("VOLTAGE UNSTABLE — suppress 15 min")
                     msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
-                    await update_chat_photo(True, voltage=None, message_to_send=msg)
+                    await update_chat_photo(True, voltage=None, message_to_send=msg, is_voltage_notification=True)
                 else:
                     trend = deye_voltage_trend(1000)
                     v = last_nonzero_grid_voltage()
@@ -573,7 +581,7 @@ async def analyze():
                     kv_set("voltage_anomaly", "1")
                     kv_set("voltage_problem_ts", str(now))
                     log.warning("VOLTAGE ANOMALY detected (not power outage)")
-                    await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg)
+                    await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                 return
 
             if voltage_alerted and has_grid_voltage_now():
@@ -605,7 +613,7 @@ async def analyze():
                     nxt = dtek.next_schedule_transition(looking_for_on=False)
                     if nxt:
                         msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
-                    await update_chat_photo(False, message_to_send=msg)
+                    await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
                 else:
                     kv_set("voltage_ok_count", "0")
                 return
@@ -620,7 +628,7 @@ async def analyze():
                 save_event(s["event"])
                 log.warning("VOLTAGE HIGH detected (all phases gone, was >240 before)")
                 msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']} (усі фази зникли)"
-                await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg)
+                await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                 return
             kv_set("voltage_anomaly", "0")
             prev = recent_events(1)
@@ -830,11 +838,11 @@ async def lifespan(_app: FastAPI):
         if kv_get("voltage_anomaly") == "1" and has_grid_voltage_now():
             trend = deye_voltage_trend(1000)
             if trend == "high":
-                await update_chat_photo(False, voltage="high")
+                await update_chat_photo(False, voltage="high", is_voltage_notification=True)
             elif trend == "low":
-                await update_chat_photo(False, voltage="low")
+                await update_chat_photo(False, voltage="low", is_voltage_notification=True)
             else:
-                await update_chat_photo(True)
+                await update_chat_photo(True, is_voltage_notification=True)
         else:
             await update_chat_photo(kv_get("power_down") == "1")
     else:
@@ -1924,6 +1932,7 @@ async def admin_page(key: str = Query("")):
     from database import ALL_SECTIONS, SECTION_LABELS, api_key_config_list, api_key_list, role_list
 
     check_admin(key)
+    voltage_notify_enabled = kv_get("tg_voltage_notify") != "0"
     configs = {c["label"]: c for c in api_key_config_list()}
     roles_data = role_list()
     qk = quote(key, safe="")
@@ -2002,6 +2011,7 @@ async def admin_page(key: str = Query("")):
 <div class="admin-tabs" style="margin-bottom:1.5rem">
   <button type="button" class="admin-tab btn active" data-tab="keys">Ключі API</button>
   <button type="button" class="admin-tab btn" data-tab="roles">Ролі</button>
+  <button type="button" class="admin-tab btn" data-tab="notify">Сповіщення</button>
 </div>
 <div id="admin-tab-keys">
 <h2>Ключі API</h2>
@@ -2019,6 +2029,14 @@ async def admin_page(key: str = Query("")):
 <tr><th>Назва</th><th>Секції</th><th>Тип</th><th>Дії</th></tr>
 {roles_table_rows}
 </table>
+</div>
+<div id="admin-tab-notify" style="display:none">
+<h2>Сповіщення в Telegram</h2>
+<p style="margin-bottom:1rem;color:var(--muted)">Вмикайте та вимикайте сповіщення про напругу (висока/низька напруга, нестабільність).</p>
+<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+  <span id="admin-voltage-notify-status" class="{'up' if voltage_notify_enabled else 'down'}">{'✅ Увімкнено' if voltage_notify_enabled else '❌ Вимкнено'}</span>
+  <button type="button" id="admin-voltage-notify-toggle" class="btn" data-enabled="{str(voltage_notify_enabled).lower()}">{'Вимкнути' if voltage_notify_enabled else 'Увімкнути'}</button>
+</div>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
@@ -2064,8 +2082,26 @@ async def admin_page(key: str = Query("")):
       btn.classList.add('active');
       document.getElementById('admin-tab-keys').style.display = btn.dataset.tab === 'keys' ? 'block' : 'none';
       document.getElementById('admin-tab-roles').style.display = btn.dataset.tab === 'roles' ? 'block' : 'none';
+      document.getElementById('admin-tab-notify').style.display = btn.dataset.tab === 'notify' ? 'block' : 'none';
     }});
   }});
+  var voltageToggle = document.getElementById('admin-voltage-notify-toggle');
+  if (voltageToggle) {{
+    voltageToggle.addEventListener('click', function() {{
+      var enabled = voltageToggle.dataset.enabled !== 'true';
+      fetch('/api/admin/voltage-notify' + qs() + '&enabled=' + enabled, {{ method: 'POST' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{
+          voltageToggle.dataset.enabled = d.enabled;
+          voltageToggle.textContent = d.enabled ? 'Вимкнути' : 'Увімкнути';
+          var statusEl = document.getElementById('admin-voltage-notify-status');
+          if (statusEl) {{
+            statusEl.textContent = d.enabled ? '\\u2705 Увімкнено' : '\\u274c Вимкнено';
+            statusEl.className = d.enabled ? 'up' : 'down';
+          }}
+        }});
+    }});
+  }}
   document.querySelectorAll('.admin-key-toggle').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
       var label = btn.dataset.label;
