@@ -254,11 +254,11 @@ def kv_set(key: str, val: str):
 
 # ─── API key config ─────────────────────────────────────────────
 
-# Permission groups for endpoints: dashboard, dashboard_full, heartbeat, deye, plug, debug, admin
-# Sections: sched_details, boiler_details, ev_details, links_details, plug_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
+# Permission groups for endpoints: dashboard, dashboard_full, heartbeat, deye, debug, admin
+# Sections: sched_details, boiler_details, ev_details, links_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
-    "plug_details", "alert_ev_details", "tg_details", "voltage_details",
+    "alert_ev_details", "tg_details", "voltage_details",
     "deye_details", "hb_details", "legend_details", "avatars_details",
 ]
 
@@ -267,7 +267,6 @@ SECTION_LABELS = {
     "boiler_details": "Графік котельні",
     "ev_details": "Події",
     "links_details": "Посилання",
-    "plug_details": "Розумна розетка",
     "alert_ev_details": "Тривоги",
     "tg_details": "Історія Telegram",
     "voltage_details": "Напруга мережі",

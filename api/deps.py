@@ -33,7 +33,7 @@ def check_admin(key: str) -> None:
         raise HTTPException(403, "admin only")
 
 
-# Permission tags for endpoints: dashboard, heartbeat, deye, plug, debug, admin
+# Permission tags for endpoints: dashboard, heartbeat, deye, debug, admin
 # Default for keys without config: ["dashboard", "heartbeat"]
 
 
@@ -44,7 +44,7 @@ def check_permission(key: str, required: str) -> None:
     if label == "admin":
         return
     cfg = api_key_config_get(label or "")
-    allowed = cfg["endpoints"] if cfg and cfg["endpoints"] else ["dashboard", "heartbeat", "plug"]
+    allowed = cfg["endpoints"] if cfg and cfg["endpoints"] else ["dashboard", "heartbeat"]
     if required not in allowed and "admin" not in allowed:
         raise HTTPException(403, f"permission required: {required}")
 

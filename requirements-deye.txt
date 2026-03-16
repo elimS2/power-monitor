@@ -1,4 +1,0 @@
-# For deye_to_power_monitor.py (run locally)
-pymodbus>=3.0
-pysolarmanv5>=2.0
-requests>=2.28

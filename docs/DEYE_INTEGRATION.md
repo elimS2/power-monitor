@@ -2,7 +2,9 @@
 
 ## Огляд
 
-Інвертор Deye (Deye SUN-20K-SG05LP3 3-фазний) підключається до Power Monitor через локальний скрипт `deye_to_power_monitor.py`. Скрипт має запускатися на комп'ютері **у тій самій мережі**, що й інвертор (домашній ПК, Raspberry Pi тощо). Він читає дані по Modbus і відправляє їх на сервер Power Monitor через HTTPS кожні 30 секунд.
+Інвертор Deye (Deye SUN-20K-SG05LP3 3-фазний) підключається до Power Monitor через **server-side polling**: сервер Power Monitor напряму опитує інвертор через Modbus/Solarman. Для цього потрібен проброс порту на роутері (див. [DEYE_PORT_FORWARD.md](DEYE_PORT_FORWARD.md)).
+
+Модуль `deye_reader.py` читає дані по Modbus і зберігає їх у БД.
 
 ---
 
@@ -19,42 +21,26 @@
 
 ## Solarman V5 — поточна конфігурація
 
-Інвертор спілкується через вбудований WiFi-модуль по протоколу Solarman. Доступ до інвертора можливий по IP у локальній мережі.
+Інвертор спілкується через вбудований WiFi-модуль по протоколу Solarman. Доступ до інвертора можливий по IP у локальній мережі. Потрібен проброс порту з сервера Power Monitor на інвертор (див. DEYE_PORT_FORWARD.md).
 
 ### Вимоги
 
-1. **Серійний номер WiFi-модуля** (`DEYE_SERIAL`) — його можна взяти:
+1. **Серійний номер WiFi-модуля** (`DEYE_POLL_SERIAL`) — його можна взяти:
    - з застосунку Deye Cloud (номер пристрою),
    - з наклейки на WiFi-модулі.
 
-2. **IP інвертора** — статичний DHCP або фіксована адреса в LAN.
+2. **IP інвертора** — статичний DHCP або фіксована адреса в LAN (використовується в NAT на MikroTik).
 
-### Залежності
-
-```bash
-pip install pysolarmanv5 requests python-dotenv
-```
-
-### Конфігурація (.env)
+### Конфігурація (.env на сервері)
 
 ```env
-DEYE_IP=192.168.88.36
-DEYE_SERIAL=3586536011
-POWER_MONITOR_URL=https://power.elims.pp.ua
-POWER_MONITOR_KEY=<API key з Power Monitor>
+DEYE_POLL_IP=192.168.88.36
+DEYE_POLL_PORT=18899
+DEYE_POLL_SERIAL=3586536011
+DEYE_POLL_INTERVAL_SEC=30
 ```
 
-- `DEYE_PORT` — за замовчуванням 8899 (можна не вказувати)
-- `INTERVAL_SEC` — інтервал відправки в секундах (за замовчуванням 30)
-
-### Запуск
-
-```bash
-cd power-monitor
-python deye_to_power_monitor.py
-```
-
-Скрипт працює в нескінченному циклі. Зупинка — Ctrl+C.
+- `DEYE_POLL_PORT` — 18899 (проброс на локальний 8899) для Solarman, або 502 для Modbus TCP
 
 ---
 
@@ -63,14 +49,10 @@ python deye_to_power_monitor.py
 Якщо інвертор доступний по Modbus TCP напряму (порт 502):
 
 ```env
-DEYE_IP=192.168.88.36
-DEYE_PORT=502
-# DEYE_SERIAL не вказувати
-POWER_MONITOR_URL=...
-POWER_MONITOR_KEY=...
+DEYE_POLL_IP=192.168.88.36
+DEYE_POLL_PORT=502
+# DEYE_POLL_SERIAL не вказувати
 ```
-
-Залежності: `pip install pymodbus requests`
 
 ---
 
@@ -114,7 +96,7 @@ POWER_MONITOR_KEY=...
 
 ---
 
-## Опція: опитування з сервера (без локального скрипта)
+## Налаштування пробросу порту
 
 Якщо налаштувати **проброс порту** на роутері MikroTik, сервер Power Monitor на GCP може опитувати Deye безпосередньо — локальний скрипт тоді не потрібен, комп’ютер можна вимикати.
 
@@ -122,10 +104,3 @@ POWER_MONITOR_KEY=...
 
 Коротко: NAT + firewall на MikroTik, змінні `DEYE_POLL_IP`, `DEYE_POLL_PORT`, `DEYE_POLL_SERIAL` у `.env` на сервері.
 
----
-
-## Важливо
-
-- **Локальний варіант:** скрипт має працювати постійно (systemd, Task Scheduler, screen тощо) на ПК у тій самій мережі, що й інвертор.
-- **Серверний варіант:** після налаштування пробросу порту (див. DEYE_PORT_FORWARD.md) скрипт не потрібен.
-- API-ключ береться з `API_KEYS` у `.env` на сервері Power Monitor (наприклад, `admin:key123` → використовуємо `key123`).

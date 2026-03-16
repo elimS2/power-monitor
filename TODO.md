@@ -17,5 +17,5 @@
 ## Інтеграція з Deye інвертором
 
 - [ ] Проаналізувати відео: https://www.youtube.com/watch?v=QbwqaIBkb3A — Home Assistant - integration and working with Deye inverters, part 1
-- [x] Зробити інтеграцію з інвертором Deye (Modbus / API) — deye_to_power_monitor.py, /api/deye-heartbeat
+- [x] Зробити інтеграцію з інвертором Deye (Modbus / API) — deye_reader.py, /api/deye-heartbeat
 - [x] Вольтаж фаз: отримання та запис у базу (L1, L2, L3 у deye_log, відображення на дашборді)

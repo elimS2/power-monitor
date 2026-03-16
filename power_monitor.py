@@ -179,8 +179,10 @@ def _setup_deye_poll_log():
 # ─── Public dashboard URL (for TG button) ─────────────────────
 
 def _get_public_dashboard_url() -> str | None:
-    """Return full dashboard URL for label 'public', or None."""
-    base = (WEBHOOK_HOST or "https://power.elims.pp.ua").rstrip("/")
+    """Return full dashboard URL for label 'public', or None. Requires WEBHOOK_HOST."""
+    if not WEBHOOK_HOST:
+        return None
+    base = WEBHOOK_HOST.rstrip("/")
     for key, label in API_KEYS.items():
         if label == "public":
             return f"{base}/?key={key}"
@@ -743,7 +745,7 @@ async def watchdog():
 async def _poll_deye():
     """Poll Deye inverter and save to DB. Runs in executor (blocking I/O)."""
     try:
-        from deye_to_power_monitor import read_deye
+        from deye_reader import read_deye
 
         port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
         loop = asyncio.get_running_loop()
@@ -878,7 +880,6 @@ from api import (
     deye_router,
     debug_router,
     heartbeat_router,
-    plug_router,
     static_router,
     telegram_router,
 )
@@ -890,7 +891,6 @@ app.include_router(dashboard_router)
 app.include_router(debug_router)
 app.include_router(telegram_router)
 app.include_router(deye_router)
-app.include_router(plug_router)
 app.include_router(static_router)
 
 # Single source for voltage status: trend -> display text, icon, event, avatar voltage param
@@ -1210,7 +1210,6 @@ def _build_update_fragments() -> dict:
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_voltage": voltage_html,
         "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>',
-        "pm_plug_state": {"on": "on", "off": "off", "unknown": "unknown"}.get(kv_get("plug_dashboard_state", "unknown"), "unknown"),
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -1883,9 +1882,6 @@ async def dashboard(key: str = Query("")):
     status_text = status["status_text"]
     status_icon = status["icon"]
 
-    plug_state_raw = kv_get("plug_dashboard_state", "unknown")
-    plug_state = {"on": "Увімкнено", "off": "Вимкнено", "unknown": "невідомо"}.get(plug_state_raw, plug_state_raw)
-
     is_admin = key in API_KEYS and API_KEYS.get(key) == "admin"
     key_label = API_KEYS.get(key, "")
 
@@ -1917,7 +1913,6 @@ async def dashboard(key: str = Query("")):
 {_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
 {f'<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="ev_details" open data-ls-key="ev_open" data-default-open="1"><summary><h2 style="display:inline">Події</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr><tbody id="pm-events-tbody">{ev_rows}</tbody></table></details></div>' if "ev_details" in allowed else ""}
 {f'<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="links_details" open data-ls-key="links_open" data-default-open="1"><summary><h2 style="display:inline">Посилання</h2></summary><table><tr><th>Опис</th><th>Посилання</th></tr><tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr><tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr><tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr><tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr><tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr></table></details></div>' if "links_details" in allowed else ""}
-{(f'<div class="dashboard-section" data-section-id="plug_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="plug_details" open data-ls-key="plug_open" data-default-open="1"><summary><h2 style="display:inline">Розумна розетка (Nous)</h2></summary><div id="pm-plug" style="margin:0.5rem 0"><span id="plug-state" style="color:var(--muted)">{plug_state}</span><button type="button" id="plug-btn-on" style="margin-left:0.5rem;padding:0.3rem 0.6rem;cursor:pointer">Увімкнути</button><button type="button" id="plug-btn-off" style="margin-left:0.3rem;padding:0.3rem 0.6rem;cursor:pointer">Вимкнути</button></div></details></div>' if "plug_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}

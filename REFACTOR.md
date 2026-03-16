@@ -18,7 +18,7 @@ power-monitor/
 ├── templates/           # опціонально — Jinja2
 │   └── dashboard.html
 ├── power_monitor.py     # thin wrapper: from power_monitor import app
-├── deye_to_power_monitor.py
+├── deye_reader.py
 └── ...
 ```
 

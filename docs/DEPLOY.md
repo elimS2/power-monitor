@@ -17,7 +17,7 @@ cd /var/www/power-monitor && git pull && sudo systemctl restart power-monitor
 **Налаштування GitHub:**
 
 1. Repo → Settings → Webhooks → Add webhook
-2. **Payload URL**: `https://power.elims.pp.ua/api/deploy-hook`
+2. **Payload URL**: `https://your-domain.example.com/api/deploy-hook`
 3. **Content type**: `application/json`
 4. **Secret**: згенеруй (`openssl rand -hex 32`) і додай у `.env` як `GITHUB_WEBHOOK_SECRET`
 5. **Events**: тільки `Push events`

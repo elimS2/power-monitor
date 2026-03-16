@@ -95,6 +95,6 @@ cd /var/www/power-monitor && sudo systemctl restart power-monitor
 
 ## Примітки
 
-- Після налаштування локальний скрипт `deye_to_power_monitor.py` можна не запускати.
+- Після налаштування сервер опитує Deye напряму, локальний скрипт не потрібен.
 - Якщо змінюється публічний IP, онови `DEYE_POLL_IP` або використовуй DynDNS.
 - IP GCP сервера: `35.246.222.183` (з user-memory.mdc).
