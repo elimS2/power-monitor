@@ -16,10 +16,12 @@ async def ep_heartbeat(
     check_permission(key, "heartbeat")
     save_heartbeat(plug204, plug175)
     kv_set("stale_alerted", "0")
-    from power_monitor import analyze, log
+    import detection
+    import logging
 
+    log = logging.getLogger("power_monitor")
     log.debug("HB plug204=%d plug175=%d", plug204, plug175)
-    await analyze()
+    await detection.analyze()
     return {"ok": True}
 
 

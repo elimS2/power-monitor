@@ -151,6 +151,14 @@ AUTO_DEPLOY_INTERVAL_SEC = int(os.getenv("AUTO_DEPLOY_INTERVAL_SEC", "60") or "6
 # GitHub webhook: secret for X-Hub-Signature-256 verification. If set, /api/deploy-hook accepts pushes.
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
+# ─── Voltage status (trend -> display text, icon, event, avatar param) ─────
+
+VOLTAGE_STATUS = {
+    "high": {"text": "Висока напруга", "icon": "icon_high_voltage_v1.png", "event": "voltage_high", "voltage": "high"},
+    "low": {"text": "Низька напруга", "icon": "icon_low_voltage_v1.png", "event": "voltage_low", "voltage": "low"},
+    None: {"text": "Проблема з напругою", "icon": "icon_off.png", "event": "voltage_issue", "voltage": None},
+}
+
 # ─── Dashboard ────────────────────────────────────────────────
 
 DASHBOARD_SECTION_ORDER = [

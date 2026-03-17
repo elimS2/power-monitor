@@ -52,6 +52,7 @@ power-monitor/
 1. `config.py` — перенести константи. ✓
 2. `database.py` — перенести роботу з БД. ✓
 3. Оновити імпорти в `power_monitor.py`. ✓
+4. `detection.py` — analyze(), watchdog(), _voltage_* винесено. ✓
 
-**Результат:** power_monitor.py ~1790 рядків (було ~2400), config.py ~104, database.py ~289.
-Потім можна винести dtek, telegram, detection, dashboard і routes.
+**Результат:** power_monitor.py ~1900 рядків, detection.py ~370, config.py має VOLTAGE_STATUS.
+Потім можна винести telegram, dashboard і routes.
