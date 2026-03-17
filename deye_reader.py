@@ -69,7 +69,18 @@ def read_deye_solarman(
 
     data = {}
     try:
+        # Read grid voltage L1/L2/L3 in one request (registers 598-600)
+        try:
+            rr = modbus.read_holding_registers(register_addr=598, quantity=3)
+            if rr and len(rr) >= 3:
+                data["grid_v_l1"] = rr[0] * 0.1
+                data["grid_v_l2"] = rr[1] * 0.1
+                data["grid_v_l3"] = rr[2] * 0.1
+        except Exception:
+            pass
         for name, spec in REGS.items():
+            if name in data:
+                continue
             addr = spec[0]
             signed = spec[1] if len(spec) >= 2 else False
             scale = spec[2] if len(spec) >= 3 else 1.0
@@ -116,7 +127,15 @@ def read_deye_modbus(host: str, port: int = 502) -> Optional[dict]:
         if not client.connect():
             return None
         data = {}
+        # Read grid voltage L1/L2/L3 in one request (registers 598-600)
+        rr = client.read_holding_registers(598, 3, slave=1)
+        if not rr.isError() and rr.registers and len(rr.registers) >= 3:
+            data["grid_v_l1"] = rr.registers[0] * 0.1
+            data["grid_v_l2"] = rr.registers[1] * 0.1
+            data["grid_v_l3"] = rr.registers[2] * 0.1
         for name, spec in REGS.items():
+            if name in data:
+                continue
             addr = spec[0]
             signed = spec[1] if len(spec) >= 2 else False
             scale = spec[2] if len(spec) >= 3 else 1.0
