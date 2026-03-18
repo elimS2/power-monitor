@@ -17,6 +17,9 @@ import httpx
 
 from config import (
     ALERT_API_URL,
+    ALERT_IN_UA_API,
+    ALERT_IN_UA_TOKEN,
+    ALERT_MATCH_LOCATIONS,
     ALERT_REGION_IDS,
     DTEK_API_URL,
     DTEK_QUEUE,
@@ -368,6 +371,17 @@ async def fetch_weather():
     save_weather_log(w["temp"], w["humidity"], w["wind"], w["code"], w["t_min"], w["t_max"], now)
 
 
+def _alert_matches_location(alert: dict) -> bool:
+    """Check if alert concerns our area (oblast, district, city)."""
+    parts = [
+        alert.get("location_title") or "",
+        alert.get("location_oblast") or "",
+        alert.get("location_raion") or "",
+    ]
+    combined = " ".join(parts)
+    return any(m in combined for m in ALERT_MATCH_LOCATIONS)
+
+
 async def fetch_alert():
     global alert_cache, _alert_fetched_at
 
@@ -375,25 +389,47 @@ async def fetch_alert():
     if now - _alert_fetched_at < 120:
         return
 
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                ALERT_API_URL,
-                headers={"X-API-Key": "test"},
-            )
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        log.warning("Alert fetch failed: %s", e)
-        return
-
     active = False
     changed = ""
-    for s in data.get("states", []):
-        if s.get("id") in ALERT_REGION_IDS and s.get("alert"):
-            active = True
-            changed = s.get("changed", "")
-            break
+    in_ua_succeeded = False
+
+    # Prefer alerts.in.ua (district-level) when token is set
+    if ALERT_IN_UA_TOKEN:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    ALERT_IN_UA_API,
+                    headers={"Authorization": f"Bearer {ALERT_IN_UA_TOKEN}"},
+                )
+                r.raise_for_status()
+                data = r.json()
+            for a in data.get("alerts", []):
+                if _alert_matches_location(a):
+                    active = True
+                    changed = a.get("updated_at", "")
+                    break
+            in_ua_succeeded = True
+        except Exception as e:
+            log.warning("alerts.in.ua fetch failed: %s, falling back to alerts.com.ua", e)
+
+    # Fallback to alerts.com.ua (oblast-level only)
+    if not ALERT_IN_UA_TOKEN or not in_ua_succeeded:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    ALERT_API_URL,
+                    headers={"X-API-Key": "test"},
+                )
+                r.raise_for_status()
+                data = r.json()
+            for s in data.get("states", []):
+                if s.get("id") in ALERT_REGION_IDS and s.get("alert"):
+                    active = True
+                    changed = s.get("changed", "")
+                    break
+        except Exception as e:
+            log.warning("Alert fetch failed: %s", e)
+            return
 
     was_active = alert_cache.get("active") if alert_cache else None
     if was_active is not None and active != was_active:

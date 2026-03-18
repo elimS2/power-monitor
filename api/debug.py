@@ -136,6 +136,83 @@ def ep_debug_sql(key: str = Query(""), query: str = Query(""), limit: int = Quer
         return {"error": str(e)}
 
 
+@router.get("/api/debug-discharge-paradox")
+def ep_debug_discharge_paradox(key: str = Query(""), days: int = Query(8, ge=1, le=31)):
+    """
+    Find discharge episodes where SOC increased (94→100 etc) and show raw deye_log.
+    Explains paradoxical 'розряд 94%→100%' entries.
+    """
+    check_permission(key, "debug")
+    now_ts = time.time()
+    month_start = datetime.now(UA_TZ).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ts_start = month_start.timestamp()
+    ts_end = now_ts + 86400
+
+    events = events_in_range(ts_start, ts_end)
+    with _conn() as db:
+        deye_rows = db.execute(
+            """SELECT battery_soc, battery_power_w, load_power_w, grid_v_l1, grid_v_l2, grid_v_l3, ts
+               FROM deye_log WHERE ts >= ? AND ts <= ? ORDER BY ts""",
+            (ts_start, ts_end),
+        ).fetchall()
+    deye_rows = [dict(r) for r in deye_rows]
+
+    paradoxical = []
+    i = 0
+    while i < len(events):
+        if events[i]["event"] not in DOWN_LIKE_EVENTS:
+            i += 1
+            continue
+        down_ts = events[i]["ts"]
+        up_ts = None
+        j = i + 1
+        while j < len(events):
+            if events[j]["event"] == "up":
+                up_ts = events[j]["ts"]
+                j += 1
+                break
+            if events[j]["event"] in DOWN_LIKE_EVENTS:
+                break
+            j += 1
+        i = j
+        if up_ts is None:
+            continue
+
+        ep_rows = [r for r in deye_rows if down_ts <= r["ts"] <= up_ts]
+        if len(ep_rows) < 2:
+            continue
+        soc_from = ep_rows[0].get("battery_soc")
+        soc_to = ep_rows[-1].get("battery_soc")
+        if soc_from is not None and soc_to is not None and soc_to > soc_from:
+            paradoxical.append({
+                "down": datetime.fromtimestamp(down_ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                "up": datetime.fromtimestamp(up_ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                "soc_from": soc_from,
+                "soc_to": soc_to,
+                "samples": len(ep_rows),
+                "rows": [
+                    {
+                        "ts": r["ts"],
+                        "time": datetime.fromtimestamp(r["ts"], tz=UA_TZ).strftime("%H:%M:%S"),
+                        "battery_soc": r.get("battery_soc"),
+                        "battery_power_w": r.get("battery_power_w"),
+                        "load_power_w": r.get("load_power_w"),
+                        "grid_v_l1": r.get("grid_v_l1"),
+                        "grid_v_l2": r.get("grid_v_l2"),
+                        "grid_v_l3": r.get("grid_v_l3"),
+                    }
+                    for r in ep_rows[:50]
+                ],
+            })
+
+    return {
+        "paradoxical_count": len(paradoxical),
+        "paradoxical": paradoxical[-days:] if paradoxical else [],
+        "power_events_count": len(events),
+        "deye_rows_count": len(deye_rows),
+    }
+
+
 @router.get("/api/debug-log")
 def ep_debug_log(key: str = Query(""), lines: int = Query(100, ge=1, le=500)):
     """Read power-monitor service log from journalctl. Admin only."""

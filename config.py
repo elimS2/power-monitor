@@ -139,8 +139,21 @@ WMO_EMOJI = {
 
 # ─── Alert ───────────────────────────────────────────────────
 
+# alerts.com.ua: oblast-level only (id 1-25). Used when ALERT_IN_UA_TOKEN is not set.
 ALERT_API_URL = "https://alerts.com.ua/api/states"
 ALERT_REGION_IDS = [9, 25]  # 9=Київська область, 25=Київ
+
+# alerts.in.ua: oblast, district (raion), hromada. Required for district-level (e.g. Броварський).
+# Get token: https://alerts.in.ua/api-request
+ALERT_IN_UA_TOKEN = os.getenv("ALERT_IN_UA_TOKEN", "").strip()
+ALERT_IN_UA_API = "https://api.alerts.in.ua/v1/alerts/active.json"
+# Match if any of these substrings in location_title, location_oblast, or location_raion
+ALERT_MATCH_LOCATIONS = [
+    "Київська область",
+    "м. Київ",
+    "Броварський",      # Броварський район
+    "Бровари",          # м. Бровари
+]
 
 # ─── Auto-deploy ──────────────────────────────────────────────
 

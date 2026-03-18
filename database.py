@@ -861,6 +861,23 @@ def _integrate_battery_power(rows: list, positive_only: bool) -> float:
     return total
 
 
+def _integrate_battery_power_both(rows: list) -> tuple[float, float]:
+    """Return (charge_kwh, discharge_kwh) from battery_power_w. Deye: negative=charge, positive=discharge."""
+    charge_kwh = 0.0
+    discharge_kwh = 0.0
+    for i in range(1, len(rows)):
+        p_prev = rows[i - 1].get("battery_power_w") or 0
+        p_curr = rows[i].get("battery_power_w") or 0
+        avg = (p_prev + p_curr) / 2
+        dt_h = (rows[i]["ts"] - rows[i - 1]["ts"]) / 3600
+        wh = abs(avg) * dt_h
+        if avg < 0:
+            charge_kwh += wh / 1000
+        elif avg > 0:
+            discharge_kwh += wh / 1000
+    return charge_kwh, discharge_kwh
+
+
 def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
     """
     Compute discharge (during outage) and charge (after power returns) episodes.
@@ -888,6 +905,29 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
 
     by_date: dict[str, list] = {"discharges": [], "charges": []}
 
+    def _add_episode(rows: list, start_ts: float, end_ts: float):
+        """Classify episode by actual battery_power_w: negative=charge, positive=discharge."""
+        if len(rows) < 2:
+            return
+        charge_kwh, discharge_kwh = _integrate_battery_power_both(rows)
+        is_charge = charge_kwh >= discharge_kwh
+        kwh = round(charge_kwh, 2) if is_charge else round(discharge_kwh, 2)
+        if kwh <= 0:
+            return
+        soc_from = rows[0].get("battery_soc")
+        soc_to = rows[-1].get("battery_soc")
+        date_str = datetime.fromtimestamp(start_ts, tz=UA_TZ).strftime("%Y-%m-%d")
+        duration_h = round((rows[-1]["ts"] - rows[0]["ts"]) / 3600, 1)
+        ep = {
+            "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
+            "ts_start": start_ts, "ts_end": rows[-1]["ts"],
+        }
+        if is_charge:
+            ep["charge_duration_h"] = duration_h
+            by_date["charges"].append(ep)
+        else:
+            by_date["discharges"].append(ep)
+
     i = 0
     while i < len(events):
         if events[i]["event"] not in DOWN_LIKE_EVENTS:
@@ -909,41 +949,14 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
         if up_ts is None:
             continue
 
-        # Discharge: every episode (including tiny ones)
+        # Window 1: down -> up (outage period). Classify by actual battery data.
         ep_rows = [r for r in deye_rows if down_ts <= r["ts"] <= up_ts]
-        if len(ep_rows) >= 2:
-            soc_from = ep_rows[0].get("battery_soc")
-            soc_to = ep_rows[-1].get("battery_soc")
-            kwh = round(_integrate_battery_power(ep_rows, positive_only=False), 2)
-            date_str = datetime.fromtimestamp(down_ts, tz=UA_TZ).strftime("%Y-%m-%d")
-            by_date["discharges"].append({
-                "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
-                "ts_start": down_ts, "ts_end": up_ts,
-            })
+        _add_episode(ep_rows, down_ts, up_ts)
 
-        # Charge: from up until next down (or end of data). No fixed window.
+        # Window 2: up -> next down (power restored). Classify by actual battery data.
         charge_end = events[i]["ts"] if i < len(events) and events[i]["event"] in DOWN_LIKE_EVENTS else ts_end
         ch_rows = [r for r in deye_rows if up_ts <= r["ts"] < charge_end]
-        if len(ch_rows) >= 2:
-            kwh = round(_integrate_battery_power(ch_rows, positive_only=True), 2)
-            if kwh > 0:
-                charge_only_rows = [r for r in ch_rows if (r.get("battery_power_w") or 0) <= 0]
-                if len(charge_only_rows) >= 2:
-                    soc_from = charge_only_rows[0].get("battery_soc")
-                    soc_to = charge_only_rows[-1].get("battery_soc")
-                    charge_duration_h = round(
-                        sum(charge_only_rows[k]["ts"] - charge_only_rows[k - 1]["ts"]
-                            for k in range(1, len(charge_only_rows))) / 3600, 1)
-                else:
-                    soc_from = ch_rows[0].get("battery_soc")
-                    soc_to = ch_rows[-1].get("battery_soc")
-                    charge_duration_h = round((ch_rows[-1]["ts"] - ch_rows[0]["ts"]) / 3600, 1)
-                date_str = datetime.fromtimestamp(up_ts, tz=UA_TZ).strftime("%Y-%m-%d")
-                by_date["charges"].append({
-                    "date": date_str, "soc_from": soc_from, "soc_to": soc_to, "kwh": kwh,
-                    "ts_start": up_ts, "ts_end": ch_rows[-1]["ts"],
-                    "charge_duration_h": charge_duration_h,
-                })
+        _add_episode(ch_rows, up_ts, charge_end)
 
     # Group by date
     all_dates = set(
