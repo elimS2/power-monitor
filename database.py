@@ -12,7 +12,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-from config import CLEANUP_KEEP_DAYS, DB_PATH, UA_TZ
+from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, UA_TZ
 
 log = logging.getLogger("power_monitor")
 
@@ -897,13 +897,26 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
 
     with _conn() as db:
         deye_rows = db.execute(
-            """SELECT battery_soc, battery_power_w, ts FROM deye_log
+            """SELECT battery_soc, battery_power_w, grid_power_w, ts FROM deye_log
                WHERE ts >= ? AND ts <= ? ORDER BY ts""",
             (ts_start, ts_end + 3600),
         ).fetchall()
     deye_rows = [dict(r) for r in deye_rows]
 
     by_date: dict[str, list] = {"discharges": [], "charges": []}
+
+    def _has_grid_consumption(rows: list) -> bool:
+        """True if any row has grid import (grid_power_w > 0)."""
+        for r in rows:
+            gw = r.get("grid_power_w")
+            if gw is not None and gw > 0:
+                return True
+        return False
+
+    def _max_discharge_w(rows: list) -> float:
+        """Max positive battery_power_w (discharge) in rows."""
+        vals = [(r.get("battery_power_w") or 0) for r in rows]
+        return max((p for p in vals if p > 0), default=0.0)
 
     def _add_episode(rows: list, start_ts: float, end_ts: float):
         """Classify episode by actual battery_power_w: negative=charge, positive=discharge."""
@@ -913,6 +926,9 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
         is_charge = charge_kwh >= discharge_kwh
         kwh = round(charge_kwh, 2) if is_charge else round(discharge_kwh, 2)
         if kwh <= 0:
+            return
+        # Discharge while grid import + low power (< DEYE_PASSIVE_DISCHARGE_W) = passive, skip
+        if not is_charge and _has_grid_consumption(rows) and _max_discharge_w(rows) < DEYE_PASSIVE_DISCHARGE_W:
             return
         soc_from = rows[0].get("battery_soc")
         soc_to = rows[-1].get("battery_soc")

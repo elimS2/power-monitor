@@ -86,6 +86,8 @@ DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
 # ─── Deye ───────────────────────────────────────────────────
 
 DEYE_BATTERY_KWH = float(os.getenv("DEYE_BATTERY_KWH", "0") or "0")
+# If grid is on and discharge power < this (W), treat as passive consumption — don't count as discharge
+DEYE_PASSIVE_DISCHARGE_W = float(os.getenv("DEYE_PASSIVE_DISCHARGE_W", "100") or "100")
 
 # Server-side polling: when set, GCP server polls Deye directly (via port forward)
 # DEYE_POLL_IP = your public IP or DynDNS hostname
