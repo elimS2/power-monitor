@@ -48,9 +48,9 @@ def ep_dashboard_fragments(key: str = Query("")):
     qk = quote(key, safe="")
     ver_parts = [frags["pm_ver"]]
     if key_label:
-        ver_parts.append(f" · {key_label}")
+        ver_parts.append(f'<span data-pm-footer="key"> · {key_label}</span>')
     if is_admin:
-        ver_parts.append(f' · <a href="/admin?key={qk}" style="color:var(--muted)">Адмін</a>')
+        ver_parts.append(f'<span data-pm-footer="admin"> · <a href="/admin?key={qk}" style="color:var(--muted)">Адмін</a></span>')
     frags["pm_ver"] = "".join(ver_parts)
 
     return JSONResponse(

@@ -88,6 +88,68 @@
     d.addEventListener('toggle', function() { localStorage.setItem(key, d.open ? '1' : '0'); });
   });
 
+  // Footer visibility (hash, online, key, admin)
+  var FOOTER_VIS_KEY = 'pm_footer_vis';
+  var FOOTER_PARTS = ['hash', 'online', 'key', 'admin'];
+  function getFooterVis() {
+    var raw = localStorage.getItem(FOOTER_VIS_KEY);
+    var vis = {};
+    try { vis = raw ? JSON.parse(raw) : {}; } catch (e) {}
+    FOOTER_PARTS.forEach(function(p) { if (vis[p] === undefined) vis[p] = true; });
+    return vis;
+  }
+  function setFooterVis(vis) {
+    localStorage.setItem(FOOTER_VIS_KEY, JSON.stringify(vis));
+  }
+  function initFooterVisibility() {
+    var vis = getFooterVis();
+    var wrap = document.getElementById('pm-ver');
+    if (!wrap) return;
+    wrap.querySelectorAll('[data-pm-footer]').forEach(function(sp) {
+      var part = sp.getAttribute('data-pm-footer');
+      sp.style.display = vis[part] !== false ? '' : 'none';
+    });
+    var toggle = wrap.querySelector('.pm-footer-toggle');
+    if (!toggle || toggle.dataset.pmInited) return;
+    toggle.dataset.pmInited = '1';
+    toggle.addEventListener('click', function(e) {
+      e.preventDefault();
+      var pop = wrap.querySelector('.pm-footer-popover');
+      if (pop) {
+        pop.remove();
+        document.removeEventListener('click', closePop);
+        return;
+      }
+      pop = document.createElement('div');
+      pop.className = 'pm-footer-popover';
+      var vis = getFooterVis();
+      var html = '<div class="pm-footer-popover-title">Футер</div>';
+      FOOTER_PARTS.forEach(function(p) {
+        var label = { hash: 'Хеш', online: 'Онлайн', key: "Ім'я ключа", admin: 'Адмінка' }[p];
+        var checked = vis[p] !== false ? ' checked' : '';
+        html += '<label class="pm-footer-popover-item"><input type="checkbox" data-pm-footer="' + p + '"' + checked + '> ' + label + '</label>';
+      });
+      pop.innerHTML = html;
+      toggle.parentNode.appendChild(pop);
+      pop.addEventListener('click', function(ev) {
+        if (ev.target.type !== 'checkbox') return;
+        var p = ev.target.getAttribute('data-pm-footer');
+        vis[p] = ev.target.checked;
+        setFooterVis(vis);
+        var sp = wrap.querySelector('[data-pm-footer="' + p + '"]');
+        if (sp) sp.style.display = vis[p] !== false ? '' : 'none';
+      });
+      function closePop(ev) {
+        if (!pop.contains(ev.target) && ev.target !== toggle) {
+          pop.remove();
+          document.removeEventListener('click', closePop);
+        }
+      }
+      setTimeout(function() { document.addEventListener('click', closePop); }, 0);
+    });
+  }
+  initFooterVisibility();
+
   // Drag-drop section reorder
   var ORDER_KEY = 'pm_section_order';
   var container = document.getElementById('dashboard-sections');
@@ -238,8 +300,9 @@
           if (el) el.innerHTML = d.pm_voltage;
         }
         if (d.pm_ver !== undefined) {
-          el = document.getElementById('pm-ver');
+          el = document.getElementById('pm-ver-content');
           if (el) el.innerHTML = d.pm_ver;
+          initFooterVisibility();
         }
         if (d.pm_deye) {
           el = document.getElementById('pm-deye');
