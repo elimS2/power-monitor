@@ -1,6 +1,5 @@
 """Dashboard API routes."""
 import time
-from urllib.parse import quote
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
@@ -38,20 +37,20 @@ async def ep_status(key: str = Query("")):
 @router.get("/api/dashboard-fragments")
 def ep_dashboard_fragments(key: str = Query("")):
     check_permission(key, "dashboard")
-    from power_monitor import _build_update_fragments, record_online
+    from power_monitor import _build_footer_content, _build_update_fragments, online_count, record_online
+
+    from api.deps import allowed_footer_parts
 
     record_online(key)
 
     frags = _build_update_fragments()
     key_label = API_KEYS.get(key, "")
     is_admin = API_KEYS.get(key) == "admin"
-    qk = quote(key, safe="")
-    ver_parts = [frags["pm_ver"]]
-    if key_label:
-        ver_parts.append(f'<span data-pm-footer="key"> · {key_label}</span>')
-    if is_admin:
-        ver_parts.append(f'<span data-pm-footer="admin"> · <a href="/admin?key={qk}" style="color:var(--muted)">Адмін</a></span>')
-    frags["pm_ver"] = "".join(ver_parts)
+    footer_parts = allowed_footer_parts(key)
+    footer_content = _build_footer_content(
+        footer_parts, online_count(), key_label, is_admin, key
+    )
+    frags["pm_ver"] = footer_content
 
     return JSONResponse(
         frags,

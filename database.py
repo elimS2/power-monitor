@@ -236,6 +236,11 @@ def init_db():
             if "voltage_details" not in sec:
                 updated = [s for s in ALL_SECTIONS if s != "deye_details"]
                 db.execute("UPDATE roles SET sections=? WHERE id=?", (json.dumps(updated), row["id"]))
+        # Migration: add footer_parts to roles
+        try:
+            db.execute("ALTER TABLE roles ADD COLUMN footer_parts TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -262,6 +267,15 @@ ALL_SECTIONS = [
     "deye_details", "hb_details", "legend_details", "avatars_details",
 ]
 
+ALL_FOOTER_PARTS = ["hash", "online", "key", "admin"]
+
+FOOTER_PART_LABELS = {
+    "hash": "Хеш коміту",
+    "online": "Онлайн",
+    "key": "Ім'я ключа",
+    "admin": "Адмінка",
+}
+
 SECTION_LABELS = {
     "sched_details": "Графік відключень",
     "boiler_details": "Графік котельні",
@@ -283,13 +297,14 @@ def role_list() -> list[dict]:
     """List all roles (built-in + custom)."""
     with _conn() as db:
         rows = db.execute(
-            "SELECT id, name, sections, is_builtin, created_at FROM roles ORDER BY is_builtin DESC, name"
+            "SELECT id, name, sections, footer_parts, is_builtin, created_at FROM roles ORDER BY is_builtin DESC, name"
         ).fetchall()
     return [
         {
             "id": r["id"],
             "name": r["name"],
             "sections": json.loads(r["sections"]) if r["sections"] else None,
+            "footer_parts": json.loads(r["footer_parts"]) if r["footer_parts"] else None,
             "is_builtin": bool(r["is_builtin"]),
             "created_at": r["created_at"],
         }
@@ -301,7 +316,7 @@ def role_get(role_id: int) -> dict | None:
     """Get role by id."""
     with _conn() as db:
         row = db.execute(
-            "SELECT id, name, sections, is_builtin, created_at FROM roles WHERE id=?",
+            "SELECT id, name, sections, footer_parts, is_builtin, created_at FROM roles WHERE id=?",
             (role_id,),
         ).fetchone()
     if not row:
@@ -310,42 +325,46 @@ def role_get(role_id: int) -> dict | None:
         "id": row["id"],
         "name": row["name"],
         "sections": json.loads(row["sections"]) if row["sections"] else None,
+        "footer_parts": json.loads(row["footer_parts"]) if row["footer_parts"] else None,
         "is_builtin": bool(row["is_builtin"]),
         "created_at": row["created_at"],
     }
 
 
-def role_create(name: str, sections: list[str] | None) -> dict:
+def role_create(name: str, sections: list[str] | None, footer_parts: list[str] | None = None) -> dict:
     """Create a new role. Returns the created role."""
     with _conn() as db:
         db.execute(
-            "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,0,?)",
-            (name, json.dumps(sections) if sections else None, time.time()),
+            "INSERT INTO roles(name, sections, footer_parts, is_builtin, created_at) VALUES(?,?,?,0,?)",
+            (name, json.dumps(sections) if sections else None, json.dumps(footer_parts) if footer_parts else None, time.time()),
         )
         rid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     return role_get(rid)
 
 
-def role_update(role_id: int, name: str | None, sections: list[str] | None) -> bool:
-    """Update role. Returns True if found and updated."""
+def role_update(role_id: int, **kwargs) -> bool:
+    """Update role. Pass name, sections, footer_parts to update. None = set to NULL. Built-in roles cannot be edited."""
     r = role_get(role_id)
     if not r or r["is_builtin"]:
         return False
     with _conn() as db:
-        if name is not None and sections is not None:
-            db.execute(
-                "UPDATE roles SET name=?, sections=?, created_at=? WHERE id=?",
-                (name, json.dumps(sections) if sections else None, time.time(), role_id),
-            )
-        elif name is not None:
-            db.execute("UPDATE roles SET name=?, created_at=? WHERE id=?", (name, time.time(), role_id))
-        elif sections is not None:
-            db.execute(
-                "UPDATE roles SET sections=?, created_at=? WHERE id=?",
-                (json.dumps(sections) if sections else None, time.time(), role_id),
-            )
-        else:
+        updates = []
+        params = []
+        if "name" in kwargs:
+            updates.append("name=?")
+            params.append(kwargs["name"])
+        if "sections" in kwargs:
+            updates.append("sections=?")
+            params.append(json.dumps(kwargs["sections"]) if kwargs["sections"] else None)
+        if "footer_parts" in kwargs:
+            updates.append("footer_parts=?")
+            params.append(json.dumps(kwargs["footer_parts"]) if kwargs["footer_parts"] else None)
+        if not updates:
             return False
+        updates.append("created_at=?")
+        params.append(time.time())
+        params.append(role_id)
+        db.execute("UPDATE roles SET " + ", ".join(updates) + " WHERE id=?", tuple(params))
     return True
 
 
@@ -368,6 +387,14 @@ def role_sections_for_key(role_id: int) -> list[str] | None:
     return r["sections"]
 
 
+def role_footer_parts_for_key(role_id: int) -> list[str] | None:
+    """Get footer_parts list for a role. None = all parts."""
+    r = role_get(role_id)
+    if not r:
+        return None
+    return r.get("footer_parts")
+
+
 # ─── API key config ─────────────────────────────────────────────
 
 def api_key_config_get(label: str) -> dict | None:
@@ -381,12 +408,15 @@ def api_key_config_get(label: str) -> dict | None:
         return None
     sections = json.loads(row["sections"]) if row["sections"] else None
     role_id = row["role_id"]
+    footer_parts = None
     if role_id is not None:
         sections = role_sections_for_key(role_id)
+        footer_parts = role_footer_parts_for_key(role_id)
     return {
         "label": row["label"],
         "enabled": bool(row["enabled"]),
         "sections": sections,
+        "footer_parts": footer_parts,
         "role_id": role_id,
         "endpoints": json.loads(row["endpoints"]) if row["endpoints"] else None,
         "updated_at": row["updated_at"],

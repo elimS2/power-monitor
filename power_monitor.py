@@ -806,7 +806,7 @@ def _build_update_fragments() -> dict:
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_voltage": voltage_html,
-        "pm_ver": f'<span data-pm-footer="hash">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a></span><span data-pm-footer="online"> · {online_count()} в онлайні</span>',
+        "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_count()} в онлайні',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -990,6 +990,29 @@ def _build_schedule_html(is_down: bool) -> str:
 """
 
 
+def _build_footer_content(
+    allowed_parts: list[str] | None,
+    online_cnt: int,
+    key_label: str,
+    is_admin: bool,
+    key: str,
+) -> str:
+    """Build footer HTML. allowed_parts=None = all; [] = none; list = only those."""
+    from urllib.parse import quote
+
+    parts = []
+    if allowed_parts is None or "hash" in allowed_parts:
+        parts.append(f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>')
+    if allowed_parts is None or "online" in allowed_parts:
+        parts.append(f" · {online_cnt} в онлайні")
+    if key_label and (allowed_parts is None or "key" in allowed_parts):
+        parts.append(f" · {key_label}")
+    if is_admin and (allowed_parts is None or "admin" in allowed_parts):
+        qk = quote(key, safe="")
+        parts.append(f' · <a href="/admin?key={qk}" style="color:var(--muted)">Адмін</a>')
+    return "".join(parts) if parts else ""
+
+
 def _key_expired_html() -> str:
     """HTML page shown when key is invalid/expired."""
     return """<!DOCTYPE html>
@@ -1006,7 +1029,7 @@ def _key_expired_html() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(key: str = Query("")):
-    from api.deps import allowed_sections, check_permission
+    from api.deps import allowed_footer_parts, allowed_sections, check_permission
 
     try:
         check_permission(key, "dashboard")
@@ -1016,6 +1039,7 @@ async def dashboard(key: str = Query("")):
         raise
     record_online(key)
     allowed = allowed_sections(key)
+    footer_parts = allowed_footer_parts(key)
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
     hb = recent_heartbeats(30)
@@ -1483,6 +1507,7 @@ async def dashboard(key: str = Query("")):
     is_admin = key in API_KEYS and API_KEYS.get(key) == "admin"
     key_label = API_KEYS.get(key, "")
     online_cnt = online_count()
+    footer_content = _build_footer_content(footer_parts, online_cnt, key_label, is_admin, key)
 
     legend_html = '<details id="legend_details" data-ls-key="legend_open" data-default-open="0"><summary><h2 style="display:inline">Легенда повідомлень</h2></summary><table><tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr><tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr><tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr><tr><td>Світло з\'явилось</td><td>\u2705 16:34 Світло з\'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Наступне відключення: ~завтра 10:00 - 13:30</td><td>prod</td></tr><tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr><tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr><tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr></table></details>'
 
@@ -1521,7 +1546,7 @@ async def dashboard(key: str = Query("")):
 
 </div>
 
-<div class="ver pm-footer" id="pm-ver"><span id="pm-ver-content"><span data-pm-footer="hash">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a></span><span data-pm-footer="online"> · {online_cnt} в онлайні</span>{f'<span data-pm-footer="key"> · {key_label}</span>' if key_label else ''}{f'<span data-pm-footer="admin"> · <a href="/admin?key={key}" style="color:var(--muted)">Адмін</a></span>' if is_admin else ''}</span><button type="button" class="pm-footer-toggle" title="Налаштування футера" aria-label="Налаштування">⋮</button></div>
+<div class="ver" id="pm-ver"><span id="pm-ver-content">{footer_content}</span></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
 
@@ -1534,7 +1559,7 @@ async def admin_page(key: str = Query("")):
     from urllib.parse import quote
 
     from api.deps import check_admin
-    from database import ALL_SECTIONS, SECTION_LABELS, api_key_config_list, api_key_list, role_list
+    from database import ALL_FOOTER_PARTS, ALL_SECTIONS, FOOTER_PART_LABELS, SECTION_LABELS, api_key_config_list, api_key_list, role_list
 
     check_admin(key)
     voltage_notify_enabled = kv_get("tg_voltage_notify") != "0"
@@ -1594,16 +1619,21 @@ async def admin_page(key: str = Query("")):
         sec_display = ", ".join(SECTION_LABELS.get(s, s) for s in sec_list[:5])
         if len(sec_list) > 5:
             sec_display += "…"
-        edit_btn = "" if r["is_builtin"] else f'<button type="button" class="admin-role-edit btn" data-id="{r["id"]}" data-name="{escape(r["name"])}" data-sections=\'{dumps(r["sections"] or [])}\'>Змінити</button>'
+        fp_list = r.get("footer_parts")
+        fp_display = "(усі)" if not fp_list else ", ".join(FOOTER_PART_LABELS.get(p, p) for p in fp_list[:4]) + ("…" if len(fp_list) > 4 else "")
+        edit_btn = "" if r["is_builtin"] else f'<button type="button" class="admin-role-edit btn" data-id="{r["id"]}" data-name="{escape(r["name"])}" data-sections=\'{dumps(r["sections"] or [])}\' data-footer-parts=\'{dumps(r.get("footer_parts") or [])}\'>Змінити</button>'
         del_btn = "" if r["is_builtin"] else f'<button type="button" class="admin-role-del btn" data-id="{r["id"]}">Видалити</button>'
         role_rows.append(
             f'<tr><td>{escape(r["name"])}</td><td style="font-size:0.85rem;color:var(--muted)">{escape(sec_display)}</td>'
+            f'<td style="font-size:0.85rem;color:var(--muted)">{escape(fp_display)}</td>'
             f'<td>{"Вбудована" if r["is_builtin"] else "Користувацька"}</td><td>{edit_btn} {del_btn}</td></tr>'
         )
     roles_table_rows = "\n".join(role_rows)
 
     all_sections_json = dumps(ALL_SECTIONS)
     section_labels_json = dumps(SECTION_LABELS)
+    all_footer_parts_json = dumps(ALL_FOOTER_PARTS)
+    footer_part_labels_json = dumps(FOOTER_PART_LABELS)
 
     return f"""<!DOCTYPE html>
 <html lang="uk"><head>
@@ -1633,7 +1663,7 @@ async def admin_page(key: str = Query("")):
 <p style="margin-bottom:0.5rem;color:var(--muted)">Ролі визначають, які секції дашборду бачить ключ.</p>
 <button type="button" class="admin-role-create btn" style="margin-bottom:1rem">+ Створити роль</button>
 <table>
-<tr><th>Назва</th><th>Секції</th><th>Тип</th><th>Дії</th></tr>
+<tr><th>Назва</th><th>Секції</th><th>Футер</th><th>Тип</th><th>Дії</th></tr>
 {roles_table_rows}
 </table>
 </div>
@@ -1669,7 +1699,10 @@ async def admin_page(key: str = Query("")):
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:400px;width:90%">
 <h3 id="admin-role-modal-title" style="margin-top:0">Нова роль</h3>
 <input type="text" id="admin-role-name" placeholder="Назва ролі" style="width:100%;margin-bottom:1rem;padding:0.4rem">
+<div style="margin-bottom:0.5rem;font-size:0.9rem;font-weight:500">Секції дашборду</div>
 <div id="admin-role-sections" style="margin-bottom:1rem;max-height:200px;overflow-y:auto"></div>
+<div style="margin-bottom:0.5rem;font-size:0.9rem;font-weight:500">Елементи футера</div>
+<div id="admin-role-footer-parts" style="margin-bottom:1rem"></div>
 <button type="button" class="admin-role-save btn">Зберегти</button>
 <button type="button" class="admin-role-cancel btn" style="margin-left:0.5rem">Скасувати</button>
 </div>
@@ -1689,6 +1722,8 @@ async def admin_page(key: str = Query("")):
   if (!key) return;
   var allSections = {all_sections_json};
   var sectionLabels = {section_labels_json};
+  var allFooterParts = {all_footer_parts_json};
+  var footerPartLabels = {footer_part_labels_json};
   function qs() {{ return '?key=' + encodeURIComponent(key); }}
   document.querySelectorAll('.admin-tab').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
@@ -1777,6 +1812,26 @@ async def admin_page(key: str = Query("")):
       container.querySelectorAll('.role-section-cb').forEach(function(c) {{ c.checked = addAll.querySelector('input').checked; }});
     }});
   }}
+  function buildFooterPartsCheckboxes(container, selected) {{
+    container.innerHTML = '';
+    var addAll = document.createElement('label');
+    addAll.innerHTML = '<input type="checkbox" id="footer-all" ' + (!selected || selected.length === 0 ? 'checked' : '') + '> Усі елементи';
+    addAll.style.display = 'block';
+    addAll.style.marginBottom = '0.5rem';
+    container.appendChild(addAll);
+    allFooterParts.forEach(function(pid) {{
+      var lbl = footerPartLabels[pid] || pid;
+      var cb = document.createElement('label');
+      cb.style.display = 'block';
+      cb.style.marginBottom = '0.25rem';
+      var checked = !selected || selected.length === 0 || selected.indexOf(pid) >= 0;
+      cb.innerHTML = '<input type="checkbox" class="role-footer-cb" data-id="' + pid + '" ' + (checked ? 'checked' : '') + '> ' + lbl;
+      container.appendChild(cb);
+    }});
+    addAll.querySelector('input').addEventListener('change', function() {{
+      container.querySelectorAll('.role-footer-cb').forEach(function(c) {{ c.checked = addAll.querySelector('input').checked; }});
+    }});
+  }}
   var modal = document.getElementById('admin-role-modal');
   var editingRoleId = null;
   document.querySelector('.admin-role-create').addEventListener('click', function() {{
@@ -1784,6 +1839,7 @@ async def admin_page(key: str = Query("")):
     document.getElementById('admin-role-modal-title').textContent = 'Нова роль';
     document.getElementById('admin-role-name').value = '';
     buildSectionsCheckboxes(document.getElementById('admin-role-sections'), null);
+    buildFooterPartsCheckboxes(document.getElementById('admin-role-footer-parts'), null);
     modal.style.display = 'flex';
   }});
   document.querySelectorAll('.admin-role-edit').forEach(function(btn) {{
@@ -1792,7 +1848,9 @@ async def admin_page(key: str = Query("")):
       document.getElementById('admin-role-modal-title').textContent = 'Редагувати роль';
       document.getElementById('admin-role-name').value = btn.dataset.name;
       var sections = JSON.parse(btn.dataset.sections || '[]');
+      var footerParts = JSON.parse(btn.dataset.footerParts || '[]');
       buildSectionsCheckboxes(document.getElementById('admin-role-sections'), sections);
+      buildFooterPartsCheckboxes(document.getElementById('admin-role-footer-parts'), footerParts);
       modal.style.display = 'flex';
     }});
   }});
@@ -1801,9 +1859,11 @@ async def admin_page(key: str = Query("")):
     if (!name) return;
     var allCb = document.getElementById('role-all');
     var sections = allCb.checked ? null : Array.from(document.querySelectorAll('.role-section-cb:checked')).map(function(c) {{ return c.dataset.id; }});
+    var footerAllCb = document.getElementById('footer-all');
+    var footerParts = footerAllCb && footerAllCb.checked ? null : Array.from(document.querySelectorAll('.role-footer-cb:checked')).map(function(c) {{ return c.dataset.id; }});
     var url = editingRoleId ? '/api/admin/roles/' + editingRoleId + qs() : '/api/admin/roles' + qs();
     var method = editingRoleId ? 'PUT' : 'POST';
-    var body = {{ name: name, sections: sections }};
+    var body = {{ name: name, sections: sections, footer_parts: footerParts }};
     fetch(url, {{ method: method, headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(body) }})
       .then(function(r) {{ return r.json(); }})
       .then(function(d) {{

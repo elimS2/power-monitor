@@ -50,11 +50,14 @@ async def ep_admin_role_create(request: Request, key: str = Query("")):
         body = {}
     name = body.get("name", "").strip()
     sections = body.get("sections")
+    footer_parts = body.get("footer_parts")
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
     if sections is not None and not isinstance(sections, list):
         return JSONResponse({"error": "sections must be list or null"}, status_code=400)
-    role = role_create(name, sections)
+    if footer_parts is not None and not isinstance(footer_parts, list):
+        return JSONResponse({"error": "footer_parts must be list or null"}, status_code=400)
+    role = role_create(name, sections, footer_parts)
     return {"ok": True, "role": role}
 
 
@@ -70,7 +73,7 @@ def ep_admin_role_get(role_id: int, key: str = Query("")):
 
 @router.put("/roles/{role_id:int}")
 async def ep_admin_role_update(role_id: int, request: Request, key: str = Query("")):
-    """Update role. Body: {name?, sections?}. Admin only. Built-in roles cannot be edited."""
+    """Update role. Body: {name?, sections?, footer_parts?}. Admin only. Built-in roles cannot be edited."""
     check_admin(key)
     try:
         body = await request.json()
@@ -80,7 +83,17 @@ async def ep_admin_role_update(role_id: int, request: Request, key: str = Query(
     if name is not None:
         name = str(name).strip()
     sections = body.get("sections")
-    ok = role_update(role_id, name, sections)
+    footer_parts = body.get("footer_parts")
+    if footer_parts is not None and not isinstance(footer_parts, list):
+        return JSONResponse({"error": "footer_parts must be list or null"}, status_code=400)
+    kw = {}
+    if "name" in body:
+        kw["name"] = name
+    if "sections" in body:
+        kw["sections"] = sections
+    if "footer_parts" in body:
+        kw["footer_parts"] = footer_parts
+    ok = role_update(role_id, **kw) if kw else False
     if not ok:
         return JSONResponse({"error": "role not found or is built-in"}, status_code=404)
     return {"ok": True}

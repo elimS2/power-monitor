@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from config import API_KEYS
-from database import ALL_SECTIONS, api_key_config_get, api_key_lookup
+from database import ALL_FOOTER_PARTS, ALL_SECTIONS, api_key_config_get, api_key_lookup
 
 
 def get_key_label(key: str) -> str | None:
@@ -64,3 +64,19 @@ def allowed_sections(key: str) -> list[str]:
     if cfg["sections"] is None or len(cfg["sections"]) == 0:
         return ALL_SECTIONS
     return [s for s in cfg["sections"] if s in ALL_SECTIONS]
+
+
+def allowed_footer_parts(key: str) -> list[str] | None:
+    """Return list of footer part IDs this key can see. None = all parts."""
+    label = get_key_label(key)
+    if label is None:
+        return []
+    if label == "admin":
+        return None  # all
+    cfg = api_key_config_get(label)
+    if cfg is None or not cfg.get("enabled", True):
+        return None  # no config or disabled = all (backward compat)
+    parts = cfg.get("footer_parts")
+    if parts is None or len(parts) == 0:
+        return None
+    return [p for p in parts if p in ALL_FOOTER_PARTS]
