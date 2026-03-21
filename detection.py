@@ -92,6 +92,36 @@ def _format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 
+async def _send_voltage_recovery() -> None:
+    """State updates + build + send voltage recovery message. Single place for this logic."""
+    from power_monitor import update_chat_photo
+
+    now = time.time()
+    prev = recent_events(1)
+    kv_set("voltage_anomaly", "0")
+    kv_set("voltage_ok_count", "0")
+    kv_set("power_down", "0")
+    save_event("up")
+    log.info("VOLTAGE RESTORED (all 3 phases)")
+    stable_mins = VOLTAGE_EPISODE_MIN_INTERVAL_SEC // 60
+    stable_start = now - VOLTAGE_EPISODE_MIN_INTERVAL_SEC
+    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга стабілізувалась. {stable_mins} останніх хвилин без понаднормових коливань."
+    v = last_nonzero_grid_voltage()
+    if v:
+        parts = []
+        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+            val = v.get(key)
+            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
+    if prev:
+        dur = _format_duration(int(stable_start - prev[0]["ts"]))
+        msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(stable_start)})"
+    nxt = dtek.next_schedule_transition(looking_for_on=False)
+    if nxt:
+        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
+    await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
+
+
 async def analyze():
     """Detect outages and voltage anomalies. Uses power_monitor for notifications (lazy import)."""
     from power_monitor import tg_send, update_chat_photo, _tg_inline_button
@@ -116,28 +146,7 @@ async def analyze():
                     kv_set("voltage_problem_count", "0")
                     if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
                         return
-                    now = time.time()
-                    prev = recent_events(1)
-                    kv_set("voltage_anomaly", "0")
-                    kv_set("voltage_ok_count", "0")
-                    kv_set("power_down", "0")
-                    save_event("up")
-                    log.info("VOLTAGE RESTORED (all 3 phases)")
-                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
-                    v = last_nonzero_grid_voltage()
-                    if v:
-                        parts = []
-                        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
-                            val = v.get(key)
-                            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
-                        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
-                    if prev:
-                        dur = _format_duration(int(now - prev[0]["ts"]))
-                        msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
-                    nxt = dtek.next_schedule_transition(looking_for_on=False)
-                    if nxt:
-                        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
-                    await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
+                    await _send_voltage_recovery()
                 elif is_down:
                     now = time.time()
                     prev = recent_events(1)
@@ -331,28 +340,7 @@ async def analyze():
                     kv_set("voltage_problem_count", "0")
                     if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
                         return
-                    now = time.time()
-                    prev = recent_events(1)
-                    kv_set("voltage_anomaly", "0")
-                    kv_set("voltage_ok_count", "0")
-                    kv_set("power_down", "0")
-                    save_event("up")
-                    log.info("VOLTAGE RESTORED (all 3 phases)")
-                    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга відновилась"
-                    v = last_nonzero_grid_voltage()
-                    if v:
-                        parts = []
-                        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
-                            val = v.get(key)
-                            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
-                        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
-                    if prev:
-                        dur = _format_duration(int(now - prev[0]["ts"]))
-                        msg += f"\n\U0001f553 Проблема тривала {dur} ({_ts_fmt_hm(prev[0]['ts'])} - {_ts_fmt_hm(now)})"
-                    nxt = dtek.next_schedule_transition(looking_for_on=False)
-                    if nxt:
-                        msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
-                    await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
+                    await _send_voltage_recovery()
                 else:
                     kv_set("voltage_ok_count", "0")
                 return
