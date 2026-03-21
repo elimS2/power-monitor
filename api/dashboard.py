@@ -38,7 +38,9 @@ async def ep_status(key: str = Query("")):
 @router.get("/api/dashboard-fragments")
 def ep_dashboard_fragments(key: str = Query("")):
     check_permission(key, "dashboard")
-    from power_monitor import _build_update_fragments
+    from power_monitor import _build_update_fragments, record_online
+
+    record_online(key)
 
     frags = _build_update_fragments()
     key_label = API_KEYS.get(key, "")

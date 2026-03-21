@@ -11,10 +11,12 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import subprocess
+import threading
 import logging.handlers
 import os
 import sqlite3
@@ -89,6 +91,37 @@ import detection
 
 _REPO = Path(__file__).resolve().parent
 _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
+
+# Online tracking: hash(key) -> last_seen timestamp
+_online: dict[str, float] = {}
+_online_lock = threading.Lock()
+_ONLINE_WINDOW_SEC = 300
+
+
+def _online_key_id(key: str) -> str:
+    """Return stable hash of key for tracking (no actual key stored)."""
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def record_online(key: str) -> None:
+    """Record that this key viewed the dashboard (now)."""
+    if not key:
+        return
+    kid = _online_key_id(key)
+    with _online_lock:
+        _online[kid] = time.time()
+        # Cleanup stale entries while we're at it
+        cutoff = time.time() - _ONLINE_WINDOW_SEC
+        stale = [k for k, t in _online.items() if t < cutoff]
+        for k in stale:
+            del _online[k]
+
+
+def online_count() -> int:
+    """Count distinct keys seen in last ONLINE_WINDOW_SEC (5 min)."""
+    cutoff = time.time() - _ONLINE_WINDOW_SEC
+    with _online_lock:
+        return sum(1 for t in _online.values() if t >= cutoff)
 
 
 def _do_deploy_sync() -> bool:
@@ -773,7 +806,7 @@ def _build_update_fragments() -> dict:
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
         "pm_voltage": voltage_html,
-        "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>',
+        "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_count()} в онлайні',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
@@ -981,6 +1014,7 @@ async def dashboard(key: str = Query("")):
         if e.status_code == 403:
             return HTMLResponse(_key_expired_html(), status_code=200)
         raise
+    record_online(key)
     allowed = allowed_sections(key)
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
@@ -1448,6 +1482,7 @@ async def dashboard(key: str = Query("")):
 
     is_admin = key in API_KEYS and API_KEYS.get(key) == "admin"
     key_label = API_KEYS.get(key, "")
+    online_cnt = online_count()
 
     legend_html = '<details id="legend_details" data-ls-key="legend_open" data-default-open="0"><summary><h2 style="display:inline">Легенда повідомлень</h2></summary><table><tr><th>Подія</th><th>Повідомлення</th><th>Канал</th></tr><tr><td>Світло зникло</td><td>\u274c 13:03 Світло зникло (\U0001f4c5 За графіком, відхилення +3хв)<br>\U0001f553 Воно було 1д 9год 21хв (03:41 - 13:03)<br>\U0001f4c5 Включення за графіком: ~16:30 - 21:30</td><td>prod</td></tr><tr><td>Світло зникло (позапл.)</td><td>\u274c 02:15 Світло зникло (\u26a1Позапланове, відхилення 1год 30хв)<br>\U0001f553 Воно було 5год 10хв (21:05 - 02:15)<br>\U0001f4a0 Остання напруга: L1=230 В, L2=228 В, L3=231 В</td><td>prod</td></tr><tr><td>Світло з\'явилось</td><td>\u2705 16:34 Світло з\'явилось (\U0001f4c5 За графіком, відхилення -10хв)<br>\U0001f553 Його не було 3год 30хв (13:03 - 16:34)<br>\U0001f4c5 Наступне відключення: ~завтра 10:00 - 13:30</td><td>prod</td></tr><tr><td>Роутер offline</td><td>\u26a0\ufe0f Роутер не відповідає вже N хв</td><td>prod</td></tr><tr><td>/status (є)</td><td>\u2705 Світло є 3год 30хв (з 01:15)</td><td>приват</td></tr><tr><td>/status (нема)</td><td>\u274c Світло ВІДСУТНЄ 15хв (з 23:31)</td><td>приват</td></tr></table></details>'
 
@@ -1486,7 +1521,7 @@ async def dashboard(key: str = Query("")):
 
 </div>
 
-<div class="ver" id="pm-ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a>{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Адмін</a>' if is_admin else ''}</div>
+<div class="ver" id="pm-ver">v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_cnt} в онлайні{f' · {key_label}' if key_label else ''}{f' · <a href="/admin?key={key}" style="color:var(--muted)">Адмін</a>' if is_admin else ''}</div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
 </body></html>"""
 
