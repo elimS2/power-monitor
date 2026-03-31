@@ -6,8 +6,12 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
-from datetime import timezone, timedelta
 from pathlib import Path
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9
+    from backports.zoneinfo import ZoneInfo
 
 
 def _parse_keys(raw: str) -> dict:
@@ -74,8 +78,9 @@ STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", "300"))
 CLEANUP_KEEP_DAYS = 90
 
 # ─── Timezone ────────────────────────────────────────────────
+# Europe/Kyiv: зима UTC+2, літо UTC+3 (DST). Не використовувати фіксований +2 — розбіжність з Telegram після переводу годинника.
 
-UA_TZ = timezone(timedelta(hours=2))
+UA_TZ = ZoneInfo("Europe/Kyiv")
 
 # ─── DTEK schedule ───────────────────────────────────────────
 
