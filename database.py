@@ -273,11 +273,19 @@ def _seed_tg_channels(db: sqlite3.Connection) -> None:
                 ("test", TG_TEST_CHAT_ID, now),
             )
         if prod_id:
-            kv_set("tg_notify_channel_id", str(prod_id))
-    elif not kv_get("tg_notify_channel_id"):
-        row = db.execute("SELECT id FROM tg_channels ORDER BY id LIMIT 1").fetchone()
-        if row:
-            kv_set("tg_notify_channel_id", str(row["id"]))
+            db.execute(
+                "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
+                ("tg_notify_channel_id", str(prod_id)),
+            )
+    else:
+        row = db.execute("SELECT val FROM kv WHERE key=?", ("tg_notify_channel_id",)).fetchone()
+        if not row or not row["val"]:
+            first = db.execute("SELECT id FROM tg_channels ORDER BY id LIMIT 1").fetchone()
+            if first:
+                db.execute(
+                    "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
+                    ("tg_notify_channel_id", str(first["id"])),
+                )
 
 
 def kv_get(key: str, default: str = "") -> str:
