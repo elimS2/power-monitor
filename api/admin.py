@@ -13,6 +13,11 @@ from database import (
     kv_get,
     kv_set,
     SECTION_LABELS,
+    tg_channel_create,
+    tg_channel_delete,
+    tg_channel_list,
+    tg_channel_set_active,
+    tg_notify_chat_id,
     api_key_config_list,
     api_key_config_set_enabled,
     api_key_config_set_permissions,
@@ -236,6 +241,57 @@ def ep_admin_voltage_notify_set(key: str = Query(""), enabled: bool = Query(True
     check_admin(key)
     kv_set("tg_voltage_notify", "1" if enabled else "0")
     return {"ok": True, "enabled": enabled}
+
+
+@router.get("/tg-channels")
+def ep_admin_tg_channels(key: str = Query("")):
+    """List Telegram channels and active notification target. Admin only."""
+    check_admin(key)
+    channels = tg_channel_list()
+    active_id = next((c["id"] for c in channels if c["is_active"]), None)
+    return {"channels": channels, "active_id": active_id, "notify_chat_id": tg_notify_chat_id()}
+
+
+@router.post("/tg-channels")
+async def ep_admin_tg_channel_create(request: Request, key: str = Query("")):
+    """Add Telegram channel. Body: {name, chat_id}. Admin only."""
+    check_admin(key)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    name = (body.get("name") or "").strip()
+    chat_id = (body.get("chat_id") or "").strip()
+    if not name or not chat_id:
+        return JSONResponse({"error": "name and chat_id required"}, status_code=400)
+    try:
+        ch = tg_channel_create(name, chat_id)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"ok": True, "channel": ch}
+
+
+@router.post("/tg-channels/{channel_id:int}/activate")
+def ep_admin_tg_channel_activate(channel_id: int, key: str = Query("")):
+    """Set active notification channel. Admin only."""
+    check_admin(key)
+    ch = tg_channel_set_active(channel_id)
+    if not ch:
+        return JSONResponse({"error": "channel not found"}, status_code=404)
+    return {"ok": True, "channel": ch, "notify_chat_id": tg_notify_chat_id()}
+
+
+@router.delete("/tg-channels/{channel_id:int}")
+def ep_admin_tg_channel_delete(channel_id: int, key: str = Query("")):
+    """Delete Telegram channel. Admin only."""
+    check_admin(key)
+    try:
+        ok = tg_channel_delete(channel_id)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if not ok:
+        return JSONResponse({"error": "channel not found"}, status_code=404)
+    return {"ok": True, "channels": tg_channel_list(), "notify_chat_id": tg_notify_chat_id()}
 
 
 @router.post("/keys/{label}/permissions")

@@ -241,6 +241,43 @@ def init_db():
             db.execute("ALTER TABLE roles ADD COLUMN footer_parts TEXT")
         except sqlite3.OperationalError:
             pass
+        # Telegram notification channels (admin-managed)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS tg_channels (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                chat_id    TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+        _seed_tg_channels(db)
+
+
+def _seed_tg_channels(db: sqlite3.Connection) -> None:
+    """Seed tg_channels from env on first run; set active channel if unset."""
+    from config import TG_CHAT_ID, TG_TEST_CHAT_ID
+
+    count = db.execute("SELECT COUNT(*) FROM tg_channels").fetchone()[0]
+    if count == 0:
+        now = time.time()
+        prod_id = None
+        if TG_CHAT_ID and TG_CHAT_ID != "YOUR_CHAT_ID":
+            cur = db.execute(
+                "INSERT INTO tg_channels(name, chat_id, created_at) VALUES(?,?,?)",
+                ("prod", TG_CHAT_ID, now),
+            )
+            prod_id = cur.lastrowid
+        if TG_TEST_CHAT_ID:
+            db.execute(
+                "INSERT OR IGNORE INTO tg_channels(name, chat_id, created_at) VALUES(?,?,?)",
+                ("test", TG_TEST_CHAT_ID, now),
+            )
+        if prod_id:
+            kv_set("tg_notify_channel_id", str(prod_id))
+    elif not kv_get("tg_notify_channel_id"):
+        row = db.execute("SELECT id FROM tg_channels ORDER BY id LIMIT 1").fetchone()
+        if row:
+            kv_set("tg_notify_channel_id", str(row["id"]))
 
 
 def kv_get(key: str, default: str = "") -> str:
@@ -255,6 +292,125 @@ def kv_set(key: str, val: str):
             "INSERT INTO kv(key,val) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET val=excluded.val",
             (key, val),
         )
+
+
+# ─── Telegram channels ───────────────────────────────────────────
+
+def tg_channel_list() -> list[dict]:
+    with _conn() as db:
+        rows = db.execute(
+            "SELECT id, name, chat_id, created_at FROM tg_channels ORDER BY id"
+        ).fetchall()
+    active_raw = kv_get("tg_notify_channel_id")
+    active_id = int(active_raw) if active_raw.isdigit() else None
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "chat_id": r["chat_id"],
+            "created_at": r["created_at"],
+            "is_active": r["id"] == active_id,
+        }
+        for r in rows
+    ]
+
+
+def tg_channel_get(channel_id: int) -> dict | None:
+    with _conn() as db:
+        row = db.execute(
+            "SELECT id, name, chat_id, created_at FROM tg_channels WHERE id=?",
+            (channel_id,),
+        ).fetchone()
+    if not row:
+        return None
+    active_raw = kv_get("tg_notify_channel_id")
+    active_id = int(active_raw) if active_raw.isdigit() else None
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "chat_id": row["chat_id"],
+        "created_at": row["created_at"],
+        "is_active": row["id"] == active_id,
+    }
+
+
+def tg_channel_create(name: str, chat_id: str) -> dict:
+    name = name.strip()
+    chat_id = chat_id.strip()
+    if not name or not chat_id:
+        raise ValueError("name and chat_id required")
+    try:
+        with _conn() as db:
+            cur = db.execute(
+                "INSERT INTO tg_channels(name, chat_id, created_at) VALUES(?,?,?)",
+                (name, chat_id, time.time()),
+            )
+            channel_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        raise ValueError(f"name {name!r} already exists") from None
+    return tg_channel_get(channel_id)  # type: ignore[arg-type]
+
+
+def tg_channel_delete(channel_id: int) -> bool:
+    with _conn() as db:
+        row = db.execute("SELECT id FROM tg_channels WHERE id=?", (channel_id,)).fetchone()
+        if not row:
+            return False
+        if db.execute("SELECT COUNT(*) FROM tg_channels").fetchone()[0] <= 1:
+            raise ValueError("cannot delete the last channel")
+        db.execute("DELETE FROM tg_channels WHERE id=?", (channel_id,))
+    active_raw = kv_get("tg_notify_channel_id")
+    if active_raw == str(channel_id):
+        remaining = tg_channel_list()
+        if remaining:
+            kv_set("tg_notify_channel_id", str(remaining[0]["id"]))
+    return True
+
+
+def tg_channel_set_active(channel_id: int) -> dict | None:
+    ch = tg_channel_get(channel_id)
+    if not ch:
+        return None
+    kv_set("tg_notify_channel_id", str(channel_id))
+    ch["is_active"] = True
+    return ch
+
+
+def tg_notify_chat_id() -> str:
+    """Chat ID for prod notifications. Falls back to TG_CHAT_ID from env."""
+    from config import TG_CHAT_ID
+
+    active_raw = kv_get("tg_notify_channel_id")
+    if active_raw.isdigit():
+        ch = tg_channel_get(int(active_raw))
+        if ch:
+            return ch["chat_id"]
+    channels = tg_channel_list()
+    if channels:
+        return channels[0]["chat_id"]
+    return TG_CHAT_ID
+
+
+def tg_channel_label(chat_id: str) -> str:
+    """Short label for tg_log display."""
+    if not chat_id:
+        return "?"
+    for ch in tg_channel_list():
+        if ch["chat_id"] == chat_id:
+            return ch["name"]
+    return chat_id
+
+
+def tg_test_chat_id() -> str:
+    """Test channel chat_id if configured, else active notify channel."""
+    from config import TG_TEST_CHAT_ID
+
+    for ch in tg_channel_list():
+        if ch["name"] == "test":
+            return ch["chat_id"]
+    if TG_TEST_CHAT_ID:
+        return TG_TEST_CHAT_ID
+    return tg_notify_chat_id()
 
 
 # ─── API key config ─────────────────────────────────────────────

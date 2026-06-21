@@ -46,8 +46,6 @@ from config import (
     GIT_COMMIT,
     STALE_THRESHOLD_SEC,
     TG_BOT_TOKEN,
-    TG_CHAT_ID,
-    TG_TEST_CHAT_ID,
     TG_WEBHOOK_SECRET,
     UA_TZ,
     VOLTAGE_STATUS,
@@ -70,6 +68,8 @@ from database import (
     init_db,
     kv_get,
     kv_set,
+    tg_channel_label,
+    tg_notify_chat_id,
     last_nonzero_grid_voltage,
     parse_boiler_schedule,
     recent_alert_events,
@@ -233,7 +233,7 @@ def _tg_inline_button() -> dict | None:
 
 async def tg_send(text: str, chat_id: str = "", reply_markup: dict | None = None) -> int:
     """Send message, return message_id (0 on failure)."""
-    target = chat_id or TG_CHAT_ID
+    target = chat_id or tg_notify_chat_id()
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": target, "text": text}
     if reply_markup:
@@ -269,19 +269,20 @@ def _photo_for_voltage(kind: str) -> bytes | None:
 
 async def _delete_service_msg(client: httpx.AsyncClient, api: str, message: str | None = None, reply_markup: dict | None = None):
     """Send message (or '.'), delete service msg before it. If message provided, keep it; else delete our msg too."""
+    notify_chat = tg_notify_chat_id()
     text = message if message is not None else "."
-    payload = {"chat_id": TG_CHAT_ID, "text": text}
+    payload = {"chat_id": notify_chat, "text": text}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     r = await client.post(f"{api}/sendMessage", json=payload)
     if r.status_code == 200:
         if message is not None:
-            save_tg_log(TG_CHAT_ID, text, r.status_code)
+            save_tg_log(notify_chat, text, r.status_code)
         tid = r.json().get("result", {}).get("message_id", 0)
         if tid:
-            await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid - 1})
+            await client.post(f"{api}/deleteMessage", json={"chat_id": notify_chat, "message_id": tid - 1})
             if message is None:
-                await client.post(f"{api}/deleteMessage", json={"chat_id": TG_CHAT_ID, "message_id": tid})
+                await client.post(f"{api}/deleteMessage", json={"chat_id": notify_chat, "message_id": tid})
 
 
 def _tg_voltage_notify_enabled() -> bool:
@@ -300,11 +301,12 @@ async def update_chat_photo(is_down: bool, voltage: str | None = None, message_t
     else:
         photo = _PHOTO_OFF if is_down else _PHOTO_ON
     api = f"https://api.telegram.org/bot{TG_BOT_TOKEN}"
+    notify_chat = tg_notify_chat_id()
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
                 f"{api}/setChatPhoto",
-                data={"chat_id": TG_CHAT_ID},
+                data={"chat_id": notify_chat},
                 files={"photo": ("status.png", photo, "image/png")},
             )
             log.info("setChatPhoto [%s]: %s", r.status_code, r.text[:120])
@@ -623,7 +625,7 @@ def _build_update_fragments() -> dict:
     tg_rows = ""
     for t in recent_tg_log(15):
         ok = "up" if t["status"] == 200 else "down"
-        short_chat = "test" if t["chat_id"] == TG_TEST_CHAT_ID else "prod"
+        short_chat = tg_channel_label(t["chat_id"])
         safe_text = t["text"].replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
         tg_rows += f'<tr><td>{_ts_fmt_full(t["ts"])}</td><td class="{ok}">{t["status"]}</td><td>{short_chat}</td><td>{safe_text}</td></tr>\n'
 
@@ -1256,7 +1258,7 @@ async def dashboard(key: str = Query("")):
     tg_rows = ""
     for t in recent_tg_log(15):
         ok = "up" if t["status"] == 200 else "down"
-        short_chat = "test" if t["chat_id"] == TG_TEST_CHAT_ID else "prod"
+        short_chat = tg_channel_label(t["chat_id"])
         safe_text = t["text"].replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
         tg_rows += (
             f'<tr><td>{_ts_fmt_full(t["ts"])}</td>'
@@ -1559,12 +1561,14 @@ async def admin_page(key: str = Query("")):
     from urllib.parse import quote
 
     from api.deps import check_admin
-    from database import ALL_FOOTER_PARTS, ALL_SECTIONS, FOOTER_PART_LABELS, SECTION_LABELS, api_key_config_list, api_key_list, role_list
+    from database import ALL_FOOTER_PARTS, ALL_SECTIONS, FOOTER_PART_LABELS, SECTION_LABELS, api_key_config_list, api_key_list, role_list, tg_channel_list, tg_notify_chat_id
 
     check_admin(key)
     voltage_notify_enabled = kv_get("tg_voltage_notify") != "0"
     tg_bot_id = TG_BOT_TOKEN.split(":")[0] if TG_BOT_TOKEN and ":" in str(TG_BOT_TOKEN) else "—"
-    tg_chat_id = TG_CHAT_ID if TG_CHAT_ID else "—"
+    tg_channels = tg_channel_list()
+    tg_active = next((c for c in tg_channels if c["is_active"]), tg_channels[0] if tg_channels else None)
+    tg_chat_id = tg_notify_chat_id() if tg_notify_chat_id() else "—"
     configs = {c["label"]: c for c in api_key_config_list()}
     roles_data = role_list()
     qk = quote(key, safe="")
@@ -1630,6 +1634,27 @@ async def admin_page(key: str = Query("")):
         )
     roles_table_rows = "\n".join(role_rows)
 
+    tg_channel_rows = []
+    for ch in tg_channels:
+        active_mark = "✅ Активний" if ch["is_active"] else "—"
+        activate_btn = "" if ch["is_active"] else (
+            f'<button type="button" class="admin-tg-activate btn" data-id="{ch["id"]}">Зробити активним</button>'
+        )
+        del_btn = (
+            f' <button type="button" class="admin-tg-del btn" data-id="{ch["id"]}" data-name="{escape(ch["name"])}">Видалити</button>'
+            if len(tg_channels) > 1 else ""
+        )
+        tg_channel_rows.append(
+            f'<tr data-channel-id="{ch["id"]}"><td>{escape(ch["name"])}</td>'
+            f'<td><code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(ch["chat_id"])}</code></td>'
+            f'<td class="{"up" if ch["is_active"] else ""} admin-tg-active-cell">{active_mark}</td>'
+            f'<td>{activate_btn}{del_btn}</td></tr>'
+        )
+    tg_channels_table_rows = "\n".join(tg_channel_rows) if tg_channel_rows else (
+        '<tr><td colspan="4" style="color:var(--muted)">Немає каналів — додайте нижче</td></tr>'
+    )
+    tg_active_name = escape(tg_active["name"]) if tg_active else "—"
+
     all_sections_json = dumps(ALL_SECTIONS)
     section_labels_json = dumps(SECTION_LABELS)
     all_footer_parts_json = dumps(ALL_FOOTER_PARTS)
@@ -1669,6 +1694,19 @@ async def admin_page(key: str = Query("")):
 </div>
 <div id="admin-tab-notify" style="display:none">
 <h2>Сповіщення в Telegram</h2>
+<h3 style="margin-top:1.5rem;font-size:1rem">Канал для оповідей</h3>
+<p style="margin-bottom:0.75rem;color:var(--muted)">Усі автоматичні сповіщення (світло, напруга, роутер) йдуть у <strong id="admin-tg-active-name">{tg_active_name}</strong> (<code id="admin-tg-active-id" style="user-select:all">{escape(str(tg_chat_id))}</code>).</p>
+<table id="admin-tg-channels-table" style="margin-bottom:1rem">
+<tr><th>Назва</th><th>Chat ID</th><th>Статус</th><th>Дії</th></tr>
+{tg_channels_table_rows}
+</table>
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1.5rem">
+  <input type="text" id="admin-tg-name" placeholder="Назва (напр. test)" style="padding:0.4rem;min-width:120px">
+  <input type="text" id="admin-tg-chat-id" placeholder="Chat ID (-100…)" style="padding:0.4rem;min-width:180px">
+  <button type="button" id="admin-tg-add-btn" class="btn">+ Додати канал</button>
+  <span id="admin-tg-feedback" style="font-size:0.9rem;color:var(--muted)"></span>
+</div>
+<h3 style="font-size:1rem">Напруга</h3>
 <p style="margin-bottom:1rem;color:var(--muted)">Вмикайте та вимикайте сповіщення про напругу (висока/низька напруга, нестабільність).</p>
 <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
   <span id="admin-voltage-notify-status" class="{'up' if voltage_notify_enabled else 'down'}">{'✅ Увімкнено' if voltage_notify_enabled else '❌ Вимкнено'}</span>
@@ -1676,10 +1714,8 @@ async def admin_page(key: str = Query("")):
 </div>
 <p style="margin-top:1rem;font-size:0.9rem;color:var(--muted)">
   Бот: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_bot_id))}</code>
-  &nbsp;·&nbsp;
-  Канал: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_chat_id))}</code>
 </p>
-<button type="button" id="admin-send-status-btn" class="btn" style="margin-top:0.5rem">Надіслати статус в канал</button>
+<button type="button" id="admin-send-status-btn" class="btn" style="margin-top:0.5rem">Надіслати статус в активний канал</button>
 <span id="admin-send-status-feedback" style="margin-left:0.5rem;font-size:0.9rem"></span>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
@@ -1762,6 +1798,90 @@ async def admin_page(key: str = Query("")):
           if (fb) {{ fb.textContent = d.ok ? 'Відправлено' : (d.detail || 'Помилка'); fb.style.color = d.ok ? '#6ee7b7' : '#fca5a5'; }}
         }})
         .catch(function(e) {{ if (fb) {{ fb.textContent = 'Помилка'; fb.style.color = '#fca5a5'; }} }});
+    }});
+  }}
+  function refreshTgChannelsTable(channels, notifyChatId) {{
+    var table = document.getElementById('admin-tg-channels-table');
+    if (!table) return;
+    while (table.rows.length > 1) table.deleteRow(1);
+    if (!channels || !channels.length) {{
+      var empty = table.insertRow();
+      empty.innerHTML = '<td colspan="4" style="color:var(--muted)">Немає каналів — додайте нижче</td>';
+      return;
+    }}
+    channels.forEach(function(ch) {{
+      var row = table.insertRow();
+      row.setAttribute('data-channel-id', ch.id);
+      var activeMark = ch.is_active ? '\\u2705 Активний' : '—';
+      var activateBtn = ch.is_active ? '' : '<button type="button" class="admin-tg-activate btn" data-id="' + ch.id + '">Зробити активним</button>';
+      var delBtn = channels.length > 1 ? ' <button type="button" class="admin-tg-del btn" data-id="' + ch.id + '" data-name="' + ch.name + '">Видалити</button>' : '';
+      row.innerHTML = '<td>' + ch.name + '</td><td><code style="user-select:all;cursor:pointer">' + ch.chat_id + '</code></td><td class="' + (ch.is_active ? 'up' : '') + ' admin-tg-active-cell">' + activeMark + '</td><td>' + activateBtn + delBtn + '</td>';
+    }});
+    bindTgChannelButtons();
+    var active = channels.find(function(c) {{ return c.is_active; }}) || channels[0];
+    var nameEl = document.getElementById('admin-tg-active-name');
+    var idEl = document.getElementById('admin-tg-active-id');
+    if (active && nameEl) nameEl.textContent = active.name;
+    if (idEl && notifyChatId) idEl.textContent = notifyChatId;
+  }}
+  function bindTgChannelButtons() {{
+    document.querySelectorAll('.admin-tg-activate').forEach(function(btn) {{
+      btn.onclick = function() {{
+        var fb = document.getElementById('admin-tg-feedback');
+        fetch('/api/admin/tg-channels/' + btn.dataset.id + '/activate' + qs(), {{ method: 'POST' }})
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ok) {{
+              fetch('/api/admin/tg-channels' + qs()).then(function(r) {{ return r.json(); }}).then(function(data) {{
+                refreshTgChannelsTable(data.channels, data.notify_chat_id);
+                if (fb) {{ fb.textContent = 'Активний канал змінено'; fb.style.color = '#6ee7b7'; setTimeout(function() {{ fb.textContent = ''; }}, 2000); }}
+              }});
+            }} else if (fb) {{ fb.textContent = d.error || 'Помилка'; fb.style.color = '#fca5a5'; }}
+          }});
+      }};
+    }});
+    document.querySelectorAll('.admin-tg-del').forEach(function(btn) {{
+      btn.onclick = function() {{
+        if (!confirm('Видалити канал «' + btn.dataset.name + '»?')) return;
+        var fb = document.getElementById('admin-tg-feedback');
+        fetch('/api/admin/tg-channels/' + btn.dataset.id + qs(), {{ method: 'DELETE' }})
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ok) {{
+              refreshTgChannelsTable(d.channels, d.notify_chat_id);
+              if (fb) {{ fb.textContent = 'Видалено'; fb.style.color = '#6ee7b7'; setTimeout(function() {{ fb.textContent = ''; }}, 2000); }}
+            }} else if (fb) {{ fb.textContent = d.error || 'Помилка'; fb.style.color = '#fca5a5'; }}
+          }});
+      }};
+    }});
+  }}
+  bindTgChannelButtons();
+  var tgAddBtn = document.getElementById('admin-tg-add-btn');
+  if (tgAddBtn) {{
+    tgAddBtn.addEventListener('click', function() {{
+      var nameEl = document.getElementById('admin-tg-name');
+      var chatEl = document.getElementById('admin-tg-chat-id');
+      var fb = document.getElementById('admin-tg-feedback');
+      var name = nameEl ? nameEl.value.trim() : '';
+      var chatId = chatEl ? chatEl.value.trim() : '';
+      if (!name || !chatId) {{
+        if (fb) {{ fb.textContent = 'Вкажіть назву та Chat ID'; fb.style.color = '#fca5a5'; }}
+        return;
+      }}
+      fetch('/api/admin/tg-channels' + qs(), {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ name: name, chat_id: chatId }})
+      }}).then(function(r) {{ return r.json(); }}).then(function(d) {{
+        if (d.ok) {{
+          if (nameEl) nameEl.value = '';
+          if (chatEl) chatEl.value = '';
+          fetch('/api/admin/tg-channels' + qs()).then(function(r) {{ return r.json(); }}).then(function(data) {{
+            refreshTgChannelsTable(data.channels, data.notify_chat_id);
+            if (fb) {{ fb.textContent = 'Канал додано'; fb.style.color = '#6ee7b7'; setTimeout(function() {{ fb.textContent = ''; }}, 2000); }}
+          }});
+        }} else if (fb) {{ fb.textContent = d.error || 'Помилка'; fb.style.color = '#fca5a5'; }}
+      }});
     }});
   }}
   document.querySelectorAll('.admin-key-toggle').forEach(function(btn) {{
