@@ -59,6 +59,7 @@ from database import (
     cleanup_old,
     deye_aggregates_refresh,
     deye_aggregates_snapshot,
+    deye_cumulative_metrics,
     deye_voltage_trend,
     first_heartbeat_ts,
     has_all_three_phases_voltage,
