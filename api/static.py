@@ -30,6 +30,15 @@ async def serve_js():
     )
 
 
+@router.get("/collections.js")
+async def serve_collections_js():
+    return FileResponse(
+        _STATIC_DIR / "collections.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @router.get("/icons/{name}")
 async def serve_icon(name: str):
     if name not in _ALLOWED_ICONS:

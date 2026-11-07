@@ -236,6 +236,32 @@ def init_db():
             if "voltage_details" not in sec:
                 updated = [s for s in ALL_SECTIONS if s != "deye_details"]
                 db.execute("UPDATE roles SET sections=? WHERE id=?", (json.dumps(updated), row["id"]))
+        # Migration: participation map is visible to every key that already has an explicit section list.
+        def _append_collections(raw: str | None) -> str | None:
+            if not raw:
+                return None
+            try:
+                sec = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(sec, list) or "collections_details" in sec:
+                return None
+            sec.append("collections_details")
+            return json.dumps(sec)
+
+        for row in db.execute("SELECT id, sections FROM roles WHERE sections IS NOT NULL").fetchall():
+            updated = _append_collections(row["sections"])
+            if updated:
+                db.execute("UPDATE roles SET sections=? WHERE id=?", (updated, row["id"]))
+        for row in db.execute(
+            "SELECT label, sections FROM api_key_config WHERE sections IS NOT NULL AND role_id IS NULL"
+        ).fetchall():
+            updated = _append_collections(row["sections"])
+            if updated:
+                db.execute(
+                    "UPDATE api_key_config SET sections=? WHERE label=?",
+                    (updated, row["label"]),
+                )
         # Migration: add footer_parts to roles
         try:
             db.execute("ALTER TABLE roles ADD COLUMN footer_parts TEXT")
@@ -429,6 +455,7 @@ ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
     "alert_ev_details", "tg_details", "voltage_details",
     "deye_details", "hb_details", "legend_details", "avatars_details",
+    "collections_details",
 ]
 
 ALL_FOOTER_PARTS = ["hash", "online", "key", "admin"]
@@ -452,6 +479,7 @@ SECTION_LABELS = {
     "hb_details": "Роутер / Heartbeats",
     "legend_details": "Легенда повідомлень",
     "avatars_details": "Аватарки каналу",
+    "collections_details": "Участь у зборах",
 }
 
 

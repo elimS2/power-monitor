@@ -1524,7 +1524,7 @@ async def dashboard(key: str = Query("")):
 <link rel="apple-touch-icon" href="/icons/icon_on.png">
 <link rel="manifest" href="/manifest.json?key={key}">
 <title>{"❌ " + status_text if status_cls == "down" else "✅ " + status_text} — Power Monitor</title>
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}">
 </head><body data-pm-key="{key}" data-pm-down={"1" if status_cls == "down" else "0"}>
 <h1>Power Monitor — ЗК 6</h1>
 <div id="pm-status-block"><div class="status {status_cls}"><img src="/icons/{status_icon}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div>
@@ -1538,6 +1538,7 @@ async def dashboard(key: str = Query("")):
 {_wrap_dashboard_section("sched_details", schedule_html, allowed) if schedule_html else ""}
 {_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
 {f'<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="ev_details" open data-ls-key="ev_open" data-default-open="1"><summary><h2 style="display:inline">Події</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr><tbody id="pm-events-tbody">{ev_rows}</tbody></table></details></div>' if "ev_details" in allowed else ""}
+{_wrap_dashboard_section("collections_details", '<details id="collections_details" open data-ls-key="collections_open" data-default-open="1"><summary><h2 style="display:inline">Участь у зборах</h2></summary><div id="pm-collections"></div></details>', allowed)}
 {f'<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="links_details" open data-ls-key="links_open" data-default-open="1"><summary><h2 style="display:inline">Посилання</h2></summary><table><tr><th>Опис</th><th>Посилання</th></tr><tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr><tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr><tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr><tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr><tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr></table></details></div>' if "links_details" in allowed else ""}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
@@ -1550,6 +1551,7 @@ async def dashboard(key: str = Query("")):
 
 <div class="ver" id="pm-ver"><span id="pm-ver-content">{footer_content}</span></div>
 <script src="/app.js?v={GIT_COMMIT}"></script>
+<script src="/collections.js?v={GIT_COMMIT}"></script>
 </body></html>"""
 
 
