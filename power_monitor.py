@@ -57,10 +57,8 @@ from database import (
     api_key_get_plain,
     boiler_schedule_for_dates,
     cleanup_old,
-    deye_battery_episodes_for_month,
-    deye_cumulative_metrics,
-    deye_daily_load_kwh,
-    deye_monthly_load_kwh,
+    deye_aggregates_refresh,
+    deye_aggregates_snapshot,
     deye_voltage_trend,
     first_heartbeat_ts,
     has_all_three_phases_voltage,
@@ -398,11 +396,24 @@ async def _poll_deye():
         log.warning("Deye poll error: %s", e)
 
 
+async def _refresh_deye_aggregates() -> None:
+    """Run the heavy Deye scans in a thread so page loads stay fast."""
+    if getattr(_refresh_deye_aggregates, "running", False):
+        return
+    _refresh_deye_aggregates.running = True
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, deye_aggregates_refresh)
+    finally:
+        _refresh_deye_aggregates.running = False
+
+
 async def bg_loop():
     cleanup_tick = 0
     schedule_tick = 0
     alert_tick = 0
     deye_poll_tick = 0
+    deye_agg_tick = 0
     deploy_tick = 0
     while True:
         try:
@@ -411,6 +422,11 @@ async def bg_loop():
             if cleanup_tick >= 2880:  # ~24h at 30s interval
                 cleanup_old()
                 cleanup_tick = 0
+            deye_agg_tick += 1
+            if deye_agg_tick == 1 or deye_agg_tick >= 11:  # immediately, then every ~5 min
+                if deye_agg_tick >= 11:
+                    deye_agg_tick = 1
+                asyncio.create_task(_refresh_deye_aggregates())
             if DEYE_POLL_IP:
                 deye_poll_tick += 1
                 if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
@@ -663,7 +679,7 @@ def _build_update_fragments() -> dict:
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             parts_rt.append("Напруга " + " ".join(v_parts) + " В")
-        month_kwh = deye_monthly_load_kwh()
+        month_kwh = deye_aggregates_snapshot()["monthly_kwh"]
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts_tot.append(f"За {month_name}: {month_kwh} кВт·год")
@@ -711,7 +727,7 @@ def _build_update_fragments() -> dict:
             deye_rows += f'<tr><td>{_ts_fmt_full(r["ts"])}</td><td>{load_s}</td><td>{grid_s}</td><td>{soc_s}</td><td>{v1_s}</td><td>{v2_s}</td><td>{v3_s}</td><td>{bat_s}</td></tr>\n'
 
     deye_daily_rows = ""
-    for d in deye_daily_load_kwh():
+    for d in deye_aggregates_snapshot()["daily"]:
         load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
         grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
         int_s = f'{d["integrated_kwh"]}'
@@ -721,7 +737,8 @@ def _build_update_fragments() -> dict:
         hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
         deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
 
-    battery_daily, battery_monthly = deye_battery_episodes_for_month()
+    _agg = deye_aggregates_snapshot()
+    battery_daily, battery_monthly = _agg["battery_daily"], _agg["battery_monthly"]
     deye_battery_html = ""
     if battery_daily or battery_monthly["cycles"] > 0:
         month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
@@ -1112,7 +1129,7 @@ async def dashboard(key: str = Query("")):
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             parts.append("Напруга " + " ".join(v_parts) + " В")
-        month_kwh = deye_monthly_load_kwh()
+        month_kwh = deye_aggregates_snapshot()["monthly_kwh"]
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts.append(f"За {month_name}: {month_kwh} кВт·год")
@@ -1131,7 +1148,7 @@ async def dashboard(key: str = Query("")):
         sep = " · "
         deye_summary = sep.join(parts) + f" ({age}с тому)" if parts else f"Оновлено {age}с тому"
         deye_daily_rows = ""
-        for d in deye_daily_load_kwh():
+        for d in deye_aggregates_snapshot()["daily"]:
             load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
             grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
             int_s = f'{d["integrated_kwh"]}'
@@ -1140,7 +1157,8 @@ async def dashboard(key: str = Query("")):
                 hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
             hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
             deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
-        battery_daily, battery_monthly = deye_battery_episodes_for_month()
+        _agg = deye_aggregates_snapshot()
+        battery_daily, battery_monthly = _agg["battery_daily"], _agg["battery_monthly"]
         deye_battery_html = ""
         if battery_daily or battery_monthly["cycles"] > 0:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
@@ -1288,7 +1306,7 @@ async def dashboard(key: str = Query("")):
         if any(x is not None for x in (v1, v2, v3)):
             v_parts = [f"L{n}={int(v)}" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
             parts1.append("Напруга " + " ".join(v_parts) + " В")
-        month_kwh = deye_monthly_load_kwh()
+        month_kwh = deye_aggregates_snapshot()["monthly_kwh"]
         if month_kwh is not None:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]
             parts1.append(f"За {month_name}: {month_kwh} кВт·год")
@@ -1325,7 +1343,7 @@ async def dashboard(key: str = Query("")):
                 parts2.append(f"~{time_str} до 0")
             deye_summary_line2 = sep.join(parts2)
         deye_daily_rows = ""
-        for d in deye_daily_load_kwh():
+        for d in deye_aggregates_snapshot()["daily"]:
             load_s = f'{d["load_kwh"]}' if d.get("load_kwh") is not None else "—"
             grid_s = f'{d["grid_kwh"]}' if d.get("grid_kwh") is not None else "—"
             int_s = f'{d["integrated_kwh"]}'
@@ -1334,7 +1352,8 @@ async def dashboard(key: str = Query("")):
                 hr_rows += f'<tr><td>{h["hour"]:02d}:00–{h["hour"]+1:02d}:00</td><td>{h["kwh"]} кВт·год</td></tr>\n'
             hr_table = f'<table style="margin-top:0.4rem;font-size:0.85rem"><tr><th>Година</th><th>кВт·год</th></tr>{hr_rows}</table>' if d.get("hours") else ""
             deye_daily_rows += f'<tr><td><details style="margin:0.2rem 0"><summary>{d["date"]}</summary>{hr_table}</details></td><td>{load_s}</td><td>{grid_s}</td><td>{int_s}</td><td>{d["samples"]}</td></tr>\n'
-        battery_daily, battery_monthly = deye_battery_episodes_for_month()
+        _agg = deye_aggregates_snapshot()
+        battery_daily, battery_monthly = _agg["battery_daily"], _agg["battery_monthly"]
         deye_battery_html = ""
         if battery_daily or battery_monthly["cycles"] > 0:
             month_name = ["", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"][datetime.now(UA_TZ).month]

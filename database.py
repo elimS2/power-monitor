@@ -9,6 +9,7 @@ import logging
 import re
 import statistics
 import sqlite3
+import threading
 import time
 from datetime import datetime
 
@@ -959,26 +960,78 @@ def deye_total_load_kwh_integrated() -> float | None:
     return _integrate_range(row["ts_min"], time.time())
 
 
+_EMPTY_BATTERY_MONTH = {"cycles": 0, "charge_kwh": 0.0, "discharge_kwh": 0.0}
+_deye_agg_lock = threading.Lock()
+_deye_agg = {
+    "daily": [],
+    "monthly_kwh": None,
+    "battery_daily": [],
+    "battery_monthly": dict(_EMPTY_BATTERY_MONTH),
+    "day_integrated": None,
+    "total_integrated": None,
+    "ready": False,
+}
+
+
+def deye_aggregates_snapshot() -> dict:
+    """Cheap copy of the last background aggregate. Never scans deye_log."""
+    with _deye_agg_lock:
+        snap = dict(_deye_agg)
+        snap["battery_monthly"] = dict(_deye_agg["battery_monthly"])
+        return snap
+
+
+def deye_aggregates_refresh() -> None:
+    """Recompute month, day and all-time integrations off the request path."""
+    t0 = time.perf_counter()
+    try:
+        daily = deye_daily_load_kwh()
+        monthly = round(sum(d["integrated_kwh"] for d in daily), 1) if daily else None
+        battery_daily, battery_monthly = deye_battery_episodes_for_month()
+        day_integrated = deye_day_load_kwh_integrated()
+        total_integrated = deye_total_load_kwh_integrated()
+    except Exception:
+        log.exception("Deye aggregate refresh failed")
+        return
+    with _deye_agg_lock:
+        _deye_agg["daily"] = daily
+        _deye_agg["monthly_kwh"] = monthly
+        _deye_agg["battery_daily"] = battery_daily
+        _deye_agg["battery_monthly"] = battery_monthly or dict(_EMPTY_BATTERY_MONTH)
+        _deye_agg["day_integrated"] = day_integrated
+        _deye_agg["total_integrated"] = total_integrated
+        _deye_agg["ready"] = True
+    log.info(
+        "Deye aggregates refreshed in %.1fs (%d days)",
+        time.perf_counter() - t0,
+        len(daily),
+    )
+
+
 def deye_cumulative_metrics(last: dict | None) -> list[dict]:
     """
     Cumulative Load Energy and Grid metrics for dashboard table.
-    Returns [{"period", "register", "description", "value_inv", "value_integrated"}, ...]
-    value_inv = from inverter register; value_integrated = our load_power_w or grid_power_w integration.
+    Integrated columns come from the background cache, not a fresh scan.
     """
+    agg = deye_aggregates_snapshot()
+    cached = {
+        "day": agg["day_integrated"],
+        "month": agg["monthly_kwh"],
+        "total": agg["total_integrated"],
+    }
     rows = [
-        ("День", "526", "Load за сьогодні (скидається о 00:00)", "day_load_kwh", deye_day_load_kwh_integrated),
-        ("Місяць", "66", "Load за поточний місяць (×0.1 за Sunsynk)", "month_load_kwh", deye_monthly_load_kwh),
-        ("Всього", "527–528", "Load за весь час (×0.000001 для 3PH)", "total_load_kwh", deye_total_load_kwh_integrated),
-        # Grid: тільки лічильник інвертора (інтеграція grid_power_w часто 0 в гібридному режимі)
+        ("День", "526", "Load за сьогодні (скидається о 00:00)", "day_load_kwh", "day"),
+        ("Місяць", "66", "Load за поточний місяць (×0.1 за Sunsynk)", "month_load_kwh", "month"),
+        ("Всього", "527–528", "Load за весь час (×0.000001 для 3PH)", "total_load_kwh", "total"),
         ("День імпорт", "520", "Grid імпорт за день (×0.1)", "day_grid_import_kwh", None),
         ("День експорт", "521", "Grid експорт за день (×0.1)", "day_grid_export_kwh", None),
         ("Всього імпорт", "522–523", "Grid імпорт за весь час (×0.000001)", "total_grid_import_kwh", None),
         ("Всього експорт", "524–525", "Grid експорт за весь час (×0.000001)", "total_grid_export_kwh", None),
     ]
     result = []
-    for period, reg, desc, key_inv, fn_integrated in rows:
+    for period, reg, desc, key_inv, cache_key in rows:
         val_inv = last.get(key_inv) if last else None
-        val_int = fn_integrated() if fn_integrated else None
+        val_int = cached.get(cache_key) if cache_key else None
         result.append({
             "period": period,
             "register": reg,
