@@ -92,6 +92,7 @@ details[open] summary::before { content: '▼ '; }
 .col-cells.center { justify-content: center; }
 .col-cell { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: #334155; cursor: pointer; }
 .col-debt { position: absolute; top: 1px; right: 1px; width: 9px; height: 9px; border-radius: 5px; background: #f8fafc; color: #0f172a; font-size: 8px; line-height: 9px; font-weight: 700; text-align: center; pointer-events: none; }
+.col-tip { position: fixed; z-index: 40; pointer-events: none; white-space: pre; background: #0f172a; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 3px 7px; font-size: 12px; line-height: 1.35; }
 .col-cell.active { border-color: #e2e8f0; }
 .col-note { color: var(--muted); font-size: 0.72rem; margin-left: -4px; }
 .col-rule { height: 1px; background: var(--border); margin: 4px 0 4px 50px; }

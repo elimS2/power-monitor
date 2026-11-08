@@ -68,8 +68,11 @@
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'col-cell' + (selected === id ? ' active' : '');
-    btn.title = id + ': ' + score + ' з ' + (total || '—') + (debt === null ? '' : ' · борг ' + formatUah(debt));
+    var hint = id + ': ' + score + ' з ' + (total || '—') + (debt === null ? '' : '\nБорг ' + formatUah(debt));
     btn.style.background = fill(score, total);
+    btn.addEventListener('mouseenter', function (event) { showTip(hint, event); });
+    btn.addEventListener('mousemove', function (event) { moveTip(event); });
+    btn.addEventListener('mouseleave', hideTip);
     if (showDebt && debt !== null) {
       var mark = document.createElement('span');
       mark.className = 'col-debt';
@@ -101,7 +104,33 @@
     return line;
   }
 
+  var tip = document.createElement('div');
+  tip.className = 'col-tip';
+  tip.hidden = true;
+  document.body.appendChild(tip);
+
+  function showTip(text, event) {
+    tip.textContent = text;
+    tip.hidden = false;
+    moveTip(event);
+  }
+
+  function moveTip(event) {
+    var x = event.clientX + 14;
+    var y = event.clientY + 16;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    var rect = tip.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) tip.style.left = (event.clientX - rect.width - 14) + 'px';
+    if (rect.bottom > window.innerHeight - 8) tip.style.top = (event.clientY - rect.height - 12) + 'px';
+  }
+
+  function hideTip() {
+    tip.hidden = true;
+  }
+
   function render() {
+    hideTip();
     var active = bits();
     var total = active.length;
     var full = 0;
