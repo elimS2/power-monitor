@@ -39,6 +39,24 @@ async def serve_collections_js():
     )
 
 
+@router.get("/skd/brelok-chornovola6.pdf")
+async def skd_brelok_pdf(key: str = Query("")):
+    """Resident fob instruction. Same dashboard key as the rest of the page."""
+    check_permission(key, "dashboard")
+    path = _STATIC_DIR / "skd-brelok-chornovola6.pdf"
+    if not path.is_file():
+        from fastapi import HTTPException
+        raise HTTPException(404)
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "Content-Disposition": 'inline; filename="skd-brelok-chornovola6.pdf"',
+        },
+    )
+
+
 @router.get("/icons/{name}")
 async def serve_icon(name: str):
     if name not in _ALLOWED_ICONS:
