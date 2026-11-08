@@ -8,6 +8,16 @@
   var MASKS = [6,6,0,6,4,5,2,6,7,0,31,6,4,0,4,0,7,0,2,4,6,6,0,15,0,31,31,4,0,31,15,31,31,4,0,30,2,30,31,0,31,31,0,30,31,0,15,30,28,30,4,0,31,31,31,0,30,0,31,30,30,31,31,31,31,4,15,30,30,31,30,4,30,31,30,30,31,30,2,30,31,0,30,4,0,30,3,0,31,31,12,31,31,0,0,31,31,11,31,31,30,31,31,30,31,0,31,31,31,0,0,30,1,30,31,0,8,31,31,31,30,0,31,31,31,31,0,31,0,31,30,31,31,31,31,30,31,30,28,6,30,30,31,31,31,0,31,0,31,31,30,31,5,0,30,30,31,0,31,0,31,12,14,0,31,31,31,31,31,30,12,31,0,30,31,30,30,30,31,0,31,0,31,31,31,31,30,31,0,0,0,31];
   var OFFICES = [['оф60', 30], ['оф61', 30], ['оф62', 30], ['оф63', 30], ['оф64', 30]];
   var SHOPS = [['ГрінФіт', 4], ['Ком', 0], ['Амеда', 4], ['Фудпод', 0], ['Ком 2', 4]];
+  var DEBTS = {
+    '14': 14764.94, '32': 5123.97, '46': 14781.29, '52': 36524.24,
+    '68': 24115.63, '69': 16165.99, '72': 6686.05, '100': 9641.61,
+    '116': 25733.82, '129': 22792.66, '132': 5766.44, '140': 6885.86,
+    '144': 28315.12, '146': 5856.03, '154': 5856.03, '182': 62462.09,
+    '191': 9992.13
+  };
+  var DEBT_KEY = 'pm_collection_debt';
+  var showDebt = true;
+  try { showDebt = localStorage.getItem(DEBT_KEY) !== '0'; } catch (e) { showDebt = true; }
   var COLS = [
     { key: 'lifts', label: 'Ліфти', bit: 16 },
     { key: 'water', label: 'Вода', bit: 8 },
@@ -42,14 +52,30 @@
     return list.length ? list.join(', ') : 'жодним збором';
   }
 
+  function formatUah(value) {
+    var parts = value.toFixed(2).split('.');
+    return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ',' + parts[1] + ' грн';
+  }
+
+  function debtOf(id) {
+    return Object.prototype.hasOwnProperty.call(DEBTS, id) ? DEBTS[id] : null;
+  }
+
   function unitButton(id, mask, active) {
     var total = active.length;
     var score = total ? paid(mask, active) : 0;
+    var debt = debtOf(id);
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'col-cell' + (selected === id ? ' active' : '');
-    btn.title = id + ': ' + score + ' з ' + (total || '—');
+    btn.title = id + ': ' + score + ' з ' + (total || '—') + (debt === null ? '' : ' · борг ' + formatUah(debt));
     btn.style.background = fill(score, total);
+    if (showDebt && debt !== null) {
+      var mark = document.createElement('span');
+      mark.className = 'col-debt';
+      mark.textContent = '!';
+      btn.appendChild(mark);
+    }
     btn.addEventListener('click', function () {
       selected = selected === id ? '' : id;
       render();
@@ -111,6 +137,25 @@
     });
     root.appendChild(filtersRow);
 
+    var debtRow = document.createElement('div');
+    debtRow.className = 'col-filters';
+    var debtLabel = document.createElement('label');
+    var debtInput = document.createElement('input');
+    debtInput.type = 'checkbox';
+    debtInput.checked = showDebt;
+    debtInput.addEventListener('change', function () {
+      showDebt = debtInput.checked;
+      try { localStorage.setItem(DEBT_KEY, showDebt ? '1' : '0'); } catch (e) {}
+      render();
+    });
+    debtLabel.appendChild(debtInput);
+    debtLabel.appendChild(document.createTextNode('Борг Оселі'));
+    debtRow.appendChild(debtLabel);
+    var debtNote = document.createElement('span');
+    debtNote.textContent = 'Знак ! не змінює колір. Клік по клітинці показує суму.';
+    debtRow.appendChild(debtNote);
+    root.appendChild(debtRow);
+
     var stats = document.createElement('div');
     stats.className = 'col-stats';
     stats.textContent = 'Усі увімкнені: ' + full + ' · Частина: ' + partial + ' · Жодного: ' + none + ' · У розрахунку: ' + total + ' з 5';
@@ -165,16 +210,18 @@
         var detail = document.createElement('div');
         detail.className = 'col-detail';
         var score = total ? paid(found.mask, active) : 0;
+        var debt = debtOf(selected);
         detail.innerHTML = '<b>' + found.id + '</b><br>' +
           (total ? (score + ' з ' + total + ' увімкнених') : 'Увімкніть хоча б один збір.') +
-          '<br><small>Плюс у таблиці: ' + names(found.mask) + '</small>';
+          '<br><small>Плюс у таблиці: ' + names(found.mask) + '</small>' +
+          (debt === null ? '' : '<br>Борг Оселі: ' + formatUah(debt));
         root.appendChild(detail);
       }
     }
 
     var source = document.createElement('p');
     source.className = 'col-lead';
-    source.textContent = 'Зріз 7 листопада 2026. Для «Вода АКБ» плюс означає щонайменше 2 000 грн готівкою або на банку.';
+    source.textContent = 'Зріз участі 7 листопада 2026. Борг — кабінет Оселі на 9 листопада 2026, 17 квартир. НЖ 67 (5 934,34 грн) на сітці немає.';
     root.appendChild(source);
   }
 

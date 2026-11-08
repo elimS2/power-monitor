@@ -90,7 +90,8 @@ details[open] summary::before { content: '▼ '; }
 .col-floor { width: 42px; flex: none; color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
 .col-cells { display: flex; gap: 3px; width: 197px; flex: none; }
 .col-cells.center { justify-content: center; }
-.col-cell { width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: #334155; cursor: pointer; }
+.col-cell { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 1px solid var(--border); background: #334155; cursor: pointer; }
+.col-debt { position: absolute; top: 1px; right: 1px; width: 9px; height: 9px; border-radius: 5px; background: #f8fafc; color: #0f172a; font-size: 8px; line-height: 9px; font-weight: 700; text-align: center; pointer-events: none; }
 .col-cell.active { border-color: #e2e8f0; }
 .col-note { color: var(--muted); font-size: 0.72rem; margin-left: -4px; }
 .col-rule { height: 1px; background: var(--border); margin: 4px 0 4px 50px; }
