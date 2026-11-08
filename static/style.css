@@ -198,3 +198,28 @@ details[open] summary::before { content: '▼ '; }
   .vboard { padding: 0.7rem 0.4rem 0.45rem; }
   .vboard-meters { gap: 0.35rem; }
 }
+
+.vchart {
+  margin-top: 0.75rem;
+  background: linear-gradient(180deg, #1a2436 0%, #121a28 100%);
+  border: 1px solid #3d4d66;
+  border-radius: 14px;
+  padding: 0.7rem 0.45rem 0.55rem;
+}
+.vchart-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.35rem 0.6rem;
+  flex-wrap: wrap;
+  padding: 0 0.35rem 0.25rem; font-size: 0.86rem;
+}
+.vchart-queue, .vchart-span { color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
+.vchart-queue { margin-left: 0.35rem; }
+.vchart-svg { width: 100%; height: auto; display: block; }
+.vchart-legend {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem;
+  margin-top: 0.15rem; padding: 0 0.35rem; color: var(--muted); font-size: 0.68rem;
+}
+.vchart-key { display: inline-flex; align-items: center; gap: 0.28rem; }
+.vchart-mark { display: inline-block; flex: none; }
+.vchart-line { width: 14px; height: 3px; border-radius: 2px; }
+.vchart-box { width: 12px; height: 10px; border-radius: 2px; }
+.vchart-dash { width: 14px; height: 0; border-top: 2px dashed currentColor; }

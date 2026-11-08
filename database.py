@@ -937,6 +937,30 @@ def recent_deye_log(n: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def deye_voltage_buckets(ts_start: float, ts_end: float, bucket_sec: int = 60) -> list[dict]:
+    """One row per minute: mean voltage of live phases, and how many samples were dead."""
+    step = bucket_sec if bucket_sec >= 1 else 60
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT CAST(ts / ? AS INTEGER) * ? AS bucket,
+                      AVG(CASE WHEN grid_v_l1 >= 50 THEN grid_v_l1 END) AS l1,
+                      AVG(CASE WHEN grid_v_l2 >= 50 THEN grid_v_l2 END) AS l2,
+                      AVG(CASE WHEN grid_v_l3 >= 50 THEN grid_v_l3 END) AS l3,
+                      SUM(CASE
+                            WHEN COALESCE(grid_v_l1, 0) < 50
+                             AND COALESCE(grid_v_l2, 0) < 50
+                             AND COALESCE(grid_v_l3, 0) < 50
+                            THEN 1 ELSE 0 END) AS dead,
+                      COUNT(*) AS n
+               FROM deye_log
+               WHERE ts >= ? AND ts < ?
+               GROUP BY bucket
+               ORDER BY bucket""",
+            (step, step, ts_start, ts_end),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _integrate_kwh(rows: list) -> float:
     """Trapezoidal integration of load_power_w over time. Returns kWh."""
     total = 0.0

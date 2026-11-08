@@ -60,6 +60,7 @@ from database import (
     deye_aggregates_refresh,
     deye_aggregates_snapshot,
     deye_cumulative_metrics,
+    deye_voltage_buckets,
     deye_voltage_trend,
     first_heartbeat_ts,
     has_all_three_phases_voltage,
@@ -87,6 +88,7 @@ from database import (
 
 import dtek
 import detection
+from voltage_chart import BUCKET_SEC, FUTURE_SEC, HISTORY_SEC, build_voltage_chart
 
 _REPO = Path(__file__).resolve().parent
 _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
@@ -628,6 +630,21 @@ def _build_voltage_panel(deye_rows: list | None) -> str:
         + "</div>"
         + f'<div class="vboard-age">{age_html}</div>'
         + "</div>"
+        + _voltage_chart_html()
+    )
+
+
+def _voltage_chart_html() -> str:
+    now = time.time()
+    cache = dtek.schedule_cache or {}
+    return build_voltage_chart(
+        now=now,
+        buckets=deye_voltage_buckets(now - HISTORY_SEC, now, BUCKET_SEC),
+        today=cache.get("today"),
+        tomorrow=cache.get("tomorrow"),
+        queue=DTEK_QUEUE,
+        history_sec=HISTORY_SEC,
+        future_sec=FUTURE_SEC,
     )
 
 
