@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-08T22:58:59Z
+- Last updated: 2026-11-08T23:07:29Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -44,6 +44,11 @@ Controls are checkboxes, remembered in the browser:
 - Backfilling old voltage bars by replaying `deye_log`. Voltage bars start from the first sample after deploy.
 - Writing this feature, the house, or keys into the company knowledge base.
 - Deploy, commit, or `#автооновити` unless the operator asks in a later chat.
+- Neighbor-building outage statistics. Noted below so it is not forgotten. Not part of phases 1–4.
+
+### Later: neighbor buildings
+
+After our board is in use, collect observed outages from neighboring buildings and overlay them the same way as our own actual outages. Sources to use then: their Telegram bots or channels, and Svitlobot. Store that feed separately from `schedule_changes` (those rows are only DTEK plan diffs) and separately from our `power_events`. Do not start this during phases 2–4, and do not scan those chats on a dashboard request.
 
 ## 2. How this plan was adapted
 
@@ -210,7 +215,7 @@ Then pair removed with added:
 
 - Duration may differ by at most 1 slot (30 minutes).
 - Greedy: smallest duration difference, then smallest distance between starts, then the smaller start of the removed block, then the smaller start of the added block. Each block once. Ties do not depend on walk order.
-- A pair becomes one `moved` row. `start/end` are the old interval. `peer_*` are the new interval. `from_status` is the old block's status, `to_status` is the new block's status.
+- A pair becomes one `moved` row. `start/end` are the old changed run. `peer_*` are the new changed run. `from_status` is the old block's status, `to_status` is the new block's status. Slots that stay `off` in both grids are not part of the row. A four-hour block shifted two hours therefore records the leading edge moving onto the trailing edge, still as one `moved` row.
 - Unpaired removed → `removed` (UI: скасовано).
 - Unpaired added → `added` (UI: додано).
 
@@ -578,6 +583,7 @@ None blocking. Defaults are already chosen.
 | 2026-11-08T22:55:00Z | Critic round 2. Carry the open outage by the clock (`ended` = yesterday, `started` = today), including once at process start, without reading `power_events` and without replacing `voltage_json`. | `date_rolled` is false after the startup fetch, so a rule that says "today's row" looks at an empty day and drops the live bar. |
 | 2026-11-08T23:05:00Z | Final confirmation APPROVE. The kv flag stops only the `power_events` backfill. The clock carry still runs. `overlay_ready` on the new day is set only when that carry wrote an interval. | Critic round 3, same model, 0 CRITICAL, 0 HIGH. Status `REVIEWED / READY FOR LOCAL WORK`. Implementation still waits for an explicit yes. |
 | 2026-11-08T22:58:59Z | Phase 1 implemented. History rows carry `queue` and `emergency`. Readers pass `DTEK_QUEUE`. Fetch still stores only our queue, today and tomorrow. | Operator said yes via Agree & Continue. Four unittest cases passed on a temporary database, including a legacy table without the new columns. Live site was not restarted. |
+| 2026-11-08T23:07:29Z | Phase 2 implemented. Every published queue and date is stored. Change rows are written in the same transaction as the snapshot. `schedule_cache` is updated only for our queue's today/tomorrow keys that the payload contains. Neighbor-building statistics are deferred. | Operator said yes. 18 unittest cases passed. The page was not changed. Not deployed. |
 
 #### Self-review round 1 (2026-11-08T22:24:28Z)
 
@@ -607,10 +613,11 @@ No CRITICAL left. No HIGH left open. Status set to `DRAFT READY FOR REVIEW`. Thi
 | 2026-11-08T22:55:00Z | Critic round 2, same model. Previous CRITICAL and HIGHs confirmed fixed. One new HIGH on the midnight carry, two MEDIUM, one LOW. All folded. |
 | 2026-11-08T23:05:00Z | Critic round 3, same model. APPROVE. 0 CRITICAL, 0 HIGH. The kv-flag sentence is in section 6.5. Status `REVIEWED / READY FOR LOCAL WORK`. |
 | 2026-11-08T22:58:59Z | Phase 1 done locally. `python -m unittest tests.test_schedule_board` — 4 tests OK. Windows holds the temp WAL open because `sqlite3`'s context manager does not close the connection; the test ignores that cleanup error. Production `_conn()` is unchanged. Next is the human gate before Phase 2. No deploy. |
+| 2026-11-08T23:07:29Z | Phase 2 done locally. Same test module, 18 OK. A four-hour block shifted by two hours is one `moved` row of the edges that actually changed (16–20 onto 24–28), because the overlap stays `off`. Neighbor outages from Telegram or Svitlobot are written into the plan as later work, not this phase. Human gate before Phase 3. No deploy. |
 
 ## 12. Handoff for a new chat
 
-- Phase 1 is done locally (2026-11-08T22:58:59Z). Do not start Phase 2 until the operator says yes.
+- Phases 1 and 2 are done locally (phase 2 at 2026-11-08T23:07:29Z). Do not start Phase 3 until the operator says yes. Neighbor-building statistics stay deferred.
 - Skin A is active.
 - Read this file and the progress file first. Obey the invariants in section 4.
 - Do not deploy, commit, or push unless the operator asks.

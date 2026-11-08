@@ -79,6 +79,24 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
 
+            CREATE TABLE IF NOT EXISTS schedule_changes (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                queue              TEXT NOT NULL,
+                target_date        TEXT NOT NULL,
+                fetched_at         REAL NOT NULL,
+                history_id         INTEGER,
+                kind               TEXT NOT NULL,
+                start_slot         INTEGER,
+                end_slot           INTEGER,
+                from_status        TEXT,
+                to_status          TEXT,
+                peer_start_slot    INTEGER,
+                peer_end_slot      INTEGER,
+                emergency          INTEGER NOT NULL DEFAULT 0,
+                previous_emergency INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_sc_date_queue ON schedule_changes(target_date, queue, id);
+
             CREATE TABLE IF NOT EXISTS boiler_schedule (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 target_date TEXT NOT NULL,
@@ -1513,13 +1531,49 @@ def _save_schedule_if_changed(target_date: str, grid: list[str], queue: str, eme
         ).fetchone()
         if row and row["grid_json"] == grid_json and int(row["emergency"] or 0) == emergency_flag:
             return None
+        previous_emergency = int(row["emergency"] or 0) if row else 0
+        changes: list[dict] = []
+        if row is not None:
+            # Imported here so database and dtek can load without a cycle.
+            from dtek import classify_grid_changes
+            changes = classify_grid_changes(json.loads(row["grid_json"]), grid)
+        fetched_at = time.time()
         cur = db.execute(
             """INSERT INTO schedule_history(target_date, grid_json, fetched_at, queue, emergency)
                VALUES(?,?,?,?,?)""",
-            (target_date, grid_json, time.time(), queue, emergency_flag),
+            (target_date, grid_json, fetched_at, queue, emergency_flag),
         )
-        log.info("Schedule changed for %s queue %s — saved to history", target_date, queue)
-        return int(cur.lastrowid)
+        history_id = int(cur.lastrowid)
+        for change in changes:
+            db.execute(
+                """INSERT INTO schedule_changes(
+                       queue, target_date, fetched_at, history_id, kind,
+                       start_slot, end_slot, from_status, to_status,
+                       peer_start_slot, peer_end_slot, emergency, previous_emergency
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    queue,
+                    target_date,
+                    fetched_at,
+                    history_id,
+                    change["kind"],
+                    change["start_slot"],
+                    change["end_slot"],
+                    change["from_status"],
+                    change["to_status"],
+                    change["peer_start_slot"],
+                    change["peer_end_slot"],
+                    emergency_flag,
+                    previous_emergency,
+                ),
+            )
+        log.info(
+            "Schedule changed for %s queue %s — saved to history (%s change rows)",
+            target_date,
+            queue,
+            len(changes),
+        )
+        return history_id
 
 
 def save_weather_log(temp, humidity, wind, code, t_min, t_max, ts: float):

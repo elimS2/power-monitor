@@ -266,6 +266,157 @@ def describe_grid_diff(old: list[str], new: list[str]) -> str:
     return ", ".join(changes) if changes else "Без змін"
 
 
+def classify_grid_changes(old: list[str], new: list[str]) -> list[dict]:
+    """Structured diff of two 48-slot grids.
+
+    A move pairs a removed outage with an added one when their lengths differ
+    by at most one slot. This is our reading of two snapshots, not a DTEK field.
+    The first snapshot of a date has no old grid, so the caller writes no rows.
+    """
+    if len(old) != 48 or len(new) != 48:
+        raise ValueError("grids must be 48 slots")
+
+    removed: list[dict] = []
+    added: list[dict] = []
+    severity: list[dict] = []
+    i = 0
+    while i < 48:
+        if old[i] == new[i]:
+            i += 1
+            continue
+        old_status, new_status = old[i], new[i]
+        start = i
+        while i < 48 and old[i] == old_status and new[i] == new_status:
+            i += 1
+        block = {"start": start, "end": i, "from": old_status, "to": new_status}
+        if old_status in ("off", "maybe") and new_status == "ok":
+            removed.append(block)
+        elif old_status == "ok" and new_status in ("off", "maybe"):
+            added.append(block)
+        elif old_status != "ok" and new_status != "ok":
+            severity.append(block)
+
+    candidates = []
+    for removed_i, block in enumerate(removed):
+        removed_len = block["end"] - block["start"]
+        for added_i, other in enumerate(added):
+            added_len = other["end"] - other["start"]
+            length_diff = abs(removed_len - added_len)
+            if length_diff > 1:
+                continue
+            candidates.append((
+                length_diff,
+                abs(block["start"] - other["start"]),
+                block["start"],
+                other["start"],
+                removed_i,
+                added_i,
+            ))
+    candidates.sort()
+    used_removed: set[int] = set()
+    used_added: set[int] = set()
+    rows: list[dict] = []
+    for _length, _distance, _removed_start, _added_start, removed_i, added_i in candidates:
+        if removed_i in used_removed or added_i in used_added:
+            continue
+        used_removed.add(removed_i)
+        used_added.add(added_i)
+        old_block = removed[removed_i]
+        new_block = added[added_i]
+        rows.append({
+            "kind": "moved",
+            "start_slot": old_block["start"],
+            "end_slot": old_block["end"],
+            "from_status": old_block["from"],
+            "to_status": new_block["to"],
+            "peer_start_slot": new_block["start"],
+            "peer_end_slot": new_block["end"],
+        })
+    for index, block in enumerate(removed):
+        if index in used_removed:
+            continue
+        rows.append({
+            "kind": "removed",
+            "start_slot": block["start"],
+            "end_slot": block["end"],
+            "from_status": block["from"],
+            "to_status": "ok",
+            "peer_start_slot": None,
+            "peer_end_slot": None,
+        })
+    for index, block in enumerate(added):
+        if index in used_added:
+            continue
+        rows.append({
+            "kind": "added",
+            "start_slot": block["start"],
+            "end_slot": block["end"],
+            "from_status": "ok",
+            "to_status": block["to"],
+            "peer_start_slot": None,
+            "peer_end_slot": None,
+        })
+    for block in severity:
+        rows.append({
+            "kind": "severity",
+            "start_slot": block["start"],
+            "end_slot": block["end"],
+            "from_status": block["from"],
+            "to_status": block["to"],
+            "peer_start_slot": None,
+            "peer_end_slot": None,
+        })
+    return rows
+
+
+def store_published_schedule(region_data: dict, now_kyiv: datetime) -> dict | None:
+    """Save every queue and date in this region payload.
+
+    Returns the today/tomorrow fragment for our queue, or None when our queue
+    is absent. None means the caller must leave schedule_cache untouched.
+    A returned dict only contains keys that this payload actually published.
+    """
+    schedule = region_data.get("schedule") or {}
+    if not isinstance(schedule, dict):
+        schedule = {}
+    emergency = 1 if region_data.get("emergency") else 0
+    queue_count = 0
+    inserted = 0
+    for queue, days in schedule.items():
+        if not isinstance(days, dict):
+            continue
+        queue_count += 1
+        for date_str, slots in days.items():
+            if not isinstance(date_str, str) or not isinstance(slots, dict):
+                continue
+            row_id = _save_schedule_if_changed(
+                date_str,
+                _day_slots_to_48(slots),
+                str(queue),
+                emergency,
+            )
+            if row_id is not None:
+                inserted += 1
+    log.info(
+        "DTEK stored %s queues, %s new snapshots, emergency=%s",
+        queue_count,
+        inserted,
+        emergency,
+    )
+
+    our_days = schedule.get(DTEK_QUEUE)
+    if not isinstance(our_days, dict):
+        return None
+    today_iso = now_kyiv.strftime("%Y-%m-%d")
+    tomorrow_iso = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
+    update: dict = {}
+    if isinstance(our_days.get(today_iso), dict):
+        update["today"] = {"date": today_iso, "grid": _day_slots_to_48(our_days[today_iso])}
+    if isinstance(our_days.get(tomorrow_iso), dict):
+        update["tomorrow"] = {"date": tomorrow_iso, "grid": _day_slots_to_48(our_days[tomorrow_iso])}
+    return update
+
+
 # ─── Fetch functions ───────────────────────────────────────────
 
 async def fetch_dtek_schedule():
@@ -308,35 +459,16 @@ async def fetch_dtek_schedule():
         log.warning("DTEK: region %s not found", DTEK_REGION)
         return
 
-    queue_data = region_data.get("schedule", {}).get(DTEK_QUEUE)
-    if not queue_data:
-        log.warning("DTEK: queue %s not found in %s", DTEK_QUEUE, DTEK_REGION)
-        return
-
-    dates = sorted(queue_data.keys())
     now_kyiv = datetime.now(UA_TZ)
-    today_iso = now_kyiv.strftime("%Y-%m-%d")
-    tomorrow_iso = (now_kyiv + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    result = {}
-    for date_str in dates:
-        if date_str == today_iso:
-            day_key = "today"
-        elif date_str == tomorrow_iso:
-            day_key = "tomorrow"
-        else:
-            continue
-        day_slots = queue_data[date_str]
-        grid = _day_slots_to_48(day_slots)
-        result[day_key] = {"date": date_str, "grid": grid}
-        _save_schedule_if_changed(
-            date_str,
-            grid,
+    update = store_published_schedule(region_data, now_kyiv)
+    if update is None:
+        log.warning(
+            "DTEK: queue %s not found in %s; other published queues were stored",
             DTEK_QUEUE,
-            1 if region_data.get("emergency") else 0,
+            DTEK_REGION,
         )
-
-    schedule_cache = result
+    else:
+        schedule_cache.update(update)
     _schedule_fetched_at = now
     log.info("DTEK schedule updated for %s queue %s", DTEK_REGION, DTEK_QUEUE)
 

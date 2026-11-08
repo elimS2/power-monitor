@@ -3,26 +3,28 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-08T22:58:59Z
-- Current phase: 1 complete locally. Waiting for a yes before Phase 2.
-- Next allowed step: Phase 2 only after an explicit yes. Do not deploy until asked.
+- Last updated: 2026-11-08T23:07:29Z
+- Current phase: 2 complete locally. Waiting for a yes before Phase 3.
+- Next allowed step: Phase 3 only after an explicit yes. Do not deploy until asked. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
 | Phase | State | Note |
 |---|---|---|
 | Plan | reviewed, ready for local work | 2026-11-08T23:05:00Z. Critic round 3 APPROVE, 0 CRITICAL, 0 HIGH. Code waits for an explicit yes. |
-| 1 Queue column and scoped reads | done locally, gate open | 2026-11-08T22:58:59Z. Tests 4/4 OK. Live process not restarted. Other queues are not written yet. |
-| 2 All queues + `schedule_changes` | not started | Depends on Phase 1. |
+| 1 Queue column and scoped reads | done locally | 2026-11-08T22:58:59Z. Tests passed. Pushed as `446887b`. Not deployed. |
+| 2 All queues + `schedule_changes` | done locally, gate open | 2026-11-08T23:07:29Z. 18 tests OK. Page unchanged. Not deployed. |
 | 3 `GET /api/schedule-board` | not started | Depends on Phase 2. Route is a read of `schedule_day`. No `deye_log` scan. |
 | 4 Board UI | not started | Depends on Phase 3. Old grid stays behind kv `schedule_board`. |
 | Deploy | not started | Only if the operator asks. No `#автооновити` unless asked. |
+| Later: neighbor buildings | not started | Telegram or Svitlobot. Separate from `schedule_changes` and our `power_events`. Not on the request path. |
 
 ## Gate log
 
 | When | Gate | Result |
 |---|---|---|
 | 2026-11-08T22:58:59Z | Phase 1 | Code and tests done. Asking whether to start Phase 2. |
+| 2026-11-08T23:07:29Z | Phase 2 | All queues and change rows stored. Asking whether to start Phase 3. |
 
 ## Log
 
@@ -36,6 +38,7 @@
 | 2026-11-08T22:55:00Z | Critic round 2 confirmed the first CRITICAL and eight HIGHs closed, then found the midnight carry still keyed off `date_rolled`. Lead retargeted it to clock dates and a process-start pass. |
 | 2026-11-08T23:05:00Z | Critic round 3 APPROVE. 0 CRITICAL, 0 HIGH. Kv flag stops only the `power_events` backfill. Status `REVIEWED / READY FOR LOCAL WORK`. No code written. |
 | 2026-11-08T22:58:59Z | Phase 1. `schedule_history.queue` and `emergency` added. Old rows become `5.1` / `0`. `schedule_history_for_date` requires a queue. The three dashboard callers and `fetch_dtek_schedule` pass `DTEK_QUEUE`. Fetch still keeps only today and tomorrow in `schedule_cache` and still returns early when our queue is missing. `python -m unittest tests.test_schedule_board` — 4 OK in 0.278s. Not deployed. |
+| 2026-11-08T23:07:29Z | Phase 2. `store_published_schedule` writes every published queue and date. `classify_grid_changes` runs inside the snapshot transaction. Missing our queue does not clear `schedule_cache` and does not invent an all-ok grid. `python -m unittest tests.test_schedule_board` — 18 OK. Neighbor-building overlay deferred (Telegram or Svitlobot). Not deployed. |
 
 ## Review history
 
