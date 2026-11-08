@@ -13,7 +13,17 @@ import threading
 import time
 from datetime import datetime
 
-from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, UA_TZ
+from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, DTEK_QUEUE, UA_TZ
+from schedule_board import (
+    apply_power_event,
+    apply_voltage_sample,
+    close_open_at,
+    has_open_actual,
+    kyiv_date_str,
+    kyiv_day_bounds,
+    recompute_match,
+    shift_date,
+)
 
 log = logging.getLogger("power_monitor")
 
@@ -96,6 +106,17 @@ def init_db():
                 previous_emergency INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_sc_date_queue ON schedule_changes(target_date, queue, id);
+
+            CREATE TABLE IF NOT EXISTS schedule_day (
+                queue         TEXT NOT NULL,
+                target_date   TEXT NOT NULL,
+                actual_json   TEXT,
+                voltage_json  TEXT,
+                match_json    TEXT,
+                overlay_ready INTEGER NOT NULL DEFAULT 0,
+                updated_at    REAL,
+                PRIMARY KEY (queue, target_date)
+            );
 
             CREATE TABLE IF NOT EXISTS boiler_schedule (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -817,9 +838,213 @@ def recent_heartbeats(n: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def save_event(event: str):
+def _loads_json(text: str | None, default):
+    if not text:
+        return default
+    return json.loads(text)
+
+
+def _select_actual(db, queue: str, target_date: str) -> list:
+    row = db.execute(
+        "SELECT actual_json FROM schedule_day WHERE queue=? AND target_date=?",
+        (queue, target_date),
+    ).fetchone()
+    if row is None:
+        return []
+    return _loads_json(row["actual_json"], [])
+
+
+def _latest_grid(db, queue: str, target_date: str):
+    row = db.execute(
+        """SELECT grid_json FROM schedule_history
+           WHERE queue=? AND target_date=? ORDER BY id DESC LIMIT 1""",
+        (queue, target_date),
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["grid_json"])
+
+
+def _write_actual(db, queue: str, target_date: str, actual: list, scored_until: float) -> None:
+    """Write the outage bar and its match. Leaves voltage_json alone."""
+    day_start, day_end = kyiv_day_bounds(target_date)
+    limit = min(max(scored_until, day_start), day_end)
+    grid = _latest_grid(db, queue, target_date)
+    match = recompute_match(grid, actual, day_start, limit) if grid else None
+    db.execute(
+        """INSERT INTO schedule_day(
+               queue, target_date, actual_json, match_json, overlay_ready, updated_at
+           ) VALUES(?,?,?,?,1,?)
+           ON CONFLICT(queue, target_date) DO UPDATE SET
+             actual_json=excluded.actual_json,
+             match_json=excluded.match_json,
+             overlay_ready=1,
+             updated_at=excluded.updated_at""",
+        (
+            queue,
+            target_date,
+            json.dumps(actual),
+            json.dumps(match) if match is not None else None,
+            time.time(),
+        ),
+    )
+
+
+def _store_match_for_grid(db, queue: str, target_date: str, grid: list, fetched_at: float) -> None:
+    """Update only match_json from a newly stored grid. Does not touch the outage bar."""
+    day_start, day_end = kyiv_day_bounds(target_date)
+    if fetched_at <= day_start:
+        scored = day_start
+    elif fetched_at >= day_end:
+        scored = day_end
+    else:
+        scored = fetched_at
+    actual = _select_actual(db, queue, target_date)
+    match = recompute_match(grid, actual, day_start, scored)
+    db.execute(
+        """INSERT INTO schedule_day(queue, target_date, match_json, updated_at)
+           VALUES(?,?,?,?)
+           ON CONFLICT(queue, target_date) DO UPDATE SET
+             match_json=excluded.match_json,
+             updated_at=excluded.updated_at""",
+        (queue, target_date, json.dumps(match) if match is not None else None, fetched_at),
+    )
+
+
+def _record_voltage_sample(db, ts: float, v1, v2, v3) -> None:
+    """One sample, one column. No read of deye_log."""
+    target_date = kyiv_date_str(ts)
+    row = db.execute(
+        "SELECT voltage_json FROM schedule_day WHERE queue=? AND target_date=?",
+        (DTEK_QUEUE, target_date),
+    ).fetchone()
+    current = _loads_json(row["voltage_json"], []) if row else []
+    updated = apply_voltage_sample(current, ts, v1, v2, v3)
+    db.execute(
+        """INSERT INTO schedule_day(queue, target_date, voltage_json, updated_at)
+           VALUES(?,?,?,?)
+           ON CONFLICT(queue, target_date) DO UPDATE SET
+             voltage_json=excluded.voltage_json,
+             updated_at=excluded.updated_at""",
+        (DTEK_QUEUE, target_date, json.dumps(updated), ts),
+    )
+
+
+def _record_outage_on(db, event: str, ts: float) -> None:
+    day = kyiv_date_str(ts)
+    day_start, day_end = kyiv_day_bounds(day)
+    if event == "up":
+        previous = shift_date(day, -1)
+        _prev_start, prev_end = kyiv_day_bounds(previous)
+        previous_actual = _select_actual(db, DTEK_QUEUE, previous)
+        if has_open_actual(previous_actual):
+            _write_actual(db, DTEK_QUEUE, previous, close_open_at(previous_actual, prev_end), prev_end)
+            today_actual = _select_actual(db, DTEK_QUEUE, day)
+            if has_open_actual(today_actual):
+                today_actual = apply_power_event(today_actual, "up", ts, day_start, day_end)
+            else:
+                today_actual = list(today_actual) + [{"start": day_start, "end": min(ts, day_end)}]
+            _write_actual(db, DTEK_QUEUE, day, today_actual, ts)
+            return
+    updated = apply_power_event(
+        _select_actual(db, DTEK_QUEUE, day),
+        event,
+        ts,
+        day_start,
+        day_end,
+    )
+    _write_actual(db, DTEK_QUEUE, day, updated, ts)
+
+
+def _intervals_from_events(before, inside, day_start: float, day_end: float, is_today: bool) -> list:
+    intervals = []
+    open_start = day_start if before is not None and before["event"] == "down" else None
+    for event in inside:
+        if event["event"] == "down":
+            if open_start is None:
+                open_start = event["ts"]
+        elif event["event"] == "up" and open_start is not None:
+            intervals.append({"start": open_start, "end": event["ts"]})
+            open_start = None
+    if open_start is not None:
+        intervals.append({"start": open_start, "end": None if is_today else day_end})
+    return intervals
+
+
+def backfill_schedule_actuals() -> None:
+    """One pass over power_events for stored schedule dates. Not used by HTTP handlers."""
+    if kv_get("schedule_day_actual_backfill_done") == "1":
+        return
+    today = datetime.now(UA_TZ).strftime("%Y-%m-%d")
     with _conn() as db:
-        db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", (event, time.time()))
+        dates = [
+            row["target_date"]
+            for row in db.execute(
+                "SELECT DISTINCT target_date FROM schedule_history WHERE queue=?",
+                (DTEK_QUEUE,),
+            )
+        ]
+        if today not in dates:
+            dates.append(today)
+        now = time.time()
+        for target_date in dates:
+            row = db.execute(
+                "SELECT overlay_ready FROM schedule_day WHERE queue=? AND target_date=?",
+                (DTEK_QUEUE, target_date),
+            ).fetchone()
+            if row is not None and int(row["overlay_ready"] or 0) == 1:
+                continue
+            day_start, day_end = kyiv_day_bounds(target_date)
+            before = db.execute(
+                """SELECT event, ts FROM power_events
+                   WHERE event IN ('down', 'up') AND ts < ?
+                   ORDER BY ts DESC LIMIT 1""",
+                (day_start,),
+            ).fetchone()
+            inside = db.execute(
+                """SELECT event, ts FROM power_events
+                   WHERE event IN ('down', 'up') AND ts >= ? AND ts < ?
+                   ORDER BY ts ASC""",
+                (day_start, day_end),
+            ).fetchall()
+            actual = _intervals_from_events(before, inside, day_start, day_end, target_date == today)
+            scored = min(now, day_end) if target_date == today else day_end
+            _write_actual(db, DTEK_QUEUE, target_date, actual, scored)
+    kv_set("schedule_day_actual_backfill_done", "1")
+
+
+def carry_open_outage(now_kyiv: datetime | None = None) -> None:
+    """Move an open outage onto the Kyiv day that the clock says has started.
+
+    Reads schedule_day only. Does not read power_events. Does not replace voltage_json.
+    """
+    now_kyiv = now_kyiv or datetime.now(UA_TZ)
+    started = now_kyiv.strftime("%Y-%m-%d")
+    ended = shift_date(started, -1)
+    _ended_start, ended_end = kyiv_day_bounds(ended)
+    started_start, _started_end = kyiv_day_bounds(started)
+    with _conn() as db:
+        ended_actual = _select_actual(db, DTEK_QUEUE, ended)
+        if not has_open_actual(ended_actual):
+            return
+        _write_actual(db, DTEK_QUEUE, ended, close_open_at(ended_actual, ended_end), ended_end)
+        started_actual = _select_actual(db, DTEK_QUEUE, started)
+        if has_open_actual(started_actual):
+            return
+        started_actual = list(started_actual) + [{"start": started_start, "end": None}]
+        _write_actual(db, DTEK_QUEUE, started, started_actual, started_start)
+
+
+def save_event(event: str):
+    _save_event_at(event, time.time())
+
+
+def _save_event_at(event: str, ts: float):
+    """Insert every event. Only down/up update the stored outage bar."""
+    with _conn() as db:
+        db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", (event, ts))
+        if event in ("down", "up"):
+            _record_outage_on(db, event, ts)
 
 
 def recent_events(n: int = 50) -> list[dict]:
@@ -919,6 +1144,7 @@ def save_deye_log(
                 ts, ts_kyiv,
             ),
         )
+        _record_voltage_sample(db, ts, grid_v_l1, grid_v_l2, grid_v_l3)
 
 
 def recent_deye_log(n: int = 100) -> list[dict]:
@@ -1591,6 +1817,8 @@ def _save_schedule_if_changed(target_date: str, grid: list[str], queue: str, eme
                     previous_emergency,
                 ),
             )
+        if queue == DTEK_QUEUE:
+            _store_match_for_grid(db, queue, target_date, grid, fetched_at)
         log.info(
             "Schedule changed for %s queue %s — saved to history (%s change rows)",
             target_date,

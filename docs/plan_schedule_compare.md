@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-08T23:07:29Z
+- Last updated: 2026-11-08T23:27:27Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -584,6 +584,7 @@ None blocking. Defaults are already chosen.
 | 2026-11-08T23:05:00Z | Final confirmation APPROVE. The kv flag stops only the `power_events` backfill. The clock carry still runs. `overlay_ready` on the new day is set only when that carry wrote an interval. | Critic round 3, same model, 0 CRITICAL, 0 HIGH. Status `REVIEWED / READY FOR LOCAL WORK`. Implementation still waits for an explicit yes. |
 | 2026-11-08T22:58:59Z | Phase 1 implemented. History rows carry `queue` and `emergency`. Readers pass `DTEK_QUEUE`. Fetch still stores only our queue, today and tomorrow. | Operator said yes via Agree & Continue. Four unittest cases passed on a temporary database, including a legacy table without the new columns. Live site was not restarted. |
 | 2026-11-08T23:07:29Z | Phase 2 implemented. Every published queue and date is stored. Change rows are written in the same transaction as the snapshot. `schedule_cache` is updated only for our queue's today/tomorrow keys that the payload contains. Neighbor-building statistics are deferred. | Operator said yes. 18 unittest cases passed. The page was not changed. Not deployed. |
+| 2026-11-08T23:27:27Z | Phase 3 implemented. `GET /api/schedule-board` only reads stored rows. Outage bars update inside `save_event` for down/up. Voltage bars update inside `save_deye_log` from the sample just inserted. Backfill and midnight carry run in `bg_loop`. | Operator said yes. 30 unittest cases passed. The page still does not draw the board. Not deployed. |
 
 #### Self-review round 1 (2026-11-08T22:24:28Z)
 
@@ -614,10 +615,11 @@ No CRITICAL left. No HIGH left open. Status set to `DRAFT READY FOR REVIEW`. Thi
 | 2026-11-08T23:05:00Z | Critic round 3, same model. APPROVE. 0 CRITICAL, 0 HIGH. The kv-flag sentence is in section 6.5. Status `REVIEWED / READY FOR LOCAL WORK`. |
 | 2026-11-08T22:58:59Z | Phase 1 done locally. `python -m unittest tests.test_schedule_board` — 4 tests OK. Windows holds the temp WAL open because `sqlite3`'s context manager does not close the connection; the test ignores that cleanup error. Production `_conn()` is unchanged. Next is the human gate before Phase 2. No deploy. |
 | 2026-11-08T23:07:29Z | Phase 2 done locally. Same test module, 18 OK. A four-hour block shifted by two hours is one `moved` row of the edges that actually changed (16–20 onto 24–28), because the overlap stays `off`. Neighbor outages from Telegram or Svitlobot are written into the plan as later work, not this phase. Human gate before Phase 3. No deploy. |
+| 2026-11-08T23:27:27Z | Phase 3 done locally. `python -m unittest tests.test_schedule_board` — 30 OK. The route test rejects a bad key with 403 and a spy connection rejects any `deye_log` or `power_events` read. Human gate before Phase 4. No deploy. |
 
 ## 12. Handoff for a new chat
 
-- Phases 1 and 2 are done locally (phase 2 at 2026-11-08T23:07:29Z). Do not start Phase 3 until the operator says yes. Neighbor-building statistics stay deferred.
+- Phases 1–3 are done locally. Do not start Phase 4 until the operator says yes. Neighbor-building statistics stay deferred. The board route is not wired into the page yet.
 - Skin A is active.
 - Read this file and the progress file first. Obey the invariants in section 4.
 - Do not deploy, commit, or push unless the operator asks.

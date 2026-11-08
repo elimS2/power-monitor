@@ -1,7 +1,7 @@
 """Dashboard API routes."""
 import time
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from api.deps import check_admin, check_permission
@@ -32,6 +32,21 @@ async def ep_status(key: str = Query("")):
         "heartbeats": recent_heartbeats(20),
         "events": recent_events(30),
     }
+
+
+@router.get("/api/schedule-board")
+def ep_schedule_board(key: str = Query(""), date: str = Query("")):
+    """One stored day. Does not scan inverter samples or outage events."""
+    check_permission(key, "dashboard")
+    from schedule_board import kyiv_date_str, read_schedule_board
+
+    if not date:
+        date = kyiv_date_str(time.time())
+    try:
+        payload = read_schedule_board(date, time.time())
+    except ValueError:
+        raise HTTPException(400, "bad date") from None
+    return JSONResponse(payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 @router.get("/api/dashboard-fragments")

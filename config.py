@@ -62,6 +62,12 @@ PHASES_ONLY = os.getenv("PHASES_ONLY", "0") == "1"
 # Both plugs must be dead for this many consecutive heartbeats → outage (ignored if PHASES_ONLY)
 OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
 
+# Sample bands for the schedule board and the panel meter. Not the notification pause.
+VOLTAGE_PRESENT_MIN = 50.0
+VOLTAGE_LOW_BELOW = 198.0
+VOLTAGE_HIGH_ABOVE = 240.0
+VOLTAGE_SAMPLE_GAP_SEC = 90
+
 # Voltage anti-spam: require N consecutive readings before notify (3 ≈ 30s at heartbeat rate)
 VOLTAGE_CONFIRM_COUNT = 3
 # One event per episode: 60 min between same-type notifications

@@ -4,6 +4,7 @@ These tests use a temporary database. They do not touch the live file.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -11,8 +12,15 @@ from pathlib import Path
 
 import database
 import dtek
-from config import UA_TZ
+from config import DTEK_QUEUE, UA_TZ
 from datetime import datetime
+from fastapi import HTTPException
+from schedule_board import (
+    apply_voltage_sample,
+    kyiv_day_bounds,
+    read_schedule_board,
+    recompute_match,
+)
 
 
 class ScheduleHistoryQueueTests(unittest.TestCase):
@@ -213,6 +221,181 @@ class PublishedScheduleStoreTests(ScheduleHistoryQueueTests):
         self.assertNotIn("today", update)
         self.assertEqual(update["tomorrow"]["date"], "2026-11-10")
         self.assertEqual(len(database.schedule_history_for_date("2026-11-10", "5.1")), 1)
+
+
+class OverlayWriterTests(ScheduleHistoryQueueTests):
+    def test_voltage_gap_and_dead_sample(self):
+        start = 1_700_000_000.0
+        opened = apply_voltage_sample([], start, 250, 230, 230)
+        self.assertEqual(opened[0]["band"], "high")
+        self.assertIsNone(opened[0]["end"])
+        extended = apply_voltage_sample(opened, start + 90, 251, 230, 230)
+        self.assertEqual(len(extended), 1)
+        self.assertEqual(extended[0]["last_ts"], start + 90)
+        split = apply_voltage_sample(opened, start + 120, 252, 230, 230)
+        self.assertEqual(len(split), 2)
+        self.assertEqual(split[0]["end"], start)
+        self.assertEqual(split[1]["start"], start + 120)
+        far = apply_voltage_sample(opened, start + 3600, 253, 230, 230)
+        self.assertEqual(far[0]["end"], start)
+        self.assertNotEqual(far[1]["start"], start + 90)
+        dead = apply_voltage_sample(opened, start + 30, 10, 0, 0)
+        self.assertEqual(dead[0]["end"], start)
+        self.assertNotIn("last_ts", dead[0])
+
+    def test_match_counts_off_down_and_skips_maybe(self):
+        day_start, _day_end = kyiv_day_bounds("2026-11-09")
+        off = ["ok"] * 48
+        off[0] = "off"
+        actual = [{"start": day_start, "end": day_start + 600}]
+        scored = recompute_match(off, actual, day_start, day_start + 1800)
+        self.assertEqual(scored["hit_min"], 10)
+        self.assertEqual(scored["miss_min"], 20)
+        unplanned = recompute_match(
+            ["ok"] * 48,
+            [{"start": day_start, "end": day_start + 60}],
+            day_start,
+            day_start + 60,
+        )
+        self.assertEqual(unplanned["unplanned_min"], 1)
+        maybe = recompute_match(["maybe"] * 48, [], day_start, day_start + 60)
+        self.assertEqual(maybe["hit_min"] + maybe["miss_min"] + maybe["unplanned_min"], 0)
+
+    def test_up_after_midnight_closes_yesterday_and_writes_today(self):
+        database.init_db()
+        yesterday, today = "2026-11-08", "2026-11-09"
+        y_start, y_end = kyiv_day_bounds(yesterday)
+        t_start, _t_end = kyiv_day_bounds(today)
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO schedule_day(queue, target_date, actual_json, overlay_ready, updated_at)
+                   VALUES(?,?,?,?,?)""",
+                (DTEK_QUEUE, yesterday, json.dumps([{"start": y_start + 3600, "end": None}]), 1, y_start),
+            )
+        up_ts = t_start + 3600
+        database._save_event_at("up", up_ts)
+        with database._conn() as db:
+            today_row = json.loads(db.execute(
+                "SELECT actual_json FROM schedule_day WHERE queue=? AND target_date=?",
+                (DTEK_QUEUE, today),
+            ).fetchone()["actual_json"])
+            yest_row = json.loads(db.execute(
+                "SELECT actual_json FROM schedule_day WHERE queue=? AND target_date=?",
+                (DTEK_QUEUE, yesterday),
+            ).fetchone()["actual_json"])
+        self.assertEqual(today_row[0]["start"], t_start)
+        self.assertEqual(today_row[0]["end"], up_ts)
+        self.assertEqual(yest_row[0]["end"], y_end)
+
+    def test_voltage_event_does_not_write_schedule_day(self):
+        database.init_db()
+        database._save_event_at("voltage_high", 1_700_000_000.0)
+        with database._conn() as db:
+            events = db.execute("SELECT event FROM power_events").fetchall()
+            days = db.execute("SELECT COUNT(*) AS c FROM schedule_day").fetchone()["c"]
+        self.assertEqual(events[0]["event"], "voltage_high")
+        self.assertEqual(days, 0)
+
+    def test_save_deye_log_does_not_select_the_sample_log(self):
+        database.init_db()
+        seen = []
+        real = database._conn
+
+        def wrapped():
+            conn = real()
+
+            class Spy:
+                def execute(self, sql, params=()):
+                    seen.append(sql)
+                    if "from deye_log" in sql.lower():
+                        raise AssertionError(sql)
+                    return conn.execute(sql, params)
+
+                def __enter__(self):
+                    conn.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return conn.__exit__(exc_type, exc, tb)
+
+            return Spy()
+
+        database._conn = wrapped
+        try:
+            database.save_deye_log(grid_v_l1=250, grid_v_l2=230, grid_v_l3=230)
+        finally:
+            database._conn = real
+        self.assertTrue(any(sql.lstrip().upper().startswith("INSERT INTO DEYE_LOG") for sql in seen))
+
+    def test_board_read_does_not_scan_samples_or_events(self):
+        database.init_db()
+        seen = []
+        real = database._conn
+
+        def wrapped():
+            conn = real()
+
+            class Spy:
+                def execute(self, sql, params=()):
+                    seen.append(sql)
+                    lowered = sql.lower()
+                    if "from deye_log" in lowered or "from power_events" in lowered:
+                        raise AssertionError(sql)
+                    return conn.execute(sql, params)
+
+                def __enter__(self):
+                    conn.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return conn.__exit__(exc_type, exc, tb)
+
+            return Spy()
+
+        database._conn = wrapped
+        database.deye_voltage_trend = lambda *a, **k: (_ for _ in ()).throw(AssertionError("trend"))
+        database.events_in_range = lambda *a, **k: (_ for _ in ()).throw(AssertionError("events"))
+        database.recent_events = lambda *a, **k: (_ for _ in ()).throw(AssertionError("recent"))
+        database.deye_aggregates_refresh = lambda *a, **k: (_ for _ in ()).throw(AssertionError("agg"))
+        try:
+            first = read_schedule_board("2026-11-09", 1_762_646_400.0)
+            updated = None
+            with real() as db:
+                row = db.execute(
+                    "SELECT updated_at FROM schedule_day WHERE queue=? AND target_date=?",
+                    (DTEK_QUEUE, "2026-11-09"),
+                ).fetchone()
+                updated = None if row is None else row["updated_at"]
+            second = read_schedule_board("2026-11-09", 1_762_646_500.0)
+            with real() as db:
+                row = db.execute(
+                    "SELECT updated_at FROM schedule_day WHERE queue=? AND target_date=?",
+                    (DTEK_QUEUE, "2026-11-09"),
+                ).fetchone()
+                updated_again = None if row is None else row["updated_at"]
+        finally:
+            database._conn = real
+        self.assertEqual(first["our_queue"], DTEK_QUEUE)
+        self.assertIsNone(first["match"])
+        self.assertFalse(first["groups"][DTEK_QUEUE]["has_snapshot"])
+        self.assertEqual(second["date"], first["date"])
+        self.assertEqual(updated_again, updated)
+
+    def test_missing_key_is_rejected(self):
+        database.init_db()
+        from api.dashboard import ep_schedule_board
+
+        with self.assertRaises(HTTPException) as caught:
+            ep_schedule_board(key="not-a-real-key", date="2026-11-09")
+        self.assertEqual(caught.exception.status_code, 403)
+
+    def test_fragment_builder_does_not_call_the_board(self):
+        text = Path("power_monitor.py").read_text(encoding="utf-8")
+        start = text.index("def _build_update_fragments")
+        end = text.index("\ndef ", start + 10)
+        body = text[start:end]
+        self.assertNotIn("schedule-board", body)
+        self.assertNotIn("read_schedule_board", body)
 
 
 if __name__ == "__main__":

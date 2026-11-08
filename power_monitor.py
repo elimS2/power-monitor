@@ -48,6 +48,9 @@ from config import (
     TG_BOT_TOKEN,
     TG_WEBHOOK_SECRET,
     UA_TZ,
+    VOLTAGE_HIGH_ABOVE,
+    VOLTAGE_LOW_BELOW,
+    VOLTAGE_PRESENT_MIN,
     VOLTAGE_STATUS,
     WEBHOOK_HOST,
     WMO_EMOJI,
@@ -79,6 +82,8 @@ from database import (
     recent_tg_log,
     save_alert_event,
     save_boiler_schedule,
+    backfill_schedule_actuals,
+    carry_open_outage,
     save_deye_log,
     save_heartbeat,
     save_tg_log,
@@ -418,8 +423,14 @@ async def bg_loop():
     deye_poll_tick = 0
     deye_agg_tick = 0
     deploy_tick = 0
+    carried_day = None
     while True:
         try:
+            today_kyiv = datetime.now(UA_TZ).strftime("%Y-%m-%d")
+            if carried_day != today_kyiv:
+                carry_open_outage()
+                backfill_schedule_actuals()
+                carried_day = today_kyiv
             await detection.watchdog()
             cleanup_tick += 1
             if cleanup_tick >= 2880:  # ~24h at 30s interval
@@ -568,11 +579,11 @@ def _voltage_band(value: float | None) -> str:
     """Panel color. High matches the 240 V alert; low is under the 230 V −15% band."""
     if value is None:
         return "none"
-    if value < 50:
+    if value < VOLTAGE_PRESENT_MIN:
         return "dead"
-    if value < 198:
+    if value < VOLTAGE_LOW_BELOW:
         return "low"
-    if value > 240:
+    if value > VOLTAGE_HIGH_ABOVE:
         return "high"
     return "ok"
 
