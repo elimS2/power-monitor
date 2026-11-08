@@ -61,6 +61,29 @@
     return Object.prototype.hasOwnProperty.call(DEBTS, id) ? DEBTS[id] : null;
   }
 
+  function floorOf(id) {
+    if (String(id).indexOf('оф') === 0) return '26';
+    if (id === 'ГрінФіт' || id === 'Ком' || id === 'Амеда' || id === 'Фудпод' || id === 'Ком 2') return '1';
+    var apartment = parseInt(id, 10);
+    if (String(apartment) !== String(id) || apartment < 1 || apartment > 192) return '';
+    return String(Math.floor((apartment - 1) / 8) + 2);
+  }
+
+  function unitHint(id, mask, active) {
+    var title = String(parseInt(id, 10)) === String(id) ? ('кв. ' + id) : id;
+    var floor = floorOf(id);
+    var total = active.length;
+    var score = total ? paid(mask, active) : 0;
+    var debt = debtOf(id);
+    var lines = COLS.map(function (col) {
+      return col.label + ': ' + (((mask & col.bit) === col.bit) ? 'так' : 'ні');
+    });
+    return [
+      floor ? (title + ', поверх ' + floor) : title,
+      total ? (score + ' з ' + total + ' увімкнених') : 'Усі збори вимкнені',
+    ].concat(lines).concat([debt === null ? 'Борг Оселі: немає' : ('Борг Оселі: ' + formatUah(debt))]).join('\n');
+  }
+
   function unitButton(id, mask, active) {
     var total = active.length;
     var score = total ? paid(mask, active) : 0;
@@ -68,7 +91,7 @@
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'col-cell' + (selected === id ? ' active' : '');
-    var hint = id + ': ' + score + ' з ' + (total || '—') + (debt === null ? '' : '\nБорг ' + formatUah(debt));
+    var hint = unitHint(id, mask, active);
     btn.style.background = fill(score, total);
     btn.addEventListener('mouseenter', function (event) { showTip(hint, event); });
     btn.addEventListener('mousemove', function (event) { moveTip(event); });
