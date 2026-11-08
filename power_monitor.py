@@ -551,6 +551,86 @@ def get_display_status() -> dict:
     return {"status_cls": "up", "status_text": "Світло є", "icon": "icon_on.png", "voltage": None}
 
 
+_VOLTAGE_SCALE_MIN = 180.0
+_VOLTAGE_SCALE_MAX = 280.0
+_VOLTAGE_STATE_LABEL = {
+    "none": "немає",
+    "dead": "немає",
+    "low": "низька",
+    "ok": "норма",
+    "high": "висока",
+}
+
+
+def _voltage_band(value: float | None) -> str:
+    """Panel color. High matches the 240 V alert; low is under the 230 V −15% band."""
+    if value is None:
+        return "none"
+    if value < 50:
+        return "dead"
+    if value < 198:
+        return "low"
+    if value > 240:
+        return "high"
+    return "ok"
+
+
+def _fmt_panel_volts(value: float | None) -> str:
+    if value is None:
+        return "---.-"
+    return f"{float(value):05.1f}"
+
+
+def _build_voltage_panel(deye_rows: list | None) -> str:
+    """Three-phase panel meter: L1 yellow, L2 green, L3 red, 7-segment windows."""
+    phases: list[tuple[str, float | None]] = [("L1", None), ("L2", None), ("L3", None)]
+    age_html = "немає даних"
+    if deye_rows:
+        last = deye_rows[0]
+        phases = [
+            ("L1", last.get("grid_v_l1")),
+            ("L2", last.get("grid_v_l2")),
+            ("L3", last.get("grid_v_l3")),
+        ]
+        age_sec = int(time.time() - last["ts"])
+        age_html = f"оновлено {age_sec} с тому"
+    meters = []
+    for name, raw in phases:
+        value = float(raw) if isinstance(raw, (int, float)) else None
+        band = _voltage_band(value)
+        if value is None:
+            pct = 0.0
+            spoken = "немає даних"
+        else:
+            span = _VOLTAGE_SCALE_MAX - _VOLTAGE_SCALE_MIN
+            pct = max(0.0, min(100.0, (value - _VOLTAGE_SCALE_MIN) / span * 100.0))
+            spoken = f"{value:.1f} вольт, {_VOLTAGE_STATE_LABEL[band]}"
+        meters.append(
+            f'<div class="vmeter vmeter-{band}" role="img" aria-label="{name} {spoken}">'
+            f'<div class="vmeter-phase"><span class="vled vled-{name.lower()}"></span>{name}</div>'
+            f'<div class="vmeter-window">'
+            f'<div class="vmeter-readout">'
+            f'<span class="vmeter-ghost" aria-hidden="true">888.8</span>'
+            f'<span class="vmeter-digits">{_fmt_panel_volts(value)}</span>'
+            f"</div>"
+            f'<span class="vmeter-unit">V</span>'
+            f"</div>"
+            f'<div class="vmeter-scale" aria-hidden="true">'
+            f'<span class="vmeter-needle" style="left:{pct:.1f}%"></span>'
+            f"</div>"
+            f'<div class="vmeter-state">{_VOLTAGE_STATE_LABEL[band]}</div>'
+            f"</div>"
+        )
+    return (
+        '<div class="vboard">'
+        + '<div class="vboard-meters">'
+        + "".join(meters)
+        + "</div>"
+        + f'<div class="vboard-age">{age_html}</div>'
+        + "</div>"
+    )
+
+
 def _build_update_fragments() -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
     is_down = kv_get("power_down") == "1"
@@ -784,15 +864,7 @@ def _build_update_fragments() -> dict:
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
-    voltage_summary = "Немає даних"
-    if deye_log:
-        last_v = deye_log[0]
-        v1, v2, v3 = last_v.get("grid_v_l1"), last_v.get("grid_v_l2"), last_v.get("grid_v_l3")
-        age_v = int(time.time() - last_v["ts"])
-        if any(x is not None for x in (v1, v2, v3)):
-            v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
-            voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
-    voltage_html = f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
+    voltage_html = _build_voltage_panel(deye_log)
 
     alert_html = ""
     if dtek.alert_cache:
@@ -1425,15 +1497,7 @@ async def dashboard(key: str = Query("")):
             )
 
     # ─── Voltage (L1/L2/L3) standalone block ───
-    voltage_summary = "Немає даних"
-    if deye_log:
-        last_v = deye_log[0]
-        v1, v2, v3 = last_v.get("grid_v_l1"), last_v.get("grid_v_l2"), last_v.get("grid_v_l3")
-        age_v = int(time.time() - last_v["ts"])
-        if any(x is not None for x in (v1, v2, v3)):
-            v_parts = [f"L{n}={int(v)} В" for n, v in ((1, v1), (2, v2), (3, v3)) if v is not None]
-            voltage_summary = " ".join(v_parts) + f" ({age_v}с тому)"
-    voltage_html = f'<div class="mk up" style="margin-bottom:0.5rem;color:var(--muted)">\U0001f4a0 {voltage_summary}</div>'
+    voltage_html = _build_voltage_panel(deye_log)
 
     # ─── Alert events ───
     alert_ev = recent_alert_events(20)
