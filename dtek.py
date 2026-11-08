@@ -329,7 +329,12 @@ async def fetch_dtek_schedule():
         day_slots = queue_data[date_str]
         grid = _day_slots_to_48(day_slots)
         result[day_key] = {"date": date_str, "grid": grid}
-        _save_schedule_if_changed(date_str, grid)
+        _save_schedule_if_changed(
+            date_str,
+            grid,
+            DTEK_QUEUE,
+            1 if region_data.get("emergency") else 0,
+        )
 
     schedule_cache = result
     _schedule_fetched_at = now

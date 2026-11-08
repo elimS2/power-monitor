@@ -694,7 +694,7 @@ def _build_update_fragments() -> dict:
                 ev_grid = d["grid"]
                 break
         if ev_grid is None:
-            sh = schedule_history_for_date(ev_date_str)
+            sh = schedule_history_for_date(ev_date_str, DTEK_QUEUE)
             ev_grid = sh[-1]["grid"] if sh else None
         sched_tag = ""
         if ev_grid and len(ev_grid) >= 48:
@@ -1024,7 +1024,7 @@ def _build_schedule_inner(is_down: bool) -> str:
         if not day:
             continue
         d_str = day["date"][:10]
-        history = schedule_history_for_date(d_str)
+        history = schedule_history_for_date(d_str, DTEK_QUEUE)
         if len(history) < 2:
             continue
         hist_rows = ""
@@ -1315,7 +1315,7 @@ async def dashboard(key: str = Query("")):
                 ev_grid = d["grid"]
                 break
         if ev_grid is None:
-            sh = schedule_history_for_date(ev_date_str)
+            sh = schedule_history_for_date(ev_date_str, DTEK_QUEUE)
             if sh:
                 ev_grid = sh[-1]["grid"]
         if ev_grid:

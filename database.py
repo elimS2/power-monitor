@@ -70,10 +70,12 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS schedule_history (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 target_date TEXT NOT NULL,
                 grid_json   TEXT NOT NULL,
-                fetched_at  REAL NOT NULL
+                fetched_at  REAL NOT NULL,
+                queue       TEXT NOT NULL DEFAULT '5.1',
+                emergency   INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_sh_date ON schedule_history(target_date);
 
@@ -129,6 +131,21 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
         """)
+        # Existing installs created schedule_history before queue/emergency existed.
+        # CREATE TABLE IF NOT EXISTS does not add columns, so ALTER fills old rows
+        # with queue 5.1. The queue index is created only after that ALTER: putting
+        # it in the script above would fail on a database that still lacks the column.
+        for stmt in (
+            "ALTER TABLE schedule_history ADD COLUMN queue TEXT NOT NULL DEFAULT '5.1'",
+            "ALTER TABLE schedule_history ADD COLUMN emergency INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                db.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sh_queue_date ON schedule_history(queue, target_date, id)"
+        )
         # Migration: add ts_kyiv (readable datetime Kyiv)
         try:
             db.execute("ALTER TABLE deye_log ADD COLUMN ts_kyiv TEXT")
@@ -1479,21 +1496,30 @@ def boiler_schedule_for_dates(dates: list[str]) -> dict[str, list]:
     return result
 
 
-def _save_schedule_if_changed(target_date: str, grid: list[str]):
-    """Save grid to schedule_history only if it differs from the latest entry for that date."""
+def _save_schedule_if_changed(target_date: str, grid: list[str], queue: str, emergency: int = 0) -> int | None:
+    """Insert a snapshot when this queue's grid or emergency flag changed.
+
+    Comparison is limited to the same queue and date. Returns the new row id,
+    or None when nothing changed. Callers must pass the queue: the latest row
+    for a date is not unique once more than one queue is stored.
+    """
     grid_json = json.dumps(grid)
+    emergency_flag = 1 if emergency else 0
     with _conn() as db:
         row = db.execute(
-            "SELECT grid_json FROM schedule_history WHERE target_date=? ORDER BY id DESC LIMIT 1",
-            (target_date,),
+            """SELECT id, grid_json, emergency FROM schedule_history
+               WHERE target_date=? AND queue=? ORDER BY id DESC LIMIT 1""",
+            (target_date, queue),
         ).fetchone()
-        if row and row["grid_json"] == grid_json:
-            return
-        db.execute(
-            "INSERT INTO schedule_history(target_date, grid_json, fetched_at) VALUES(?,?,?)",
-            (target_date, grid_json, time.time()),
+        if row and row["grid_json"] == grid_json and int(row["emergency"] or 0) == emergency_flag:
+            return None
+        cur = db.execute(
+            """INSERT INTO schedule_history(target_date, grid_json, fetched_at, queue, emergency)
+               VALUES(?,?,?,?,?)""",
+            (target_date, grid_json, time.time(), queue, emergency_flag),
         )
-        log.info("Schedule changed for %s — saved to history", target_date)
+        log.info("Schedule changed for %s queue %s — saved to history", target_date, queue)
+        return int(cur.lastrowid)
 
 
 def save_weather_log(temp, humidity, wind, code, t_min, t_max, ts: float):
@@ -1505,11 +1531,13 @@ def save_weather_log(temp, humidity, wind, code, t_min, t_max, ts: float):
         )
 
 
-def schedule_history_for_date(target_date: str) -> list[dict]:
+def schedule_history_for_date(target_date: str, queue: str) -> list[dict]:
+    """Snapshots for one queue and date, oldest first. Queue is required."""
     with _conn() as db:
         rows = db.execute(
-            "SELECT grid_json, fetched_at FROM schedule_history WHERE target_date=? ORDER BY id ASC",
-            (target_date,),
+            """SELECT grid_json, fetched_at FROM schedule_history
+               WHERE target_date=? AND queue=? ORDER BY id ASC""",
+            (target_date, queue),
         ).fetchall()
     return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
 
