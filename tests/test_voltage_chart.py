@@ -29,7 +29,9 @@ class VoltageChartTests(unittest.TestCase):
         self.assertIn('stroke="#facc15"', html)
         self.assertIn('stroke="#60a5fa"', html)
         self.assertIn("за 10 хв 217–222 В", html)
-        self.assertIn(">зараз<", html)
+        self.assertIn("data-t0=", html)
+        self.assertIn("vchart-main", html)
+        self.assertIn("vchart-strip", html)
         self.assertIn("09.11", html)
 
     def test_dead_minutes_are_orange_and_do_not_draw_zero_volts(self):

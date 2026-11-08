@@ -13,14 +13,9 @@ HISTORY_SEC = 24 * 3600
 FUTURE_SEC = 6 * 3600
 BUCKET_SEC = 60
 
-_W = 640.0
-_H = 236.0
-_LEFT = 34.0
-_RIGHT = 8.0
-_TOP = 16.0
+_PLOT_W = 600.0
 _PLOT_H = 168.0
-_STRIP_GAP = 7.0
-_STRIP_H = 11.0
+_STRIP_H = 10.0
 
 _PHASES = (
     ("l1", "#fb7185"),
@@ -41,104 +36,107 @@ def build_voltage_chart(
 ) -> str:
     t0 = now - history_sec
     t1 = now + future_sec
-    plot_w = _W - _LEFT - _RIGHT
-    strip_y = _TOP + _PLOT_H + _STRIP_GAP
 
     def x_of(ts: float) -> float:
-        return _LEFT + (ts - t0) / (t1 - t0) * plot_w
+        return (ts - t0) / (t1 - t0) * _PLOT_W
 
     def y_of(value: float) -> float:
         clamped = min(Y_MAX, max(Y_MIN, value))
-        return _TOP + (Y_MAX - clamped) / (Y_MAX - Y_MIN) * _PLOT_H
+        return (Y_MAX - clamped) / (Y_MAX - Y_MIN) * _PLOT_H
 
-    parts: list[str] = []
-    parts.append(
-        f'<svg class="vchart-svg" viewBox="0 0 {_W:.0f} {_H:.0f}" role="img" '
+    meta = (
+        f' data-t0="{t0:.0f}" data-t1="{t1:.0f}" data-ymin="{Y_MIN:.0f}" data-ymax="{Y_MAX:.0f}"'
+        f' data-w="{_PLOT_W:.0f}" data-ploth="{_PLOT_H:.0f}" data-striph="{_STRIP_H:.0f}"'
+    )
+    plot: list[str] = [
+        f'<svg class="vchart-main" viewBox="0 0 {_PLOT_W:.0f} {_PLOT_H:.0f}"{meta} role="img" '
         f'aria-label="Напруга за добу і графік черги {queue}">'
-    )
-    parts.append(
-        f'<rect x="{_LEFT:.1f}" y="{_TOP:.1f}" width="{plot_w:.1f}" height="{_PLOT_H:.1f}" '
-        f'fill="#0c121c" rx="4"/>'
-    )
-
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_PLOT_H:.0f}" fill="#0c121c"/>'
+    ]
+    strip: list[str] = [
+        f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" aria-hidden="true">'
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_STRIP_H:.0f}" fill="#0c121c"/>'
+    ]
     for start, end in _schedule_spans(now, t1, today, tomorrow, "off"):
-        parts.append(_column(x_of(start), x_of(end), strip_y + _STRIP_H, "#7c4a32", 0.95))
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#7c4a32", 0.95))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#7c4a32", 0.95))
     for start, end in _schedule_spans(now, t1, today, tomorrow, "maybe"):
-        parts.append(_column(x_of(start), x_of(end), strip_y + _STRIP_H, "#4b5563", 0.8))
-
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#4b5563", 0.8))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#4b5563", 0.8))
     for tick in (180, 200, 220, 240, 260):
         y = y_of(float(tick))
-        parts.append(
-            f'<line x1="{_LEFT:.1f}" y1="{y:.1f}" x2="{_LEFT + plot_w:.1f}" y2="{y:.1f}" '
-            f'stroke="#1e293b" stroke-width="1"/>'
-        )
-        parts.append(
-            f'<text x="{_LEFT - 4:.1f}" y="{y + 3:.1f}" text-anchor="end" '
-            f'fill="#64748b" font-size="10">{tick}</text>'
+        plot.append(
+            f'<line x1="0" y1="{y:.1f}" x2="{_PLOT_W:.0f}" y2="{y:.1f}" '
+            f'stroke="#1e293b" stroke-width="1" vector-effect="non-scaling-stroke"/>'
         )
     for limit in (LIMIT_LO, LIMIT_HI):
         y = y_of(limit)
-        parts.append(
-            f'<line x1="{_LEFT:.1f}" y1="{y:.1f}" x2="{_LEFT + plot_w:.1f}" y2="{y:.1f}" '
-            f'stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>'
+        plot.append(
+            f'<line x1="0" y1="{y:.1f}" x2="{_PLOT_W:.0f}" y2="{y:.1f}" '
+            f'stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3" opacity="0.85" '
+            f'vector-effect="non-scaling-stroke"/>'
         )
-
     for key, color in _PHASES:
-        parts.extend(_phase_paths(buckets, key, color, x_of, y_of))
-
+        plot.extend(_phase_paths(buckets, key, color, x_of, y_of))
     now_x = x_of(now)
-    parts.append(
-        f'<line x1="{now_x:.1f}" y1="{_TOP:.1f}" x2="{now_x:.1f}" y2="{strip_y + _STRIP_H:.1f}" '
-        f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2"/>'
+    plot.append(
+        f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_PLOT_H:.0f}" '
+        f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>'
     )
-    anchor = "end" if now_x > _W - 36 else "middle"
-    parts.append(
-        f'<text x="{now_x:.1f}" y="{_TOP - 4:.1f}" text-anchor="{anchor}" '
-        f'fill="#e2e8f0" font-size="10">зараз</text>'
-    )
-
-    parts.append(
-        f'<rect x="{_LEFT:.1f}" y="{strip_y:.1f}" width="{plot_w:.1f}" height="{_STRIP_H:.1f}" '
-        f'fill="#0c121c" rx="2"/>'
+    strip.append(
+        f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_STRIP_H:.0f}" '
+        f'stroke="#e2e8f0" stroke-width="1" vector-effect="non-scaling-stroke"/>'
     )
     for start, end, kind in _fact_spans(buckets, now):
         color = "#22c55e" if kind == "on" else "#fb923c"
-        x1, x2 = x_of(start), x_of(end)
-        if x2 - x1 < 0.6:
-            x2 = x1 + 0.6
-        parts.append(
-            f'<rect x="{x1:.1f}" y="{strip_y:.1f}" width="{x2 - x1:.1f}" height="{_STRIP_H:.1f}" '
-            f'fill="{color}"/>'
-        )
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, color, 1))
+    plot.append("</svg>")
+    strip.append("</svg>")
 
-    label_y = strip_y + _STRIP_H + 14
+    y_labels = []
+    for tick in (180, 200, 220, 240, 260):
+        top = y_of(float(tick)) / _PLOT_H * 100
+        y_labels.append(f'<span style="top:{top:.2f}%">{tick}</span>')
+    x_labels = []
     for ts, label in _time_ticks(t0, t1):
-        parts.append(
-            f'<text x="{x_of(ts):.1f}" y="{label_y:.1f}" text-anchor="middle" '
-            f'fill="#94a3b8" font-size="10">{label}</text>'
-        )
-    parts.append("</svg>")
-
+        left = x_of(ts) / _PLOT_W * 100
+        if left < -1 or left > 101:
+            continue
+        x_labels.append(f'<span style="left:{left:.2f}%">{label}</span>')
+    now_pct = max(0.0, min(100.0, now_x / _PLOT_W * 100))
     span = _ten_minute_span(buckets, now)
     span_html = f'<span class="vchart-span">{span}</span>' if span else ""
     return (
         '<div class="vchart">'
         '<div class="vchart-head">'
-        f'<div>Остання доба і графік відключень <span class="vchart-queue">черга {queue}</span></div>'
+        '<div>Остання доба і графік відключень '
+        f'<span class="vchart-queue">черга {queue}</span></div>'
+        '<div class="vchart-head-side">'
         f"{span_html}"
+        '<button type="button" class="vchart-reset" hidden>Скинути</button>'
+        "</div></div>"
+        '<div class="vchart-frame">'
+        f'<div class="vchart-yaxis">{"".join(y_labels)}</div>'
+        '<div class="vchart-plot">'
+        + "".join(plot)
+        + f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
+        '<div class="vchart-tip" hidden></div>'
         "</div>"
-        + "".join(parts)
+        + "".join(strip)
+        + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
+        "</div>"
         + _legend()
         + "</div>"
     )
 
 
-def _column(x1: float, x2: float, bottom: float, color: str, opacity: float) -> str:
+def _hrect(x1: float, x2: float, y: float, height: float, color: str, opacity: float) -> str:
     if x2 - x1 < 0.6:
         x2 = x1 + 0.6
+    extra = "" if opacity >= 1 else f' opacity="{opacity}"'
     return (
-        f'<rect x="{x1:.1f}" y="{_TOP:.1f}" width="{x2 - x1:.1f}" height="{bottom - _TOP:.1f}" '
-        f'fill="{color}" opacity="{opacity}"/>'
+        f'<rect x="{x1:.1f}" y="{y:.1f}" width="{x2 - x1:.1f}" height="{height:.1f}" '
+        f'fill="{color}"{extra}/>'
     )
 
 
@@ -172,7 +170,7 @@ def _phase_paths(buckets, key, color, x_of, y_of) -> list[str]:
         d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in segment)
         out.append(
             f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.5" '
-            f'stroke-linejoin="round" stroke-linecap="round"/>'
+            f'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
         )
     return out
 
