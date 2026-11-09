@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T21:06:42Z
+- Last updated: 2026-11-09T21:14:48Z
 - Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -202,7 +202,9 @@ Device Status Notification is already authorized. The project screen was read on
 
 The service switch was off. Opening it showed one type only: **Message Queue**, forwarded to the Pulsar cluster. The selected encryption was **AES-GCM**. There was no HTTP or webhook choice. The dialog warned that forwarded messages consume the message quota. **Cancel** was pressed. **OK** was not pressed, so the switch stayed off. The Server Message Log page (`/cloud/monitor/msg`) is a separate switch and was also off, so there is no counted message stream.
 
-The listener stays off. A Pulsar client is not added, and `POST /api/tuya-webhook` is not added, because the screen does not offer HTTP. `ingest_status_message` can apply a decrypted report for the two configured ids. Nothing calls it from `bg_loop`. The 15-minute poll remains the only writer. Do not turn the console switch on until a consumer is running and the real monthly count is under 68 000.
+The listener stays off. A counted read of data-point logs (type 7) from 2026-11-09 00:00 Kyiv, about 23 hours, did not finish: **Світло** already had 2 907 rows and `has_next` was still true when the log call stopped with code `40000309`. Each row had its own `event_time`. In that partial set: `phase_a` 1 270, `phase_b` 884, `phase_c` 742, `total_forward_energy` 10, `switch` 1. Spread over those 23 hours that partial set is already about 90 000 rows in a month, above the 68 000 message allowance, and the day is not fully read. **ІТП** returned an empty first page; it was off. Pulsar was not enabled. The 15-minute poll remains the only writer.
+
+The same check found that Tuya rejects a lowercase HMAC (`1004`). `sign_headers` now sends the signature in uppercase. The body hash inside the signed string stays lowercase. This is not deployed yet.
 
 A message that carries `switch` or `total_forward_energy` or a phase blob is one sample with `source=message`, then the same day-row update as a poll, unless the next paragraph says the event is a duplicate or older than the latest sample. A message with no new switch and no new counter still refreshes `phase_json` and `updated_at`, unless it is a duplicate or older than the latest sample.
 
@@ -415,6 +417,7 @@ None blocking.
 | 2026-11-09T20:50:10Z | The page only reads and shows. It does not control the breakers. | Operator asked to make this explicit before Phase 3. No buttons, forms, or command routes in this plan. No code change in this step. |
 | 2026-11-09T20:58:02Z | Phase 3 implemented. Operator said yes via Agree & Continue. | Read-only section and `GET /api/breakers`. No control, no deploy. `tests.test_breakers` and `tests.test_schedule_board`: 62 tests OK. |
 | 2026-11-09T21:06:42Z | Phase 4 listener left off. Operator said yes via Agree & Continue. | Message screen offers only Pulsar. Switch was not enabled. `ingest_status_message` is tested and not called from the loop. 34 breaker tests OK. No deploy. |
+| 2026-11-09T21:14:48Z | Message rate measured from type-7 logs. Listener stays off. | Світло partial day already projects past 68 000 rows/month. Pulsar switch was not turned on. Poll signature must be uppercase. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -456,6 +459,7 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T20:50:10Z | Observe-only rule written into the goal, Phase 3, and the done check. No code. |
 | 2026-11-09T20:58:02Z | Phase 3 done. The section shows two lines and a green/red day bar. It has no button and no form. Live site was not restarted. Phase 4 waits for an explicit yes. |
 | 2026-11-09T21:06:42Z | Phase 4. Pulsar is the only transport on the project screen. The queue stays off. The poll remains the writer. |
+| 2026-11-09T21:14:48Z | Counted data-point rows. One live breaker already exceeds the message pack. Queue stays off. Signature hex is uppercase. |
 
 ## 12. Handoff for a new chat
 

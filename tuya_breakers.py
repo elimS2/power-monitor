@@ -439,7 +439,9 @@ def sign_headers(
     content = hashlib.sha256(body).hexdigest()
     string_to_sign = f"{method}\n{content}\n\n{path}"
     message = f"{access_id}{token}{now_ms}{string_to_sign}"
-    sign = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    # Tuya returns sign invalid (1004) unless this hex is uppercase.
+    # The body hash inside string_to_sign stays lowercase.
+    sign = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest().upper()
     headers = {
         "client_id": access_id,
         "sign": sign,

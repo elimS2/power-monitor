@@ -527,14 +527,14 @@ class BreakerPollTests(unittest.TestCase):
         headers = sign_headers("id", "secret", "GET", "/v1.0/token?grant_type=1", "", "1000")
         content = hashlib.sha256(b"").hexdigest()
         string_to_sign = "GET\n" + content + "\n\n/v1.0/token?grant_type=1"
-        expected = hmac.new(b"secret", ("id1000" + string_to_sign).encode(), hashlib.sha256).hexdigest()
+        expected = hmac.new(b"secret", ("id1000" + string_to_sign).encode(), hashlib.sha256).hexdigest().upper()
         self.assertEqual(headers["sign"], expected)
         self.assertNotIn("access_token", headers)
         business = sign_headers("id", "secret", "GET", "/v1.0/devices/abc/status", "tok", "1000")
         business_string = "GET\n" + content + "\n\n/v1.0/devices/abc/status"
         business_expected = hmac.new(
             b"secret", ("id" + "tok" + "1000" + business_string).encode(), hashlib.sha256,
-        ).hexdigest()
+        ).hexdigest().upper()
         self.assertEqual(business["sign"], business_expected)
         self.assertEqual(business["access_token"], "tok")
 

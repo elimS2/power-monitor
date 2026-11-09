@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_breakers.md`
 - Status: `PHASE 4 LISTENER OFF`
 - Active skin: Skin A
-- Last updated: 2026-11-09T21:06:42Z
+- Last updated: 2026-11-09T21:14:48Z
 - Current phase: 4 read the message screen. The queue stays off.
-- Next allowed step: none until the operator decides to turn on Pulsar. The page must still only read.
+- Next allowed step: none. The counted report rate is already over the message pack, so Pulsar stays off. The page must still only read.
 
 ## Phase checklist
 
@@ -29,6 +29,7 @@
 | 2026-11-09T20:50:10Z | Observe only | Operator: the page reads and shows. It does not control the breakers. Plan updated. No code. |
 | 2026-11-09T20:58:02Z | Phase 3 | Operator yes via Agree & Continue. Section and read route landed. Production not restarted. |
 | 2026-11-09T21:06:42Z | Phase 4 | Message Service dialog: Message Queue / Pulsar only, AES-GCM, no HTTP. Cancel pressed. Server Message Log also off, so the monthly count is unknown. Listener not started. |
+| 2026-11-09T21:14:48Z | Rate | Type-7 logs since Kyiv midnight. Світло 2 907 rows and still has_next (stop code 40000309): phase_a 1270, phase_b 884, phase_c 742, energy 10, switch 1. Partial projection about 90 000/month. ІТП first page empty. Pulsar not enabled. |
 
 ## Log
 
@@ -42,6 +43,7 @@
 | 2026-11-09T20:50:10Z | Observe-only rule. Phase 3 may draw the lines and the bar. It may not add a button, a form, or a command route. |
 | 2026-11-09T20:58:02Z | Phase 3. `GET /api/breakers` reads `breaker_day` only. Green then red from stored spans. Null today renders `немає бази`. 62 tests OK. A local color fixture was not opened in the browser: the temporary page server did not answer. |
 | 2026-11-09T21:06:42Z | Phase 4. `ingest_status_message` accepts a decrypted report for the two ids and ignores any other id. `bg_loop` does not call it. 34 breaker tests OK. |
+| 2026-11-09T21:14:48Z | Rate check says the message pack is too small for live phase reports. Listener stays off. Poll HMAC signature is uppercase so a later deploy is not rejected with 1004. Not deployed. |
 
 ## Review history
 
