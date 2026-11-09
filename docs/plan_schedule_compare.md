@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:45:03Z
+- Last updated: 2026-11-09T13:50:11Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -48,7 +48,9 @@ Controls are checkboxes, remembered in the browser:
 
 ### Later: neighbor buildings
 
-After our board is in use, collect observed outages from neighboring buildings and overlay them the same way as our own actual outages. Sources to use then: their Telegram bots or channels, and Svitlobot. Store that feed separately from `schedule_changes` (those rows are only DTEK plan diffs) and separately from our `power_events`. Do not start this during phases 2–4, and do not scan those chats on a dashboard request.
+After our board is in use, collect observed outages from neighboring buildings and overlay them the same way as our own actual outages. Sources to use then: their Telegram bots or channels, and Svitlobot. Store that feed separately from `schedule_changes` (those rows are only DTEK plan diffs) and separately from our `power_events`. Do not scan those chats on a dashboard request.
+
+On 2026-11-09T13:50:11Z the operator skipped this stage. It stays a future idea, not the next step. A second future idea, elevator trips by day and a basement-battery forecast, is only in the local house card `house/future-ideas.md`. It is not work in this repo.
 
 ## 2. How this plan was adapted
 

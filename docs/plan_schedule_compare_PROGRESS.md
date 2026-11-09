@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:45:03Z
+- Last updated: 2026-11-09T13:50:11Z
 - Current phase: fact lane and now line are on the live site, script `34734dd`.
-- Next allowed step: none until the operator asks. Neighbor statistics stay deferred.
+- Next allowed step: none. On 2026-11-09T13:50:11Z the operator skipped neighbor buildings. That idea and the elevator-forecast idea stay in the local card `house/future-ideas.md`.
 
 ## Phase checklist
 
@@ -17,7 +17,7 @@
 | 3 `GET /api/schedule-board` | done locally | 2026-11-08T23:27:27Z. 30 tests OK. Route is a read. Not deployed. |
 | 4 Board UI | done locally, gate open | 2026-11-09T13:00:34Z. Board is outside the 10s fragment. Live browser pass waits for deploy. |
 | Deploy | done | 2026-11-09T13:07:30Z. Commit `af15747` with `#autodeploy`. Live page shows the Ukrainian board. |
-| Later: neighbor buildings | not started | Telegram or Svitlobot. Separate from `schedule_changes` and our `power_events`. Not on the request path. |
+| Later: neighbor buildings | skipped for now | 2026-11-09T13:50:11Z. Still a future idea. Telegram or Svitlobot. Not on the request path. Elevator trips are a separate local idea, not this phase. |
 
 ## Gate log
 
@@ -39,6 +39,7 @@
 | 2026-11-09T13:41:37Z | Fact lane and now line | Operator said yes. One fact row: green `#22c55e` in the gaps, red `#f87171` on the outages, green stops at the clock. A dashed line sits on the current minute through the hour label and every group. Our cell still blinks; other groups do not. A local board showed one lane, the 02:00–03:00 outage in red, green up to the line, hour 15 lit, the line inside slot 31. Live site not updated. |
 | 2026-11-09T13:44:14Z | Deploy | Operator asked to ship the fact lane and the minute line. Commit `34734dd` carries `#autodeploy`. |
 | 2026-11-09T13:45:03Z | Deploy check | Live page loads `/app.js?v=34734dd` and `/style.css?v=34734dd`. The green/red note is visible. Green `#22c55e` ends on the dashed line, red `#f87171` is on the same row, hour 15 is bright, queue 5.1 blinks yellow, other groups do not. |
+| 2026-11-09T13:50:11Z | Later ideas | Operator skipped neighbor buildings. Both that idea and elevator trips for the basement-battery forecast are written in the local card, not started. |
 
 ## Log
 
