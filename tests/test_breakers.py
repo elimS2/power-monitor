@@ -28,6 +28,7 @@ from tuya_breakers import (
     breaker_poll_due,
     carry_configured_breakers,
     decode_phase,
+    ingest_status_message,
     poll_breakers,
     poll_breakers_http,
     poll_is_enabled,
@@ -301,6 +302,67 @@ class _FakeTuya:
         if "/v1.0/token?" in url:
             return _JsonResponse(self._token)
         return _JsonResponse(self._status)
+
+
+class BreakerMessageTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        self._ids = {"dev-svitlo": "svitlo", "dev-itp": "itp"}
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def _message(self, device: str, message_id: str, switch: bool, when_ms: int, energy: int = 1000000):
+        return {
+            "devId": device,
+            "dataId": message_id,
+            "status": [
+                {"code": "switch", "value": switch, "t": when_ms},
+                {"code": "total_forward_energy", "value": energy, "t": when_ms},
+            ],
+        }
+
+    def test_opposite_switch_appends_a_span_and_a_copy_does_not(self):
+        first = int(_ts(2026, 11, 9, 12, 0) * 1000)
+        later = int(_ts(2026, 11, 9, 18, 0) * 1000)
+        self.assertTrue(ingest_status_message(self._message("dev-svitlo", "m1", True, first), self._ids))
+        self.assertTrue(ingest_status_message(self._message("dev-svitlo", "m2", False, later), self._ids))
+        self.assertTrue(ingest_status_message(self._message("dev-svitlo", "m2", True, later + 1000), self._ids))
+        spans = json.loads(self._day("svitlo")["span_json"])
+        self.assertEqual([span["switch"] for span in spans], [1, 0])
+        self.assertEqual(self._count(), 2)
+
+    def test_older_message_is_kept_and_does_not_move_the_day(self):
+        later = int(_ts(2026, 11, 9, 18, 0) * 1000)
+        earlier = int(_ts(2026, 11, 9, 12, 0) * 1000)
+        ingest_status_message(self._message("dev-svitlo", "new", True, later, 1000500), self._ids)
+        ingest_status_message(self._message("dev-svitlo", "old", False, earlier, 1000000), self._ids)
+        day = self._day("svitlo")
+        self.assertEqual(day["switch"], 1)
+        self.assertEqual(day["energy_kwh"], 10005.0)
+        with database._conn() as db:
+            row = db.execute("SELECT message_id FROM breaker_message WHERE message_id='old'").fetchone()
+        self.assertEqual(row["message_id"], "old")
+
+    def test_other_device_does_not_write(self):
+        when = int(_ts(2026, 11, 9, 12, 0) * 1000)
+        self.assertFalse(ingest_status_message(self._message("someone-else", "x", False, when), self._ids))
+        self.assertEqual(self._count(), 0)
+
+    def _day(self, device: str):
+        with database._conn() as db:
+            return db.execute(
+                "SELECT * FROM breaker_day WHERE device=?",
+                (device,),
+            ).fetchone()
+
+    def _count(self) -> int:
+        with database._conn() as db:
+            return db.execute("SELECT COUNT(*) AS n FROM breaker_sample").fetchone()["n"]
 
 
 class BreakerPageTests(unittest.TestCase):

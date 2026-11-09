@@ -1,11 +1,11 @@
 # Progress — basement breakers
 
 - Plan: `power-monitor/docs/plan_breakers.md`
-- Status: `PHASE 3 DONE`
+- Status: `PHASE 4 LISTENER OFF`
 - Active skin: Skin A
-- Last updated: 2026-11-09T20:58:02Z
-- Current phase: 3 done. Page shows rows. It does not control the breakers.
-- Next allowed step: none until the operator says to start Phase 4.
+- Last updated: 2026-11-09T21:06:42Z
+- Current phase: 4 read the message screen. The queue stays off.
+- Next allowed step: none until the operator decides to turn on Pulsar. The page must still only read.
 
 ## Phase checklist
 
@@ -15,7 +15,7 @@
 | 1 Store samples and day row | done | 2026-11-09T20:37:30Z. Temp db tests passed. No page, no poller, no deploy. |
 | 2 15-minute poll | done | 2026-11-09T20:45:39Z. Fake HTTP client. No deploy. Live poll waits for server env. |
 | 3 Read route and section | done | 2026-11-09T20:58:02Z. Read-only. No button, no form, no deploy. |
-| 4 Status messages | not started | Transport still unread. |
+| 4 Status messages | listener off | 2026-11-09T21:06:42Z. Screen offers only Pulsar. Switch left off. No webhook. |
 
 ## Gate log
 
@@ -28,6 +28,7 @@
 | 2026-11-09T20:45:39Z | Phase 2 | Operator yes via Agree & Continue. Poller landed. Production not restarted. Env on the server is still empty, so a later deploy would not call Tuya until those values are set. |
 | 2026-11-09T20:50:10Z | Observe only | Operator: the page reads and shows. It does not control the breakers. Plan updated. No code. |
 | 2026-11-09T20:58:02Z | Phase 3 | Operator yes via Agree & Continue. Section and read route landed. Production not restarted. |
+| 2026-11-09T21:06:42Z | Phase 4 | Message Service dialog: Message Queue / Pulsar only, AES-GCM, no HTTP. Cancel pressed. Server Message Log also off, so the monthly count is unknown. Listener not started. |
 
 ## Log
 
@@ -40,6 +41,7 @@
 | 2026-11-09T20:45:39Z | Phase 2. Tick fires when `tick * 30` is 900, not 870. Timeout 10s. Breaker errors do not cancel the Deye step. Company KB skipped again. `tests.test_breakers`: 22 OK. |
 | 2026-11-09T20:50:10Z | Observe-only rule. Phase 3 may draw the lines and the bar. It may not add a button, a form, or a command route. |
 | 2026-11-09T20:58:02Z | Phase 3. `GET /api/breakers` reads `breaker_day` only. Green then red from stored spans. Null today renders `немає бази`. 62 tests OK. A local color fixture was not opened in the browser: the temporary page server did not answer. |
+| 2026-11-09T21:06:42Z | Phase 4. `ingest_status_message` accepts a decrypted report for the two ids and ignores any other id. `bg_loop` does not call it. 34 breaker tests OK. |
 
 ## Review history
 

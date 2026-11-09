@@ -1,10 +1,10 @@
 # Basement breakers
 
-- Status: `PHASE 3 DONE`
+- Status: `PHASE 4 LISTENER OFF`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T20:58:02Z
+- Last updated: 2026-11-09T21:06:42Z
 - Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -198,10 +198,11 @@ Status messages for these two ids only. Ignore every other device on the queue. 
 
 ### 6.5 Messages
 
-Device Status Notification is already authorized. Before writing a client, read the project's Message Service screen and record which transport it offers.
+Device Status Notification is already authorized. The project screen was read on 2026-11-09T21:04Z at `toptab=message` for project Home, Central Europe.
 
-- If it can POST to our host, add `POST /api/tuya-webhook`. If `TUYA_WEBHOOK_SECRET` is empty, return 503 and write nothing. A missing or wrong secret header returns 403 and writes nothing. An empty header must not match an empty secret. Do not accept the dashboard key as a substitute. Prefer this. No new native library. The pattern is `api/deploy.py` (empty secret is 503), not `api/telegram.py` (empty secret matches an empty header).
-- If it is only the Tuya Pulsar endpoint, run that consumer in-process and filter to the two ids.
+The service switch was off. Opening it showed one type only: **Message Queue**, forwarded to the Pulsar cluster. The selected encryption was **AES-GCM**. There was no HTTP or webhook choice. The dialog warned that forwarded messages consume the message quota. **Cancel** was pressed. **OK** was not pressed, so the switch stayed off. The Server Message Log page (`/cloud/monitor/msg`) is a separate switch and was also off, so there is no counted message stream.
+
+The listener stays off. A Pulsar client is not added, and `POST /api/tuya-webhook` is not added, because the screen does not offer HTTP. `ingest_status_message` can apply a decrypted report for the two configured ids. Nothing calls it from `bg_loop`. The 15-minute poll remains the only writer. Do not turn the console switch on until a consumer is running and the real monthly count is under 68 000.
 
 A message that carries `switch` or `total_forward_energy` or a phase blob is one sample with `source=message`, then the same day-row update as a poll, unless the next paragraph says the event is a duplicate or older than the latest sample. A message with no new switch and no new counter still refreshes `phase_json` and `updated_at`, unless it is a duplicate or older than the latest sample.
 
@@ -340,9 +341,9 @@ Rollback: kv `breakers_board` = `0`. Writers stay.
 
 ### Phase 4 — messages
 
-Goal: a switch flip becomes a span without waiting for the poll.
+Goal: a switch flip becomes a span without waiting for the poll. The screen did not offer a way to do that without Pulsar, so the listener is off. See 6.5.
 
-Touch: message client, `POST /api/tuya-webhook` only if section 6.5 chose HTTP, `apply_breaker_status` already from Phase 1.
+Touch: `ingest_status_message` in `tuya_breakers.py` and `tests/test_breakers.py`. No Pulsar library. No webhook route.
 
 Steps:
 
@@ -413,6 +414,7 @@ None blocking.
 | 2026-11-09T20:45:39Z | Phase 2 implemented. Operator said yes via Agree & Continue. | 15-minute status poll and midnight carry. No page, no commands, no deploy. Poller stays off until `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and at least one device id are set in the server env. `tests.test_breakers`: 22 tests OK. |
 | 2026-11-09T20:50:10Z | The page only reads and shows. It does not control the breakers. | Operator asked to make this explicit before Phase 3. No buttons, forms, or command routes in this plan. No code change in this step. |
 | 2026-11-09T20:58:02Z | Phase 3 implemented. Operator said yes via Agree & Continue. | Read-only section and `GET /api/breakers`. No control, no deploy. `tests.test_breakers` and `tests.test_schedule_board`: 62 tests OK. |
+| 2026-11-09T21:06:42Z | Phase 4 listener left off. Operator said yes via Agree & Continue. | Message screen offers only Pulsar. Switch was not enabled. `ingest_status_message` is tested and not called from the loop. 34 breaker tests OK. No deploy. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -453,7 +455,8 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T20:45:39Z | Phase 2 done. The poll sits after the Deye tick in its own try, timeout 10 seconds. Live site was not restarted. Phase 3 waits for an explicit yes. |
 | 2026-11-09T20:50:10Z | Observe-only rule written into the goal, Phase 3, and the done check. No code. |
 | 2026-11-09T20:58:02Z | Phase 3 done. The section shows two lines and a green/red day bar. It has no button and no form. Live site was not restarted. Phase 4 waits for an explicit yes. |
+| 2026-11-09T21:06:42Z | Phase 4. Pulsar is the only transport on the project screen. The queue stays off. The poll remains the writer. |
 
 ## 12. Handoff for a new chat
 
-Read this file and `plan_breakers_PROGRESS.md`. Phases 1–3 are done. Do not start Phase 4 without an explicit yes. The page only reads and shows. Do not add a breaker control. Do not call the company knowledge base. Do not send a breaker command. Do not print `TUYA_ACCESS_SECRET`. Tests stay on a temp database. Skin A stays the default. The section id is `breaker_details`. `GET /api/breakers` reads `breaker_day` only. The poller still does nothing until the server env has the access id, the secret, and at least one device id. The live site was not restarted in Phase 3.
+Read this file and `plan_breakers_PROGRESS.md`. Phases 1–3 are on disk. Phase 4's listener is off: the project message screen offers only Pulsar, and that switch was not turned on. Do not enable it, and do not send a breaker command. The page only reads and shows. Do not add a breaker control. Do not call the company knowledge base. Do not print `TUYA_ACCESS_SECRET`. The 15-minute poll is the only writer, and it still does nothing until the server env has the access id, the secret, and at least one device id. The live site was not restarted.

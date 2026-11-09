@@ -333,6 +333,54 @@ def _fault(value: Any) -> int:
     return value
 
 
+def ingest_status_message(message: dict, id_to_name: dict[str, str]) -> bool:
+    """Apply one decrypted device report. Unknown devices are ignored.
+
+    The live listener is not started. On 2026-11-09 the project screen offered
+    only a Pulsar queue, and that queue was left off.
+    """
+    if not isinstance(message, dict):
+        return False
+    biz = message.get("bizData") if isinstance(message.get("bizData"), dict) else {}
+    device_id = message.get("devId") or biz.get("devId")
+    name = id_to_name.get(device_id) if isinstance(device_id, str) else None
+    if not name:
+        return False
+    message_id = message.get("dataId") or biz.get("dataId")
+    if not isinstance(message_id, str) or not message_id:
+        return False
+    status = message.get("status")
+    if not isinstance(status, list):
+        status = biz.get("properties") if isinstance(biz.get("properties"), list) else biz.get("status")
+    if not isinstance(status, list):
+        return False
+    ts_ms = _status_time_ms(status)
+    if ts_ms is None:
+        return False
+    payload = {
+        "success": True,
+        "result": [
+            {"code": item["code"], "value": item.get("value")}
+            for item in status
+            if isinstance(item, dict) and isinstance(item.get("code"), str)
+        ],
+    }
+    if not payload["result"]:
+        return False
+    apply_breaker_status(name, ts_ms / 1000, payload, "message", message_id=message_id)
+    return True
+
+
+def _status_time_ms(status: list) -> int | None:
+    for item in status:
+        if not isinstance(item, dict):
+            continue
+        stamp = item.get("t", item.get("time"))
+        if isinstance(stamp, int) and not isinstance(stamp, bool):
+            return stamp
+    return None
+
+
 # ─── Cloud poll (no commands) ───────────────────────────────────
 
 
