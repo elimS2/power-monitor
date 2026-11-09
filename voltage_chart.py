@@ -22,6 +22,38 @@ _PHASES = (
     ("l2", "#facc15"),
     ("l3", "#60a5fa"),
 )
+_WD = ("пн", "вт", "ср", "чт", "пт", "сб", "нд")
+_MON = ("", "січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру")
+
+
+def chart_window(wall: float, shift_days: int) -> tuple[float, float, bool]:
+    """Live view is the rolling day. Older views are Kyiv calendar days."""
+    shift_days = max(0, int(shift_days))
+    if shift_days == 0:
+        return wall - HISTORY_SEC, wall + FUTURE_SEC, True
+    day = datetime.fromtimestamp(wall, UA_TZ).date() - timedelta(days=shift_days)
+    start = datetime(day.year, day.month, day.day, tzinfo=UA_TZ)
+    end = start + timedelta(days=1)
+    return start.timestamp(), end.timestamp(), False
+
+
+def clamp_chart_shift(shift_days: int, wall: float, oldest: float | None) -> int:
+    shift = max(0, min(int(shift_days), 120))
+    if oldest is None:
+        return 0
+    while shift > 0:
+        _t0, t1, _live = chart_window(wall, shift)
+        if t1 > oldest:
+            return shift
+        shift -= 1
+    return 0
+
+
+def prev_day_available(shift_days: int, wall: float, oldest: float | None) -> bool:
+    if oldest is None:
+        return False
+    _t0, t1, _live = chart_window(wall, max(0, int(shift_days)) + 1)
+    return t1 > oldest
 
 
 def build_voltage_chart(
@@ -33,9 +65,17 @@ def build_voltage_chart(
     queue: str,
     history_sec: int = HISTORY_SEC,
     future_sec: int = FUTURE_SEC,
+    shift_days: int = 0,
+    prev_enabled: bool = True,
 ) -> str:
-    t0 = now - history_sec
-    t1 = now + future_sec
+    shift_days = max(0, int(shift_days))
+    if shift_days == 0:
+        t0 = now - history_sec
+        t1 = now + future_sec
+        live = True
+    else:
+        t0, t1, live = chart_window(now, shift_days)
+    schedule_from = now if live else t1
 
     def x_of(ts: float) -> float:
         return (ts - t0) / (t1 - t0) * _PLOT_W
@@ -57,10 +97,10 @@ def build_voltage_chart(
         f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" aria-hidden="true">'
         f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_STRIP_H:.0f}" fill="#0c121c"/>'
     ]
-    for start, end in _schedule_spans(now, t1, today, tomorrow, "off"):
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "off"):
         plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#7c4a32", 0.95))
         strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#7c4a32", 0.95))
-    for start, end in _schedule_spans(now, t1, today, tomorrow, "maybe"):
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "maybe"):
         plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#4b5563", 0.8))
         strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#4b5563", 0.8))
     for tick in (180, 200, 220, 240, 260):
@@ -78,15 +118,19 @@ def build_voltage_chart(
         )
     for key, color in _PHASES:
         plot.extend(_phase_paths(buckets, key, color, x_of, y_of))
-    now_x = x_of(now)
-    plot.append(
-        f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_PLOT_H:.0f}" '
-        f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>'
-    )
-    strip.append(
-        f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_STRIP_H:.0f}" '
-        f'stroke="#e2e8f0" stroke-width="1" vector-effect="non-scaling-stroke"/>'
-    )
+    show_now = t0 <= now <= t1
+    if show_now:
+        now_x = x_of(now)
+        plot.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_PLOT_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>'
+        )
+        strip.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_STRIP_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+        )
+    else:
+        now_x = 0.0
     for start, end, kind in _fact_spans(buckets, now):
         color = "#22c55e" if kind == "on" else "#fb923c"
         strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, color, 1))
@@ -103,24 +147,43 @@ def build_voltage_chart(
         if left < -1 or left > 101:
             continue
         x_labels.append(f'<span style="left:{left:.2f}%">{label}</span>')
-    now_pct = max(0.0, min(100.0, now_x / _PLOT_W * 100))
-    span = _ten_minute_span(buckets, now)
+    now_html = ""
+    if show_now:
+        now_pct = max(0.0, min(100.0, now_x / _PLOT_W * 100))
+        now_html = f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
+    span = _ten_minute_span(buckets, now) if live else ""
     span_html = f'<span class="vchart-span">{span}</span>' if span else ""
+    title = "Остання доба і графік відключень" if live else _day_title(t0)
+    prev_attr = "" if prev_enabled else " disabled"
+    next_attr = " disabled" if live else ""
     return (
-        '<div class="vchart">'
+        f'<div class="vchart" data-shift="{shift_days}">'
         '<div class="vchart-head">'
-        '<div>Остання доба і графік відключень '
-        f'<span class="vchart-queue">черга {queue}</span></div>'
+        f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
         '<div class="vchart-head-side">'
         f"{span_html}"
         '<button type="button" class="vchart-reset" hidden>Скинути</button>'
+        '<span class="vchart-help-wrap">'
+        '<button type="button" class="vchart-help" aria-label="Як керувати графіком" aria-expanded="false">i</button>'
+        '<div class="vchart-help-pop" hidden>'
+        "<p>Колесо збільшує час і вольти до точки під курсором.</p>"
+        "<p>Затиснута ліва кнопка зрушує вікно.</p>"
+        "<p>Подвійний клік або «Скинути» повертає всю добу на екран.</p>"
+        "<p>Біля курсора видно час і напругу.</p>"
+        "<p>Стрілки гортають попередні доби. Жива доба — останні 24 години і ще 6 годин графіка вперед.</p>"
+        "</div></span>"
         "</div></div>"
+        '<div class="vchart-nav">'
+        f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
+        f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
+        f'<button type="button" class="vchart-day vchart-next" data-dir="1" aria-label="Наступна доба"{next_attr}>›</button>'
+        "</div>"
         '<div class="vchart-frame">'
         f'<div class="vchart-yaxis">{"".join(y_labels)}</div>'
         '<div class="vchart-plot">'
         + "".join(plot)
-        + f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
-        '<div class="vchart-tip" hidden></div>'
+        + now_html
+        + '<div class="vchart-tip" hidden></div>'
         "</div>"
         + "".join(strip)
         + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
@@ -128,6 +191,19 @@ def build_voltage_chart(
         + _legend()
         + "</div>"
     )
+
+
+def _day_title(t0: float) -> str:
+    day = datetime.fromtimestamp(t0, UA_TZ)
+    return f"{day.day} {_MON[day.month]}, {_WD[day.weekday()]}"
+
+
+def _nav_label(t0: float, t1: float, live: bool) -> str:
+    if not live:
+        return _day_title(t0)
+    start = datetime.fromtimestamp(t0, UA_TZ)
+    end = datetime.fromtimestamp(t1, UA_TZ)
+    return f"{start.day} {_MON[start.month]} {start:%H:%M} – {end.day} {_MON[end.month]} {end:%H:%M}"
 
 
 def _hrect(x1: float, x2: float, y: float, height: float, color: str, opacity: float) -> str:

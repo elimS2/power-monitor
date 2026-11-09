@@ -188,6 +188,13 @@
   // Voltage chart: wheel zoom and drag, kept across the 10s refresh.
   var vZoom = null;
   var vDrag = null;
+  var vShift = 0;
+  var vchartReload = function() {};
+  try {
+    vShift = Math.max(0, parseInt(sessionStorage.getItem('pm_vchart_shift') || '0', 10) || 0);
+  } catch (err) {
+    vShift = 0;
+  }
 
   function vchartMeta(main) {
     return {
@@ -435,9 +442,41 @@
   });
 
   document.addEventListener('click', function(e) {
-    if (!(e.target.closest && e.target.closest('#pm-voltage .vchart-reset'))) return;
+    if (e.target.closest && e.target.closest('#pm-voltage .vchart-reset')) {
+      vZoom = null;
+      vchartApply();
+      return;
+    }
+    var helpBtn = e.target.closest && e.target.closest('#pm-voltage .vchart-help');
+    var pop = document.querySelector('#pm-voltage .vchart-help-pop');
+    if (helpBtn && pop) {
+      var open = pop.hidden;
+      pop.hidden = !open;
+      helpBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      return;
+    }
+    if (pop && !pop.hidden && !(e.target.closest && e.target.closest('#pm-voltage .vchart-help-pop'))) {
+      pop.hidden = true;
+      var help = document.querySelector('#pm-voltage .vchart-help');
+      if (help) help.setAttribute('aria-expanded', 'false');
+    }
+    var dayBtn = e.target.closest && e.target.closest('#pm-voltage .vchart-day');
+    if (!dayBtn || dayBtn.disabled) return;
+    var dir = +dayBtn.getAttribute('data-dir');
+    if (!dir) return;
+    vShift = Math.max(0, vShift - dir);
     vZoom = null;
-    vchartApply();
+    try { sessionStorage.setItem('pm_vchart_shift', String(vShift)); } catch (err) {}
+    vchartReload();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var pop = document.querySelector('#pm-voltage .vchart-help-pop');
+    if (!pop || pop.hidden) return;
+    pop.hidden = true;
+    var help = document.querySelector('#pm-voltage .vchart-help');
+    if (help) help.setAttribute('aria-expanded', 'false');
   });
 
   vchartApply();
@@ -458,7 +497,8 @@
       document.body.appendChild(banner);
     }
     function doFetch() {
-      var url = urlBase + '&_=' + Date.now();
+      var requestedShift = vShift;
+      var url = urlBase + '&chart_shift=' + requestedShift + '&_=' + Date.now();
       fetch(url, { cache: 'no-store' }).then(function(r) {
         if (r.status === 403) {
           showKeyExpired();
@@ -466,7 +506,7 @@
         }
         return r.json();
       }).then(function(d) {
-        if (!d) return;
+        if (!d || requestedShift !== vShift) return;
         var el;
         if (d.pm_status_block) {
           el = document.getElementById('pm-status-block');
@@ -494,6 +534,14 @@
           el = document.getElementById('pm-voltage');
           if (el) {
             el.innerHTML = d.pm_voltage;
+            var chart = el.querySelector('.vchart');
+            if (chart) {
+              var shown = +chart.getAttribute('data-shift');
+              if (isFinite(shown) && shown !== vShift) {
+                vShift = shown;
+                try { sessionStorage.setItem('pm_vchart_shift', String(vShift)); } catch (err) {}
+              }
+            }
             vchartApply();
           }
         }
@@ -549,6 +597,7 @@
         }
       }).catch(function() {});
     }
+    vchartReload = doFetch;
     var fetchInterval = setInterval(function() {
       doFetch();
       if (keyExpiredShown) clearInterval(fetchInterval);

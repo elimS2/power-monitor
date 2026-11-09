@@ -63,6 +63,7 @@ from database import (
     deye_aggregates_refresh,
     deye_aggregates_snapshot,
     deye_cumulative_metrics,
+    deye_first_voltage_ts,
     deye_voltage_buckets,
     deye_voltage_trend,
     first_heartbeat_ts,
@@ -93,7 +94,15 @@ from database import (
 
 import dtek
 import detection
-from voltage_chart import BUCKET_SEC, FUTURE_SEC, HISTORY_SEC, build_voltage_chart
+from voltage_chart import (
+    BUCKET_SEC,
+    FUTURE_SEC,
+    HISTORY_SEC,
+    build_voltage_chart,
+    clamp_chart_shift,
+    chart_window,
+    prev_day_available,
+)
 
 _REPO = Path(__file__).resolve().parent
 _DEPLOY_TAGS = re.compile(r"#автооновити|#autodeploy", re.I)
@@ -594,7 +603,7 @@ def _fmt_panel_volts(value: float | None) -> str:
     return f"{float(value):05.1f}"
 
 
-def _build_voltage_panel(deye_rows: list | None) -> str:
+def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0) -> str:
     """Three-phase panel meter: L1 yellow, L2 green, L3 red, 7-segment windows."""
     phases: list[tuple[str, float | None]] = [("L1", None), ("L2", None), ("L3", None)]
     age_html = "немає даних"
@@ -641,25 +650,33 @@ def _build_voltage_panel(deye_rows: list | None) -> str:
         + "</div>"
         + f'<div class="vboard-age">{age_html}</div>'
         + "</div>"
-        + _voltage_chart_html()
+        + _voltage_chart_html(chart_shift)
     )
 
 
-def _voltage_chart_html() -> str:
+def _voltage_chart_html(chart_shift: int = 0) -> str:
     now = time.time()
+    oldest = deye_first_voltage_ts()
+    shift = clamp_chart_shift(chart_shift, now, oldest)
+    t0, t1, live = chart_window(now, shift)
+    if live:
+        t0 = now - HISTORY_SEC
+        t1 = now + FUTURE_SEC
     cache = dtek.schedule_cache or {}
     return build_voltage_chart(
         now=now,
-        buckets=deye_voltage_buckets(now - HISTORY_SEC, now, BUCKET_SEC),
+        buckets=deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC),
         today=cache.get("today"),
         tomorrow=cache.get("tomorrow"),
         queue=DTEK_QUEUE,
         history_sec=HISTORY_SEC,
-        future_sec=FUTURE_SEC,
+        future_sec=FUTURE_SEC if live else 0,
+        shift_days=shift,
+        prev_enabled=prev_day_available(shift, now, oldest),
     )
 
 
-def _build_update_fragments() -> dict:
+def _build_update_fragments(chart_shift: int = 0) -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
@@ -892,7 +909,7 @@ def _build_update_fragments() -> dict:
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
-    voltage_html = _build_voltage_panel(deye_log)
+    voltage_html = _build_voltage_panel(deye_log, chart_shift)
 
     alert_html = ""
     if dtek.alert_cache:

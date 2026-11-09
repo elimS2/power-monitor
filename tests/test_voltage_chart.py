@@ -32,7 +32,19 @@ class VoltageChartTests(unittest.TestCase):
         self.assertIn("data-t0=", html)
         self.assertIn("vchart-main", html)
         self.assertIn("vchart-strip", html)
-        self.assertIn("09.11", html)
+        self.assertIn("Колесо збільшує", html)
+        self.assertIn("vchart-next", html)
+        self.assertIn("disabled", html)
+
+    def test_previous_calendar_day_has_no_now_marker(self):
+        now = _kyiv(2026, 11, 9, 1, 4)
+        html = build_voltage_chart(
+            now=now, buckets=[], today=None, tomorrow=None, queue="5.1", shift_days=1,
+        )
+        self.assertNotIn("vchart-now", html)
+        self.assertIn("8 лис, нд", html)
+        self.assertIn('data-shift="1"', html)
+        self.assertNotIn("disabled", html)
 
     def test_dead_minutes_are_orange_and_do_not_draw_zero_volts(self):
         now = _kyiv(2026, 11, 9, 1, 4)

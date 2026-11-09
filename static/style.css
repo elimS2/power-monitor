@@ -214,6 +214,32 @@ details[open] summary::before { content: '▼ '; }
 .vchart-queue, .vchart-span { color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
 .vchart-queue { margin-left: 0.35rem; }
 .vchart-head-side { display: flex; align-items: center; gap: 0.5rem; }
+.vchart-nav {
+  display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+  margin: 0 0.2rem 0.35rem;
+}
+.vchart-day, .vchart-help {
+  width: 28px; height: 28px; padding: 0; border-radius: 8px; cursor: pointer;
+  border: 1px solid #475569; background: #1e293b; color: #e2e8f0;
+  font-size: 1.05rem; line-height: 1;
+}
+.vchart-day:hover, .vchart-help:hover { background: #334155; }
+.vchart-day:disabled { opacity: 0.35; cursor: default; }
+.vchart-day-label {
+  min-width: 0; text-align: center; color: var(--muted); font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.vchart-help { font-family: Georgia, serif; font-style: italic; font-size: 0.85rem; font-weight: 700; }
+.vchart-help-wrap { position: relative; }
+.vchart-help-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 6;
+  width: min(280px, 72vw); background: #0f172a; color: #e2e8f0;
+  border: 1px solid #475569; border-radius: 8px; padding: 0.55rem 0.7rem;
+  font-size: 0.75rem; line-height: 1.45; text-align: left;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+.vchart-help-pop p { margin: 0 0 0.35rem; }
+.vchart-help-pop p:last-child { margin-bottom: 0; }
 .vchart-reset {
   border: 1px solid #475569; background: #1e293b; color: #e2e8f0;
   border-radius: 6px; font-size: 0.68rem; padding: 0.15rem 0.45rem; cursor: pointer;

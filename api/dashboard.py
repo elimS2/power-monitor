@@ -50,7 +50,7 @@ def ep_schedule_board(key: str = Query(""), date: str = Query("")):
 
 
 @router.get("/api/dashboard-fragments")
-def ep_dashboard_fragments(key: str = Query("")):
+def ep_dashboard_fragments(key: str = Query(""), chart_shift: int = Query(0, ge=0, le=120)):
     check_permission(key, "dashboard")
     from power_monitor import _build_footer_content, _build_update_fragments, online_count, record_online
 
@@ -58,7 +58,7 @@ def ep_dashboard_fragments(key: str = Query("")):
 
     record_online(key)
 
-    frags = _build_update_fragments()
+    frags = _build_update_fragments(chart_shift)
     key_label = API_KEYS.get(key, "")
     is_admin = API_KEYS.get(key) == "admin"
     footer_parts = allowed_footer_parts(key)

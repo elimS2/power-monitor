@@ -1187,6 +1187,15 @@ def deye_voltage_buckets(ts_start: float, ts_end: float, bucket_sec: int = 60) -
     return [dict(r) for r in rows]
 
 
+def deye_first_voltage_ts() -> float | None:
+    """Oldest inverter sample. Uses the timestamp index."""
+    with _conn() as db:
+        row = db.execute("SELECT MIN(ts) AS ts FROM deye_log").fetchone()
+    if not row or row["ts"] is None:
+        return None
+    return float(row["ts"])
+
+
 def _integrate_kwh(rows: list) -> float:
     """Trapezoidal integration of load_power_w over time. Returns kWh."""
     total = 0.0
