@@ -996,38 +996,64 @@
       var shifted = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2] + days));
       return shifted.getUTCFullYear() + '-' + pad2(shifted.getUTCMonth() + 1) + '-' + pad2(shifted.getUTCDate());
     }
+    function breakerNowFrac(data) {
+      if (!data || data.date !== kyivTodayBreaker() || !data.start || !data.end) return null;
+      var frac = (Date.now() / 1000 - data.start) / (data.end - data.start);
+      if (frac < 0) frac = 0;
+      if (frac > 1) frac = 1;
+      return frac;
+    }
+    function paintBreakerNow(data) {
+      var frac = breakerNowFrac(data);
+      var hourNow = null;
+      if (frac !== null) {
+        var parts = {};
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Europe/Kyiv', hour: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date()).forEach(function(p) { parts[p.type] = p.value; });
+        hourNow = parseInt(parts.hour, 10);
+        if (hourNow === 24) hourNow = 0;
+      }
+      breakerBoard.querySelectorAll('[data-brk-hour]').forEach(function(el) {
+        el.classList.toggle('brk-hour-now', hourNow !== null && +el.getAttribute('data-brk-hour') === hourNow);
+      });
+      breakerBoard.querySelectorAll('.brk-now').forEach(function(el) {
+        if (frac === null) el.style.display = 'none';
+        else { el.style.display = ''; el.style.left = (frac * 100).toFixed(2) + '%'; }
+      });
+    }
     function paintBreakers(data) {
       var startMs = (data.start || 0) * 1000;
       var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
+      var pretty = data.date.split('-');
       var html = '<div class="brk-nav"><a href="#brk-prev" id="brk-prev">‹</a> <span id="brk-date">' +
-        data.date + '</span> <a href="#brk-next" id="brk-next">›</a></div>';
-      ['svitlo', 'itp'].forEach(function(name) {
-        var label = name === 'svitlo' ? 'Світло' : 'ІТП';
-        var device = data.devices[name] || { ready: false };
+        pretty[2] + '.' + pretty[1] + '.' + pretty[0] + '</span> <a href="#brk-next" id="brk-next">›</a></div>';
+      html += '<div class="brk-chart"><div class="brk-hours">';
+      for (var hour = 0; hour < 24; hour++) {
+        html += '<span data-brk-hour="' + hour + '">' + (hour < 10 ? '0' : '') + hour + '</span>';
+      }
+      html += '</div><div class="brk-plot">';
+      [['svitlo', 'Освітлення', 'Світло'], ['itp', 'Обігрів', 'ІТП']].forEach(function(item) {
+        var device = data.devices[item[0]] || { ready: false };
         var spans = device.ready ? (device.spans || []) : [];
-        if (!spans.length) {
-          html += '<div class="brk-empty">' + label + ': ще немає знімка</div>';
-          return;
-        }
         var bars = '';
-        var changes = [];
+        var empty = spans.length ? '' : '<div class="brk-empty">' + item[2] + ': ще немає знімка</div>';
         spans.forEach(function(span) {
           if (span.end == null) return;
           var left = (span.start * 1000 - startMs) / spanMs * 100;
           var width = (span.end * 1000 - span.start * 1000) / spanMs * 100;
           left = Math.min(100, Math.max(0, left));
           width = Math.min(100 - left, Math.max(0, width));
-          var kind = span.switch ? 'brk-on' : 'brk-off';
-          bars += '<i class="brk-bar ' + kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
-          var when = new Intl.DateTimeFormat('uk-UA', {
-            timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-          }).format(new Date(span.start * 1000));
-          changes.push(when + ' ' + (span.switch ? 'увімкнено' : 'вимкнено'));
+          bars += '<i class="brk-bar ' + (span.switch ? 'brk-on' : 'brk-off') +
+            '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
         });
-        html += '<div class="brk-row"><span class="brk-name">' + label + '</span><div class="brk-lane">' + bars + '</div></div>';
-        html += '<div class="brk-changes">' + changes.join(', ') + '</div>';
+        html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
+          '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
+          '<i class="brk-now"></i></div></div></div>';
       });
+      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено <i class="brk-key brk-off"></i> вимкнено</div></div>';
       breakerBoard.innerHTML = html;
+      paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');
       var next = document.getElementById('brk-next');
       if (prev) prev.addEventListener('click', function(e) {
@@ -1039,11 +1065,13 @@
         loadBreakers(shiftBreakerDay(breakerDate, 1));
       });
     }
+    var breakerPayload = null;
     function loadBreakers(date) {
       breakerDate = date || kyivTodayBreaker();
       var url = '/api/breakers?key=' + encodeURIComponent(key) + '&day=' + encodeURIComponent(breakerDate);
       fetch(url, { cache: 'no-store' }).then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
         if (!data || data.date !== breakerDate) return;
+        breakerPayload = data;
         paintBreakers(data);
       }).catch(function() {});
     }
@@ -1051,6 +1079,9 @@
       if (breakerDate === kyivTodayBreaker()) loadBreakers(breakerDate);
     };
     loadBreakers(breakerDate);
+    setInterval(function() {
+      if (breakerPayload) paintBreakerNow(breakerPayload);
+    }, 10000);
     breakerTimer = setInterval(function() {
       if (breakerDate === kyivTodayBreaker()) loadBreakers(breakerDate);
     }, 60000);

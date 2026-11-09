@@ -1195,82 +1195,137 @@ def _breaker_live_html(now: float | None = None) -> str:
     return _breaker_lines_html(payload, now)
 
 
+_BREAKER_FACES = (
+    ("svitlo", "Освітлення", "будинку", "light"),
+    ("itp", "Обігрів", "будинку", "heat"),
+)
+
+
+def _breaker_icon(kind: str) -> str:
+    if kind == "heat":
+        return (
+            '<svg class="brk-ico" viewBox="0 0 64 64" aria-hidden="true">'
+            '<rect x="10" y="16" width="8" height="32" rx="3"/>'
+            '<rect x="22" y="12" width="8" height="36" rx="3"/>'
+            '<rect x="34" y="16" width="8" height="32" rx="3"/>'
+            '<path d="M50 18c5 5 5 9 0 14s-5 9 0 14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
+            "</svg>"
+        )
+    return (
+        '<svg class="brk-ico" viewBox="0 0 64 64" aria-hidden="true">'
+        '<path d="M32 6v6M16 16l4 4M48 16l-4 4M10 32h6M48 32h6"/>'
+        '<path d="M32 14c-8 0-14 6.2-14 14.2 0 5.4 2.8 9.6 6.4 12.4V46h15.2v-5.4c3.6-2.8 6.4-7 6.4-12.4C46 20.2 40 14 32 14z"/>'
+        '<rect x="26" y="48" width="12" height="4" rx="1"/>'
+        '<rect x="28" y="54" width="8" height="3" rx="1"/>'
+        "</svg>"
+    )
+
+
+def _breaker_meter(phases: dict | None, key: str, digits: int, unit: str) -> str:
+    parts = []
+    for name in ("a", "b", "c"):
+        point = phases.get(name) if isinstance(phases, dict) else None
+        value = point.get(key) if isinstance(point, dict) else None
+        parts.append("—" if value is None else f"{float(value):.{digits}f}")
+    return " / ".join(parts) + " " + unit
+
+
+def _breaker_power(phases: dict | None) -> str:
+    if not isinstance(phases, dict):
+        return "—"
+    total = 0.0
+    found = False
+    for name in ("a", "b", "c"):
+        point = phases.get(name)
+        if isinstance(point, dict) and point.get("p") is not None:
+            total += float(point["p"])
+            found = True
+    if not found:
+        return "—"
+    if total >= 1000:
+        return f"{total / 1000:.2f} кВт"
+    return f"{total:.0f} Вт"
+
+
 def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
-    rows = []
-    for name, label in (("svitlo", "Світло"), ("itp", "ІТП")):
+    cards = []
+    for name, title, subtitle, kind in _BREAKER_FACES:
         device = payload["devices"][name]
         if not device.get("ready"):
-            rows.append(f'<div class="brk-live-row"><b>{label}</b> ще немає знімка</div>')
+            cards.append(
+                f'<article class="brk-card brk-dark">{_breaker_icon(kind)}'
+                f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
+                f'<div class="brk-state">ще немає знімка</div></article>'
+            )
             continue
-        state = "увімкнено" if device.get("switch") else "вимкнено"
+        on = bool(device.get("switch"))
         today = device.get("energy_today_kwh")
         energy = "немає бази" if today is None else f"{today:.2f} кВт·год"
         if now is None:
             now = time.time()
         age = _breaker_age(device.get("updated_at"), now)
-        phases = _breaker_phase_html(device.get("phases"))
+        phases = device.get("phases")
         fault = ""
-        phase_blob = device.get("phases") or {}
-        if isinstance(phase_blob, dict) and phase_blob.get("fault"):
-            fault = f' · несправність {int(phase_blob["fault"])}'
-        rows.append(
-            f'<div class="brk-live-row"><b>{label}</b> {state} · {energy}'
-            f'{(" · " + age) if age else ""}{fault}{phases}</div>'
+        if isinstance(phases, dict) and phases.get("fault"):
+            fault = f'<div class="brk-fault">несправність {int(phases["fault"])}</div>'
+        cards.append(
+            f'<article class="brk-card {"brk-lit" if on else "brk-dark"}" data-brk="{name}">'
+            f'<div class="brk-hero">{_breaker_icon(kind)}</div>'
+            f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
+            f'<div class="brk-state">{"Увімкнено" if on else "Вимкнено"}</div>'
+            '<dl class="brk-meters">'
+            f'<div><dt>Напруга</dt><dd>{_breaker_meter(phases, "v", 0, "В")}</dd></div>'
+            f'<div><dt>Струм</dt><dd>{_breaker_meter(phases, "i", 1, "А")}</dd></div>'
+            f'<div><dt>Потужність</dt><dd>{_breaker_power(phases)}</dd></div>'
+            f'<div><dt>За добу</dt><dd>{energy}</dd></div>'
+            "</dl>"
+            f'{fault}<div class="brk-age">{age}</div></article>'
         )
-    return "".join(rows)
+    return '<div class="brk-cards">' + "".join(cards) + "</div>"
 
 
-def _breaker_phase_html(phases: dict | None) -> str:
-    if not isinstance(phases, dict):
-        return ""
-    parts = []
-    for key, label in (("a", "L1"), ("b", "L2"), ("c", "L3")):
-        point = phases.get(key)
-        if not isinstance(point, dict) or point.get("v") is None:
-            parts.append(f"{label} —")
-            continue
-        watts = point.get("p")
-        watt_html = f' <span class="brk-w">{int(watts)} Вт</span>' if watts is not None else ""
-        amps = point.get("i")
-        amp_html = f" {amps:.1f} А" if amps is not None else ""
-        parts.append(f'{label} {point["v"]:.1f} В{amp_html}{watt_html}')
-    return '<div class="brk-phases">' + " · ".join(parts) + "</div>"
-
-
-def _breaker_bars_html(payload: dict) -> str:
-    """Paint stored spans only. Green is on, red is off. A missing end is not extended."""
+def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
+    """Hour scale. Green is on, red is off. A missing end is not extended."""
     from schedule_board import kyiv_day_bounds
 
     start, end = kyiv_day_bounds(payload["date"])
     span_len = end - start or 1
-    rows = []
-    for name, label in (("svitlo", "Світло"), ("itp", "ІТП")):
+    hours = "".join(f'<span data-brk-hour="{hour}">{hour:02d}</span>' for hour in range(24))
+    now_mark = ""
+    if payload.get("today"):
+        if now is None:
+            now = time.time()
+        frac = min(100, max(0, (now - start) / span_len * 100))
+        now_mark = f'<i class="brk-now" style="left:{frac:.2f}%"></i>'
+    tracks = []
+    for name, title, _subtitle, _kind in _BREAKER_FACES:
+        short = "ІТП" if name == "itp" else "Світло"
         device = payload["devices"][name]
         spans = device.get("spans") if device.get("ready") else None
-        if not spans:
-            rows.append(f'<div class="brk-empty">{label}: ще немає знімка</div>')
-            continue
         bars = []
-        changes = []
-        for span in spans:
-            if not isinstance(span, dict) or span.get("end") is None:
-                continue
-            left = (float(span["start"]) - start) / span_len * 100
-            width = (float(span["end"]) - float(span["start"])) / span_len * 100
-            left = min(100, max(0, left))
-            width = min(100 - left, max(0, width))
-            kind = "brk-on" if span.get("switch") else "brk-off"
-            bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
-            when = datetime.fromtimestamp(float(span["start"]), tz=UA_TZ).strftime("%H:%M")
-            word = "увімкнено" if span.get("switch") else "вимкнено"
-            changes.append(f"{when} {word}")
-        change_line = ", ".join(changes)
-        rows.append(
-            f'<div class="brk-row"><span class="brk-name">{label}</span>'
-            f'<div class="brk-lane">{"".join(bars)}</div></div>'
-            f'<div class="brk-changes">{change_line}</div>'
+        empty = ""
+        if not spans:
+            empty = f'<div class="brk-empty">{short}: ще немає знімка</div>'
+        else:
+            for span in spans:
+                if not isinstance(span, dict) or span.get("end") is None:
+                    continue
+                left = (float(span["start"]) - start) / span_len * 100
+                width = (float(span["end"]) - float(span["start"])) / span_len * 100
+                left = min(100, max(0, left))
+                width = min(100 - left, max(0, width))
+                kind = "brk-on" if span.get("switch") else "brk-off"
+                bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
+        tracks.append(
+            f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
+            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
         )
-    return "".join(rows)
+    return (
+        '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
+        f'<div class="brk-plot">{"".join(tracks)}</div>'
+        '<div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено '
+        '<i class="brk-key brk-off"></i> вимкнено</div></div>'
+    )
 
 
 def _breaker_section_html() -> str:
@@ -1284,14 +1339,14 @@ def _breaker_section_html() -> str:
     except Exception as exc:
         log.error("breaker section: %s", exc.__class__.__name__)
         payload = {"date": day, "today": True, "devices": {"svitlo": {"ready": False}, "itp": {"ready": False}}}
-    bars = _breaker_bars_html(payload)
+    bars = _breaker_bars_html(payload, now)
     live = _breaker_lines_html(payload, now)
     return (
         '<details id="breaker_details" open data-ls-key="breaker_open" data-default-open="1">'
         '<summary><h2 style="display:inline">Автомати підвалу</h2></summary>'
-        '<p class="brk-note">Лише показ. Лічильник за день рахується від останнього знімка перед північчю.</p>'
-        f'<div id="pm-breakers-board">{bars}</div>'
+        '<p class="brk-note">Лише показ. За добу — від останнього знімка перед північчю.</p>'
         f'<div id="pm-breakers-live">{live}</div>'
+        f'<div id="pm-breakers-board">{bars}</div>'
         "</details>"
     )
 

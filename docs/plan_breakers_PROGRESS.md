@@ -32,6 +32,7 @@
 | 2026-11-09T21:14:48Z | Rate | Type-7 logs since Kyiv midnight. Світло 2 907 rows and still has_next (stop code 40000309): phase_a 1270, phase_b 884, phase_c 742, energy 10, switch 1. Partial projection about 90 000/month. ІТП first page empty. Pulsar not enabled. |
 | 2026-11-09T21:39:54Z | Deploy | Operator yes. Server env has the five TUYA names. This commit tag is `#autodeploy`. No page control. |
 | 2026-11-09T21:40:19Z | Deploy check | Server is `2997503` and the service is active. The live page has the section, the bar, and no button or form. Sample table is empty until the first 15-minute poll. |
+| 2026-11-09T22:11:07Z | Visual | Two read-only faces: lighting and heat. Meters under each icon. Hour scale with a now mark. Still no control. |
 
 ## Log
 
