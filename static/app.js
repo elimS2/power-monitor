@@ -319,6 +319,10 @@
     var strip = document.querySelector('#pm-voltage .vchart-strip');
     if (!main || !strip) return;
     var meta = vchartMeta(main);
+    if (vZoom) {
+      vZoom.y0 = meta.y0;
+      vZoom.y1 = meta.y1;
+    }
     var z = vZoom ? vchartClamp(vZoom, meta) : vchartFull(meta);
     if (vZoom && vchartIsFull(z, meta)) vZoom = null;
     if (!vZoom) z = vchartFull(meta);
@@ -381,17 +385,12 @@
     if (factor < 0.75) factor = 0.75;
     if (factor > 1.35) factor = 1.35;
     var t = meta.t0 + (pt.x / meta.w) * (meta.t1 - meta.t0);
-    var v = meta.y1 - (pt.y / meta.plotH) * (meta.y1 - meta.y0);
     var next = {
       t0: t - (t - z.t0) * factor,
       t1: t + (z.t1 - t) * factor,
-      y0: z.y0,
-      y1: z.y1
+      y0: meta.y0,
+      y1: meta.y1
     };
-    if (!svg.classList.contains('vchart-strip')) {
-      next.y0 = v - (v - z.y0) * factor;
-      next.y1 = v + (z.y1 - v) * factor;
-    }
     next = vchartClamp(next, meta);
     vZoom = vchartIsFull(next, meta) ? null : next;
     vchartApply();
@@ -409,8 +408,7 @@
       plot: plot,
       z: vZoom || vchartFull(meta),
       x: e.clientX,
-      y: e.clientY,
-      yToo: !(e.target.closest && e.target.closest('.vchart-strip'))
+      y: e.clientY
     };
     plot.classList.add('is-drag');
     if (plot.setPointerCapture) plot.setPointerCapture(e.pointerId);
@@ -445,12 +443,7 @@
     if (!rect.width || !rect.height) return;
     var z0 = vDrag.z;
     var dt = (e.clientX - vDrag.x) / rect.width * (z0.t1 - z0.t0);
-    var next = { t0: z0.t0 - dt, t1: z0.t1 - dt, y0: z0.y0, y1: z0.y1 };
-    if (vDrag.yToo) {
-      var dy = (e.clientY - vDrag.y) / rect.height * (z0.y1 - z0.y0);
-      next.y0 = z0.y0 + dy;
-      next.y1 = z0.y1 + dy;
-    }
+    var next = { t0: z0.t0 - dt, t1: z0.t1 - dt, y0: meta.y0, y1: meta.y1 };
     vZoom = vchartClamp(next, meta);
     if (vchartIsFull(vZoom, meta)) vZoom = null;
     vchartApply();
