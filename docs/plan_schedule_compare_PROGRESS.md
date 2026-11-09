@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:16:00Z
-- Current phase: deployed. Board is on the live site.
-- Next allowed step: none until the operator asks. Neighbor statistics stay deferred.
+- Last updated: 2026-11-09T13:24:48Z
+- Current phase: now marker built locally. The live site still has the thin yellow frame until the next deploy.
+- Next allowed step: deploy this marker only if the operator asks. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -31,6 +31,8 @@
 | 2026-11-09T13:07:30Z | Deploy check | Live dashboard has `#pm-sched-board`. Visible text is Ukrainian: date 09.11.2026, weekday, наша, layer names, emergency banner, match line. Power-monitor has no separate deploy page; shipping is the `#autodeploy` commit, which the server pulled. |
 | 2026-11-09T13:16:00Z | Layout | The hour grid used a 980px minimum and the actual/voltage bars sat outside that scroller, so the bars did not move with the hours. Bars are now a row inside the same table, over the 48 hour columns only. The table is 100% of the card. |
 | 2026-11-09T13:16:30Z | Layout check | Live script `/app.js?v=b8700e4`. The hour scroller overflow is 0. The bar cell starts and ends on the same pixels as the first and last hour cells of row 5.1. |
+| 2026-11-09T13:19:34Z | Now marker | Planned, not built. Our current cell should blink again and show whether that slot agrees with `data-pm-down`. No new request. See plan section 6.8a. |
+| 2026-11-09T13:24:48Z | Now marker | Operator said yes. Built in `static/app.js` and `static/style.css`. Our current cell blinks yellow when the slot agrees with `data-pm-down`, red when it does not. `maybe` while the light is on stays yellow. No new request. A local four-cell fixture showed the lightning and both animations. Live site not updated. |
 
 ## Log
 
@@ -47,6 +49,7 @@
 | 2026-11-08T23:07:29Z | Phase 2. `store_published_schedule` writes every published queue and date. `classify_grid_changes` runs inside the snapshot transaction. Missing our queue does not clear `schedule_cache` and does not invent an all-ok grid. `python -m unittest tests.test_schedule_board` — 18 OK. Neighbor-building overlay deferred (Telegram or Svitlobot). Not deployed. |
 | 2026-11-08T23:27:27Z | Phase 3. `schedule_day` holds the outage bar, the voltage bar, and the match. `save_event` still inserts every event and only `down`/`up` touch the outage columns. `save_deye_log` updates voltage from the one sample it just stored. `GET /api/schedule-board` reads those rows and fills an open end from the clock. `bg_loop` carries an open outage across midnight and runs the one-time `power_events` backfill. 30 tests OK. Not deployed. |
 | 2026-11-09T13:00:34Z | Phase 4. `#pm-sched-board` is a sibling of `#pm-sched-content`. While the flag is on, the fragment is only today's text from `schedule_cache`. The browser loads `/api/schedule-board` on day change, tab focus, and every 60s for today. Group and layer toggles do not fetch. `updScheduleNow` does not paint the old row index when the board exists. Flag `0` restores the old grid. Live site not opened. Not deployed. |
+| 2026-11-09T13:24:48Z | Now marker. The static inset is replaced by a blinking lightning on our current half-hour. Yellow agrees with the live light, red contradicts it. The plan is read from `data-sb-plan`, so turning off the outage colors does not blank the marker. Checked on a local fixture, not on power.elims.pp.ua. |
 
 ## Review history
 

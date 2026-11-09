@@ -282,13 +282,15 @@
       if (data.emergency) {
         html += '<div class="sb-banner">Екстрені відключення: опублікований графік не діє</div>';
       }
+      if (data.date === kyivToday()) {
+        html += '<div class="sb-note">Жовте блимання — графік і світло сходяться. Червоне — ні.</div>';
+      }
       if (!data.overlay_ready) {
         html += '<div class="sb-note">Фактичні ще не зведені</div>';
       }
       html += '<div class="sb-wrap"><table class="sb-table"><colgroup><col class="sb-col-label"><col span="48"></colgroup><tr><th class="sb-label"></th>';
       for (var h = 0; h < 24; h++) html += '<th colspan="2">' + (h < 10 ? '0' : '') + h + '</th>';
       html += '</tr>';
-      var slotNow = currentSlot();
       Object.keys(data.groups || {}).sort().forEach(function(queue) {
         if (!groupVisible(queue)) return;
         var group = data.groups[queue];
@@ -305,8 +307,7 @@
           if (showOff) cls += ' sg-' + status;
           if (showChanged && changed.indexOf(i) >= 0) cls += ' sb-changed';
           if (showCancelled && cancelled.indexOf(i) >= 0) cls += ' sb-cancelled';
-          if (queue === ourQueue && data.date === kyivToday() && i === slotNow) cls += ' sb-now';
-          html += '<td class="' + cls + '" data-sb-slot="' + i + '"></td>';
+          html += '<td class="' + cls + '" data-sb-slot="' + i + '" data-sb-plan="' + status + '"></td>';
         }
         html += '</tr>';
       });
@@ -363,6 +364,7 @@
           renderBoard();
         });
       });
+      if (typeof window.pmPaintBoardNow === 'function') window.pmPaintBoardNow();
     }
 
     function laneRow(items, className, iso) {
@@ -382,16 +384,23 @@
       return '<tr class="sb-lane-row"><td class="sb-label"></td><td class="sb-lane-cell" colspan="48">' + bars + '</td></tr>';
     }
 
+    function boardNowClass(cell) {
+      var down = document.body.getAttribute('data-pm-down') === '1';
+      var planned = cell.getAttribute('data-sb-plan') || 'ok';
+      var miss = (planned === 'off' && !down) || (planned === 'ok' && down);
+      return miss ? 'sb-now-no' : 'sb-now-yes';
+    }
+
     window.pmPaintBoardNow = function() {
-      if (!boardPayload || boardPayload.date !== kyivToday()) return;
+      if (!schedBoard || !boardPayload || boardPayload.date !== kyivToday()) return;
       var slot = currentSlot();
       schedBoard.querySelectorAll('[data-sb-slot]').forEach(function(cell) {
-        cell.classList.remove('sb-now');
+        cell.classList.remove('sb-now', 'sb-now-yes', 'sb-now-no');
       });
       var row = schedBoard.querySelector('tr[data-sb-queue="' + ourQueue + '"]');
       if (!row) return;
       var cell = row.querySelector('[data-sb-slot="' + slot + '"]');
-      if (cell) cell.classList.add('sb-now');
+      if (cell) cell.classList.add(boardNowClass(cell));
     };
 
     loadBoard('');

@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:00:34Z
+- Last updated: 2026-11-09T13:24:48Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -372,7 +372,7 @@ Board contents:
 - Queue checkboxes from every queue ever stored, plus our queue always (section 6.4 query 5). Our queue is checked and disabled, with a "наша" badge and class `sg-ours` (left border, not color alone). Other queues default off. A queue with no row on the selected day still appears, labeled «Немає знімка». Selection key `pm_sched_groups` in `localStorage`.
 - The five layer checkboxes. Keys `pm_sched_show_off`, `pm_sched_show_changed`, `pm_sched_show_cancelled`, `pm_sched_show_actual`, `pm_sched_show_voltage`.
 - One 24-hour table. Its own class, not `sg-desktop` and not `sg-mobile`. `.sg-table` is `width:100%` and `table-layout:fixed` (`style.css` ~52), and under 768px `.sg-desktop` is `display:none`. A board table with those classes would squash or vanish. Give the board table a `min-width` so the existing `.sg-wrap` scrolls. Do not restyle the old grid.
-- The board paints "now" on our row for today only, with its own class, not `.sg-now` inside `.sg-table`. `updScheduleNow` returns on its first line when `#pm-sched-board` is visible, before `querySelectorAll('.sg-now')`. Otherwise the 10-second timer strips the marker and then paints desktop row 1.
+- The board paints "now" on our row for today only, with `sb-now-yes` or `sb-now-no`, not `.sg-now` inside `.sg-table`. `updScheduleNow` returns on its first line when `#pm-sched-board` is visible, before `querySelectorAll('.sg-now')`. Otherwise the 10-second timer strips the marker and then paints desktop row 1. The two classes and the match rule are in 6.8a.
 - A queue with `has_snapshot: false` shows the label and «Немає знімка» instead of cells.
 - When `overlay_ready` is false, do not draw an empty actual bar as "no outage". One line: «Фактичні ще не зведені». The grid still shows.
 - Cells use the existing `.sg-ok`, `.sg-off`, `.sg-maybe`. Add `.sg-changed` (outline) and `.sg-cancelled` (hatch). Unchecking «Відключення» removes off/maybe color but does not remove the row. «Скасовані» is the only way a now-`ok` slot shows that it was planned before.
@@ -383,7 +383,27 @@ Board contents:
 
 Data load: one `fetch('/api/schedule-board?...')` when the selected day changes, when the tab becomes visible, and every 60 seconds while the selected day is today. That response is the stored JSON from section 6.4. Checkbox and group toggles filter it in the browser and do not fetch again. The 10-second fragment URL is not `/api/schedule-board`. A fragment tick does not rebuild the board.
 
-`updScheduleNow` keeps working for the old grid when the flag is `0` and `#pm-sched-board` is hidden. When the board is visible it returns immediately.
+`updScheduleNow` keeps working for the old grid when the flag is `0` and `#pm-sched-board` is hidden. When the board is visible it returns immediately and calls `pmPaintBoardNow`.
+
+### 6.8a Now marker and live match
+
+Recorded 2026-11-09T13:19:34Z. Built 2026-11-09T13:24:48Z after an explicit yes. Not on the live site until a later deploy.
+
+What was weak: `pmPaintBoardNow` only added `.sb-now`, a thin yellow inset. The old grid used `.sg-now-on` / `.sg-now-off` with the lightning glyph and the `sg-glow` / `sg-flash` animations.
+
+Only our row, and only when the selected day is today. Other groups stay plain. No new request and no scan. Each cell stores `data-sb-plan` (`ok` / `off` / `maybe`) so the marker still works when the «Відключення» layer is off and the `sg-*` color classes are absent. The live light is `document.body.dataset.pmDown`, which the 10-second fragment already updates. `renderBoard` calls `pmPaintBoardNow` after it writes the table, and `updScheduleNow` calls it every 10 seconds. Neither call refetches `/api/schedule-board`.
+
+| Planned slot | Light now | Marker |
+|---|---|---|
+| `off` or `maybe` | down | agrees — `.sb-now-yes`, yellow lightning, reuses `sg-glow` / `sg-flash` |
+| `ok` | up | agrees — `.sb-now-yes` |
+| `off` | up | disagrees — `.sb-now-no`, red lightning, `sb-glow-no` / `sb-flash-no` |
+| `ok` | down | disagrees — `.sb-now-no` |
+| `maybe` | up | not a firm miss — `.sb-now-yes` |
+
+Today's board also shows one line: «Жовте блимання — графік і світло сходяться. Червоне — ні.» A local fixture of the four cells (2026-11-09T13:24:04Z) showed the lightning glyph, yellow `sg-glow` on agree, and red `sb-glow-no` on disagree. That fixture is not the live dashboard.
+
+Not in this slice: coloring the whole day by match, a vertical line through every group, or a second bar. The red actual-outage bar stays as it is. The old `.sb-now` rule is gone; the painter still strips that class so a cached script cannot leave it behind.
 
 ### 6.9 What lives where
 
