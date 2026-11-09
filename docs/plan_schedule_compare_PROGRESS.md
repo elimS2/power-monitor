@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:06:11Z
-- Current phase: 4 complete locally. Waiting for a yes before deploy.
-- Next allowed step: deploy is in progress. The operator asked to ship. Neighbor statistics stay deferred.
+- Last updated: 2026-11-09T13:07:30Z
+- Current phase: deployed. Board is on the live site.
+- Next allowed step: none until the operator asks. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -16,7 +16,7 @@
 | 2 All queues + `schedule_changes` | done locally | 2026-11-08T23:07:29Z. 18 tests OK. Pushed as `32aa109`. Not deployed. |
 | 3 `GET /api/schedule-board` | done locally | 2026-11-08T23:27:27Z. 30 tests OK. Route is a read. Not deployed. |
 | 4 Board UI | done locally, gate open | 2026-11-09T13:00:34Z. Board is outside the 10s fragment. Live browser pass waits for deploy. |
-| Deploy | not started | Only if the operator asks. No `#автооновити` unless asked. |
+| Deploy | done | 2026-11-09T13:07:30Z. Commit `af15747` with `#autodeploy`. Live page shows the Ukrainian board. |
 | Later: neighbor buildings | not started | Telegram or Svitlobot. Separate from `schedule_changes` and our `power_events`. Not on the request path. |
 
 ## Gate log
@@ -28,6 +28,7 @@
 | 2026-11-08T23:27:27Z | Phase 3 | Read route and writers done. Asking whether to start Phase 4. |
 | 2026-11-09T13:00:34Z | Phase 4 | Board UI done locally. Asking whether to deploy. |
 | 2026-11-09T13:06:11Z | Deploy | Operator asked to ship. Slot words ok/off/maybe on the board are shown as світло/відключення/можливе. Commit carries #autodeploy. |
+| 2026-11-09T13:07:30Z | Deploy check | Live dashboard has `#pm-sched-board`. Visible text is Ukrainian: date 09.11.2026, weekday, наша, layer names, emergency banner, match line. Power-monitor has no separate deploy page; shipping is the `#autodeploy` commit, which the server pulled. |
 
 ## Log
 
