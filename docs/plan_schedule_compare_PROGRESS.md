@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:24:48Z
-- Current phase: now marker built locally. The live site still has the thin yellow frame until the next deploy.
-- Next allowed step: deploy this marker only if the operator asks. Neighbor statistics stay deferred.
+- Last updated: 2026-11-09T13:26:16Z
+- Current phase: now marker shipping. The operator asked to put it on the live site.
+- Next allowed step: confirm the live script is this deploy, then stop. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -33,6 +33,7 @@
 | 2026-11-09T13:16:30Z | Layout check | Live script `/app.js?v=b8700e4`. The hour scroller overflow is 0. The bar cell starts and ends on the same pixels as the first and last hour cells of row 5.1. |
 | 2026-11-09T13:19:34Z | Now marker | Planned, not built. Our current cell should blink again and show whether that slot agrees with `data-pm-down`. No new request. See plan section 6.8a. |
 | 2026-11-09T13:24:48Z | Now marker | Operator said yes. Built in `static/app.js` and `static/style.css`. Our current cell blinks yellow when the slot agrees with `data-pm-down`, red when it does not. `maybe` while the light is on stays yellow. No new request. A local four-cell fixture showed the lightning and both animations. Live site not updated. |
+| 2026-11-09T13:26:16Z | Deploy | Operator asked to ship the marker. This commit carries `#autodeploy`. |
 
 ## Log
 
