@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:27:30Z
-- Current phase: now marker is on the live site, script `f7b9af7`.
-- Next allowed step: none until the operator asks. Neighbor statistics stay deferred.
+- Last updated: 2026-11-09T13:41:37Z
+- Current phase: fact lane and now line are built locally. The live site is still `f7b9af7`.
+- Next allowed step: deploy section 6.8b only if the operator asks. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -35,6 +35,8 @@
 | 2026-11-09T13:24:48Z | Now marker | Operator said yes. Built in `static/app.js` and `static/style.css`. Our current cell blinks yellow when the slot agrees with `data-pm-down`, red when it does not. `maybe` while the light is on stays yellow. No new request. A local four-cell fixture showed the lightning and both animations. Live site not updated. |
 | 2026-11-09T13:26:16Z | Deploy | Operator asked to ship the marker. Commit `f7b9af7` carries `#autodeploy`. |
 | 2026-11-09T13:27:30Z | Deploy check | Live page loads `/app.js?v=f7b9af7` and `/style.css?v=f7b9af7`. The note about yellow and red is visible. Queue 5.1, slot 30, plan `ok`, light on, class `sb-now-yes`, lightning glyph, animation `sg-glow`. |
+| 2026-11-09T13:32:21Z | Fact lane and now line | Proposed, not built. Same fact row: green `#22c55e` where the light was on, red where it was not, green stops at now. A dashed minute line crosses every group. Our lightning stays. See plan 6.8b. |
+| 2026-11-09T13:41:37Z | Fact lane and now line | Operator said yes. One fact row: green `#22c55e` in the gaps, red `#f87171` on the outages, green stops at the clock. A dashed line sits on the current minute through the hour label and every group. Our cell still blinks; other groups do not. A local board showed one lane, the 02:00–03:00 outage in red, green up to the line, hour 15 lit, the line inside slot 31. Live site not updated. |
 
 ## Log
 
@@ -52,6 +54,7 @@
 | 2026-11-08T23:27:27Z | Phase 3. `schedule_day` holds the outage bar, the voltage bar, and the match. `save_event` still inserts every event and only `down`/`up` touch the outage columns. `save_deye_log` updates voltage from the one sample it just stored. `GET /api/schedule-board` reads those rows and fills an open end from the clock. `bg_loop` carries an open outage across midnight and runs the one-time `power_events` backfill. 30 tests OK. Not deployed. |
 | 2026-11-09T13:00:34Z | Phase 4. `#pm-sched-board` is a sibling of `#pm-sched-content`. While the flag is on, the fragment is only today's text from `schedule_cache`. The browser loads `/api/schedule-board` on day change, tab focus, and every 60s for today. Group and layer toggles do not fetch. `updScheduleNow` does not paint the old row index when the board exists. Flag `0` restores the old grid. Live site not opened. Not deployed. |
 | 2026-11-09T13:24:48Z | Now marker. The static inset is replaced by a blinking lightning on our current half-hour. Yellow agrees with the live light, red contradicts it. The plan is read from `data-sb-plan`, so turning off the outage colors does not blank the marker. Checked on a local fixture, not on power.elims.pp.ua. |
+| 2026-11-09T13:41:37Z | Fact lane and now line. The browser paints green from the stored outage gaps. No new request and no scan. The minute line is placed from the label width plus the fraction of the day, on the same 10-second timer as the lightning. |
 
 ## Review history
 

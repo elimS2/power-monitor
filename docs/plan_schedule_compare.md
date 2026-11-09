@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:27:30Z
+- Last updated: 2026-11-09T13:41:37Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -403,7 +403,15 @@ Only our row, and only when the selected day is today. Other groups stay plain. 
 
 Today's board also shows one line: «Жовте блимання — графік і світло сходяться. Червоне — ні.» A local fixture of the four cells (2026-11-09T13:24:04Z) showed the lightning glyph, yellow `sg-glow` on agree, and red `sb-glow-no` on disagree. That fixture is not the live dashboard.
 
-Not in this slice: coloring the whole day by match, a vertical line through every group, or a second bar. The red actual-outage bar stays as it is. The old `.sb-now` rule is gone; the painter still strips that class so a cached script cannot leave it behind.
+Not in the now-marker slice: coloring the whole day by match or a second fact row. The old `.sb-now` rule is gone; the painter still strips that class so a cached script cannot leave it behind. The green fact segments and the minute line are section 6.8b.
+
+### 6.8b Fact lane both ways, and a now line through every group
+
+Proposed 2026-11-09T13:32:21Z. Built 2026-11-09T13:41:37Z after an explicit yes. Not on the live site until a later deploy.
+
+The red fact lane stays one row. Where the light was on, the same row is green `#22c55e`, the color the voltage strip already uses for «світло було». The schedule cells stay the darker `#166534`, so a planned-on cell and a fact-on segment are not the same green. Red `#f87171` stays the outage. Green is the gaps between the stored outage intervals. On today it stops at the clock. The rest of today stays empty. On a past day with `overlay_ready` it fills the whole day around the red. No new request: the browser already has `actual`. The «Наші фактичні» checkbox still owns this row. When `overlay_ready` is false, the row stays hidden and the existing «Фактичні ще не зведені» line stays. When the row is shown, the board also says «Зелена смуга — світло було. Червона — не було.»
+
+«Зараз» is a light dashed vertical line, the same idea as the voltage chart (`#e2e8f0`, short dashes), drawn once across the hour labels, every group, and the fact lane. Its place is the current minute, not a filled hour. A filled hour would cover the green, black, and gray of every group. The hour number above that minute is drawn brighter. Our cell keeps the lightning: yellow or red still says whether this half-hour agrees. Other groups do not blink. The line is painted only when the selected day is today, from the same 10-second timer, with no extra fetch.
 
 ### 6.9 What lives where
 

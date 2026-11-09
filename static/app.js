@@ -230,15 +230,20 @@
       }).format(new Date(ts * 1000));
       return text.replace(',', '');
     }
-    function currentSlot() {
+    function kyivClock() {
       var fmt = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Kyiv', hour: 'numeric', minute: 'numeric', hour12: false
+        timeZone: 'Europe/Kyiv', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false
       });
       var map = {};
       fmt.formatToParts(new Date()).forEach(function(p) { map[p.type] = p.value; });
       var hour = parseInt(map.hour, 10);
+      if (hour === 24) hour = 0;
       var minute = parseInt(map.minute, 10);
-      return hour * 2 + (minute >= 30 ? 1 : 0);
+      var second = parseInt(map.second, 10) || 0;
+      return { hour: hour, minute: minute, second: second, slot: hour * 2 + (minute >= 30 ? 1 : 0) };
+    }
+    function currentSlot() {
+      return kyivClock().slot;
     }
 
     function loadBoard(date) {
@@ -285,11 +290,14 @@
       if (data.date === kyivToday()) {
         html += '<div class="sb-note">Жовте блимання — графік і світло сходяться. Червоне — ні.</div>';
       }
+      if (showActual && data.overlay_ready) {
+        html += '<div class="sb-note">Зелена смуга — світло було. Червона — не було.</div>';
+      }
       if (!data.overlay_ready) {
         html += '<div class="sb-note">Фактичні ще не зведені</div>';
       }
       html += '<div class="sb-wrap"><table class="sb-table"><colgroup><col class="sb-col-label"><col span="48"></colgroup><tr><th class="sb-label"></th>';
-      for (var h = 0; h < 24; h++) html += '<th colspan="2">' + (h < 10 ? '0' : '') + h + '</th>';
+      for (var h = 0; h < 24; h++) html += '<th colspan="2" data-sb-hour="' + h + '">' + (h < 10 ? '0' : '') + h + '</th>';
       html += '</tr>';
       Object.keys(data.groups || {}).sort().forEach(function(queue) {
         if (!groupVisible(queue)) return;
@@ -311,14 +319,14 @@
         }
         html += '</tr>';
       });
-      if (showActual && data.overlay_ready) html += laneRow(data.actual, 'sb-bar-actual', data.date);
+      if (showActual && data.overlay_ready) html += factLane(data.actual, data.date);
       if (showVoltage) {
         var highs = (data.voltage || []).filter(function(item) { return item.band === 'high'; });
         var lows = (data.voltage || []).filter(function(item) { return item.band === 'low'; });
         html += laneRow(highs, 'sb-bar-high', data.date);
         html += laneRow(lows, 'sb-bar-low', data.date);
       }
-      html += '</table></div>';
+      html += '</table><div class="sb-now-line" hidden></div></div>';
       if (data.match) {
         html += '<div class="sb-match">Збіглось ' + data.match.hit_min + ' хв · Світло було всупереч графіку ' +
           data.match.miss_min + ' хв · Позапланово не було ' + data.match.unplanned_min + ' хв</div>';
@@ -367,7 +375,7 @@
       if (typeof window.pmPaintBoardNow === 'function') window.pmPaintBoardNow();
     }
 
-    function laneRow(items, className, iso) {
+    function laneBars(items, className, iso) {
       if (!items || !items.length) return '';
       var startMs = kyivMidnightMs(iso);
       var span = 86400000;
@@ -380,6 +388,44 @@
         if (left + width > 100) width = 100 - left;
         bars += '<div class="sb-bar ' + className + '" style="left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%"></div>';
       });
+      return bars;
+    }
+
+    function laneRow(items, className, iso) {
+      var bars = laneBars(items, className, iso);
+      if (!bars) return '';
+      return '<tr class="sb-lane-row"><td class="sb-label"></td><td class="sb-lane-cell" colspan="48">' + bars + '</td></tr>';
+    }
+
+    function factOnSegments(actual, iso) {
+      var startMs = kyivMidnightMs(iso);
+      var endMs = startMs + 86400000;
+      if (iso === kyivToday()) endMs = Math.min(Date.now(), endMs);
+      var spans = (actual || []).map(function(item) {
+        return {
+          start: Math.max(item.start * 1000, startMs),
+          end: Math.min(item.end * 1000, endMs)
+        };
+      }).filter(function(item) { return item.end > item.start; });
+      spans.sort(function(a, b) { return a.start - b.start; });
+      var merged = [];
+      spans.forEach(function(item) {
+        var last = merged[merged.length - 1];
+        if (last && item.start <= last.end) last.end = Math.max(last.end, item.end);
+        else merged.push({ start: item.start, end: item.end });
+      });
+      var green = [];
+      var cursor = startMs;
+      merged.forEach(function(item) {
+        if (item.start > cursor) green.push({ start: cursor / 1000, end: item.start / 1000 });
+        cursor = Math.max(cursor, item.end);
+      });
+      if (endMs - cursor > 1000) green.push({ start: cursor / 1000, end: endMs / 1000 });
+      return green;
+    }
+
+    function factLane(actual, iso) {
+      var bars = laneBars(factOnSegments(actual, iso), 'sb-bar-on', iso) + laneBars(actual, 'sb-bar-actual', iso);
       if (!bars) return '';
       return '<tr class="sb-lane-row"><td class="sb-label"></td><td class="sb-lane-cell" colspan="48">' + bars + '</td></tr>';
     }
@@ -391,15 +437,43 @@
       return miss ? 'sb-now-no' : 'sb-now-yes';
     }
 
+    function placeNowLine() {
+      var line = schedBoard.querySelector('.sb-now-line');
+      var table = schedBoard.querySelector('.sb-table');
+      var label = table && table.querySelector('th.sb-label');
+      if (!line || !table || !label) return;
+      var today = boardPayload && boardPayload.date === kyivToday();
+      schedBoard.querySelectorAll('[data-sb-hour]').forEach(function(th) {
+        th.classList.remove('sb-now-hour');
+      });
+      if (!today) {
+        line.hidden = true;
+        return;
+      }
+      var clock = kyivClock();
+      var head = schedBoard.querySelector('[data-sb-hour="' + clock.hour + '"]');
+      if (head) head.classList.add('sb-now-hour');
+      var startMs = kyivMidnightMs(boardPayload.date);
+      var frac = (Date.now() - startMs) / 86400000;
+      if (frac < 0) frac = 0;
+      if (frac > 1) frac = 1;
+      var labelW = label.offsetWidth;
+      var x = labelW + (table.offsetWidth - labelW) * frac;
+      line.hidden = false;
+      line.style.left = x.toFixed(2) + 'px';
+    }
+
     window.pmPaintBoardNow = function() {
-      if (!schedBoard || !boardPayload || boardPayload.date !== kyivToday()) return;
-      var slot = currentSlot();
+      if (!schedBoard || !boardPayload) return;
+      var today = boardPayload.date === kyivToday();
       schedBoard.querySelectorAll('[data-sb-slot]').forEach(function(cell) {
         cell.classList.remove('sb-now', 'sb-now-yes', 'sb-now-no');
       });
+      placeNowLine();
+      if (!today) return;
       var row = schedBoard.querySelector('tr[data-sb-queue="' + ourQueue + '"]');
       if (!row) return;
-      var cell = row.querySelector('[data-sb-slot="' + slot + '"]');
+      var cell = row.querySelector('[data-sb-slot="' + currentSlot() + '"]');
       if (cell) cell.classList.add(boardNowClass(cell));
     };
 
@@ -409,6 +483,9 @@
     }, 60000);
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') loadBoard(selectedDate);
+    });
+    window.addEventListener('resize', function() {
+      if (typeof window.pmPaintBoardNow === 'function') window.pmPaintBoardNow();
     });
   }
 
