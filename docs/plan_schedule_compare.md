@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:50:11Z
+- Last updated: 2026-11-09T16:34:02Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -324,7 +324,7 @@ Do not call `deye_voltage_trend`. That function still serves the lamp and can sc
 
 ### 6.7 Match line — O(intervals), stored, extended on read
 
-Our queue only. `maybe` is drawn and is not scored.
+Our queue only. `maybe` counts as an outage: dark minutes are a hit, light minutes are a miss.
 
 `recompute_match(grid, actual_json, scored_until)` runs when a snapshot for our queue is saved and when `actual_json` changes. It walks the stored intervals, not the sample log. Per minute up to `scored_until`: planned `off` and down → hit; planned `off` and up → miss; planned `ok` and down → unplanned. Store the three counts and `scored_until`.
 
@@ -401,7 +401,7 @@ Only our row, and only when the selected day is today. Other groups stay plain. 
 | `ok` | up | agrees — `.sb-now-yes` |
 | `off` | up | disagrees — `.sb-now-no`, red lightning, `sb-glow-no` / `sb-flash-no` |
 | `ok` | down | disagrees — `.sb-now-no` |
-| `maybe` | up | not a firm miss — `.sb-now-yes` |
+| `maybe` | up | disagrees — `.sb-now-no`. A possible slot counts as an outage. |
 
 Today's board also shows one line: «Жовте блимання — графік і світло сходяться. Червоне — ні.» A local fixture of the four cells (2026-11-09T13:24:04Z) showed the lightning glyph, yellow `sg-glow` on agree, and red `sb-glow-no` on disagree. That fixture is not the live dashboard.
 
@@ -501,7 +501,7 @@ Verify, all on fixtures, no network:
 - Samples at t, t+30s high, t+120s high stay two intervals if the gap is `> 90` and one interval if the gap is `90`. The function sees one sample per call.
 - A 3600-second notification gap is not filled in.
 - A `<50` sample ends a voltage interval and is not itself voltage.
-- `off` + down = hit; `off` + up = miss; `ok` + down = unplanned; `maybe` + up adds nothing.
+- `off` or `maybe` + down = hit; `off` or `maybe` + up = miss; `ok` + down = unplanned. `ok` + up is not added to the line. The board rescores the loaded grid and actual on read, so an old stored counter cannot keep the skipped-maybe rule.
 - No snapshot → `has_snapshot: false` and null match.
 - Wrong or missing key is rejected the same way as `/api/dashboard-fragments`.
 - Negative: a test double raises if the route calls `deye_voltage_trend`, `deye_aggregates_refresh`, `events_in_range`, `recent_events`, or any `SELECT` from `deye_log` or `power_events`. The route still returns 200.
@@ -594,7 +594,7 @@ None blocking. Defaults are already chosen.
 
 - Screenshot columns, if the unseen picture differs: say so before Phase 4. Default is section 6.8.
 - Voltage checkbox default off, so the first view is the outage comparison. Turn it on when wanted.
-- `maybe` is not a miss when the light stays on.
+- `maybe` counts as an outage on the match line and on the lightning. Light during a possible slot is a miss. Decided 2026-11-09T16:34:02Z because that is how queue 5.1 was running.
 
 ### Decision log
 

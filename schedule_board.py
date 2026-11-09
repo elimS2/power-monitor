@@ -118,8 +118,13 @@ def has_open_actual(actual_json: list | None) -> bool:
     return _open_actual(actual_json or []) is not None
 
 
+def _planned_outage(status: str) -> bool:
+    """A possible slot counts as an outage. That is how the queue is running."""
+    return status in ("off", "maybe")
+
+
 def recompute_match(grid: list[str] | None, actual_json: list | None, day_start: float, scored_until: float) -> dict | None:
-    """Score minutes in [day_start, scored_until). Maybe slots are skipped."""
+    """Score minutes in [day_start, scored_until). Maybe counts as off."""
     if not grid or len(grid) != 48:
         return None
     intervals = actual_json or []
@@ -133,12 +138,10 @@ def recompute_match(grid: list[str] | None, actual_json: list | None, day_start:
     for minute in range(minute_count):
         minute_start = day_start + minute * 60
         status = grid[minute // 30]
-        if status == "maybe":
-            continue
         down = _minute_is_down(intervals, minute_start, minute_start + 60, limit)
-        if status == "off" and down:
+        if _planned_outage(status) and down:
             hit += 1
-        elif status == "off":
+        elif _planned_outage(status):
             miss += 1
         elif status == "ok" and down:
             unplanned += 1
@@ -322,10 +325,16 @@ def read_schedule_board(target_date: str, now: float) -> dict:
         overlay_ready = bool(day_row["overlay_ready"])
         updated_at = day_row["updated_at"]
 
-    if not our["has_snapshot"]:
+    if not our["has_snapshot"] or not overlay_ready:
         match = None
-    elif match is not None:
-        match = extend_open_match(match, our["grid"], actual_raw, day_start, day_end, now)
+    else:
+        # Rescore the loaded row. A stored counter would keep the old rule that skipped maybe.
+        score_end = day_end
+        if target_date == today:
+            score_end = min(now, day_end)
+        if now < day_start:
+            score_end = day_start
+        match = recompute_match(our["grid"], actual_raw, day_start, score_end)
 
     our_emergency = bool(our["emergency"]) if our["has_snapshot"] else False
     return {
@@ -382,12 +391,10 @@ def _score_window(grid: list[str], actual_json: list | None, window_start: float
         if minute_index < 0 or minute_index >= 24 * 60:
             continue
         status = grid[minute_index // 30]
-        if status == "maybe":
-            continue
         down = _minute_is_down(actual_json or [], minute_start, minute_start + 60, window_end)
-        if status == "off" and down:
+        if _planned_outage(status) and down:
             hit += 1
-        elif status == "off":
+        elif _planned_outage(status):
             miss += 1
         elif status == "ok" and down:
             unplanned += 1

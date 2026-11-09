@@ -243,7 +243,7 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         self.assertEqual(dead[0]["end"], start)
         self.assertNotIn("last_ts", dead[0])
 
-    def test_match_counts_off_down_and_skips_maybe(self):
+    def test_match_counts_off_and_maybe_as_outage(self):
         day_start, _day_end = kyiv_day_bounds("2026-11-09")
         off = ["ok"] * 48
         off[0] = "off"
@@ -258,8 +258,17 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
             day_start + 60,
         )
         self.assertEqual(unplanned["unplanned_min"], 1)
-        maybe = recompute_match(["maybe"] * 48, [], day_start, day_start + 60)
-        self.assertEqual(maybe["hit_min"] + maybe["miss_min"] + maybe["unplanned_min"], 0)
+        maybe_dark = recompute_match(
+            ["maybe"] * 48,
+            [{"start": day_start, "end": day_start + 600}],
+            day_start,
+            day_start + 600,
+        )
+        self.assertEqual(maybe_dark["hit_min"], 10)
+        self.assertEqual(maybe_dark["miss_min"], 0)
+        maybe_light = recompute_match(["maybe"] * 48, [], day_start, day_start + 60)
+        self.assertEqual(maybe_light["miss_min"], 1)
+        self.assertEqual(maybe_light["hit_min"], 0)
 
     def test_up_after_midnight_closes_yesterday_and_writes_today(self):
         database.init_db()

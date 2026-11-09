@@ -433,7 +433,8 @@
     function boardNowClass(cell) {
       var down = document.body.getAttribute('data-pm-down') === '1';
       var planned = cell.getAttribute('data-sb-plan') || 'ok';
-      var miss = (planned === 'off' && !down) || (planned === 'ok' && down);
+      var outage = planned === 'off' || planned === 'maybe';
+      var miss = (outage && !down) || (planned === 'ok' && down);
       return miss ? 'sb-now-no' : 'sb-now-yes';
     }
 
