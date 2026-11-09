@@ -66,9 +66,11 @@ from tuya_breakers import (
     breaker_clock_due,
     breaker_slot_start,
     carry_configured_breakers,
+    active_breaker_timers,
     poll_breakers_http,
     poll_is_enabled,
     run_deye_then_breakers,
+    sync_breaker_timers_http,
 )
 from database import (
     api_key_config_list,
@@ -452,6 +454,7 @@ async def bg_loop():
     deye_agg_tick = 0
     deploy_tick = 0
     breaker_slot_mark = None
+    breaker_timers_synced = False
     carried_day = None
     breaker_carried_day = None
     while True:
@@ -490,10 +493,13 @@ async def bg_loop():
                         deye_poll_tick = 0
 
             async def _breaker_step():
-                nonlocal breaker_slot_mark
+                nonlocal breaker_slot_mark, breaker_timers_synced
                 if not poll_is_enabled(breaker_cfg):
                     return
                 now = time.time()
+                if not breaker_timers_synced:
+                    breaker_timers_synced = True
+                    await sync_breaker_timers_http(breaker_cfg, _breaker_tokens, now)
                 if not breaker_clock_due(now, breaker_slot_mark, TUYA_POLL_INTERVAL_SEC):
                     return
                 await poll_breakers_http(breaker_cfg, _breaker_tokens, now)
@@ -1282,7 +1288,28 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             "</dl>"
             f'{fault}<div class="brk-age">{age}</div></article>'
         )
-    return '<div class="brk-cards">' + "".join(cards) + "</div>"
+    return '<div class="brk-cards">' + "".join(cards) + "</div>" + _breaker_timers_html(now)
+
+
+def _breaker_timers_html(now: float | None) -> str:
+    """Active cloud timers. The list is a display, not a control."""
+    if now is None:
+        now = time.time()
+    rows = active_breaker_timers(now)
+    if not rows:
+        return '<p class="brk-timers">Активних таймерів немає.</p>'
+    items = []
+    names = {"svitlo": "Освітлення", "itp": "Обігрів"}
+    for row in rows:
+        title = names.get(row["device"], row["device"])
+        verb = "вимкнути" if row.get("switch") == 0 else "увімкнути"
+        fire_date = str(row.get("fire_date") or "")
+        when = row.get("fire_time") or ""
+        if len(fire_date) == 8:
+            when = f"{fire_date[6:8]}.{fire_date[4:6]} {when}"
+        kind = "разовий" if "1" not in str(row.get("loops") or "") else "повтор"
+        items.append(f"<li>{title}: {verb} {when}, {kind}</li>")
+    return '<ul class="brk-timers">' + "".join(items) + "</ul>"
 
 
 def _breaker_bars_html(payload: dict, now: float | None = None) -> str:

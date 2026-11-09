@@ -1,11 +1,11 @@
 # Basement breakers
 
-- Status: `LIVE READ ONLY`
+- Status: `CLOSED — LIVE READ ONLY`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T21:39:54Z
-- Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
+- Last updated: 2026-11-09T22:48:00Z
+- Active skin: **Skin B live** (Kyiv quarter-hour sample + stored day row). Skin A messages were measured and left off.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
 Companion: `power-monitor/docs/plan_breakers_PROGRESS.md`
@@ -18,8 +18,8 @@ On the existing dashboard, for the two basement breakers labeled **Світло*
 
 - Show the latest switch, the three phase voltages, the three phase currents, the three phase powers, and today's energy in kWh.
 - Draw one day, Kyiv time, as a bar: green `#22c55e` while the breaker was on, red `#f87171` while it was off. Same colors as the schedule fact lane.
-- Record when the switch turned on or off, tight to the device message, not to the poll.
-- Keep a 15-minute sample of the meter and the phases so a missed message is corrected and the energy total still moves.
+- The on/off bar moves with the quarter-hour sample. A device message does not move it: that listener was measured and left off.
+- Keep a sample at :00, :15, :30, and :45 Kyiv so the meter and the phases still move.
 
 The page reads stored rows. It does not call Tuya. It does not control a breaker.
 
@@ -76,7 +76,7 @@ On 2026-11-09, against the EU cloud project, one `GET /v1.0/devices/{id}/status`
 
 `total_forward_energy` is an integer with `scale` 2 and unit `kW·h` (`GET /v1.0/devices/{id}/specifications`). Divide by 100. The meter steps by 0.1 kWh.
 
-Device Status Notification is already authorized on the project, next to IoT Core. Device Timer was authorized the same day so the one-shot 22:30 task could be created. The listener in this process does not exist yet.
+Device Status Notification is already authorized on the project, next to IoT Core. Device Timer was authorized the same day so the one-shot 22:30 task could be created. `ingest_status_message` is in the repo. `bg_loop` does not call it.
 
 ### Repo map
 
@@ -93,9 +93,17 @@ Device Status Notification is already authorized on the project, next to IoT Cor
 
 ## 4. Current behavior
 
-There is no breaker table, no Tuya client, and no breaker section. The live site shows Deye from `deye_log`, written about every 30 seconds by `_poll_deye` inside `bg_loop`.
+On 2026-11-09, before this work, the site had no breaker table, no Tuya client, and no breaker section.
 
-The cloud already has both breakers as read-only devices. One status call per id returns the fields in section 6.3. Switch changes are not stored here. The 22:30 off, when it happens, will be visible to the next poll or to a message, whichever lands first. This plan does not send `switch`.
+On 2026-11-10 the live section is read-only. The poller reads both breakers at Kyiv **:00, :15, :30, and :45**. `TUYA_POLL_INTERVAL_SEC` is 900. A wake up to 90 seconds after a mark still takes that mark. A restart later in the slot waits for the next mark. It does not start a fresh 15 minutes. The server env holds the access id, the secret, and both device ids. Those values stay out of git.
+
+The page shows two faces, lighting and heat. Each face has voltage, current, power, and energy since the previous Kyiv midnight. A lit face glows. An unlit face stays gray. Under the faces, the day bar is green while the stored switch was on and red while it was off, with a now mark. Active cloud timers are listed under the faces. There is no button and no form, and the page does not create or delete a timer.
+
+The message listener is not running. The quarter-hour poll is the only writer.
+
+A clock sample at 2026-11-10 00:45:21 Kyiv stored both breakers. Both switches were on.
+
+One-shot cloud commands are not this page. On 2026-11-10 an ITP off was accepted by the cloud and the switch bit stayed true. A later ITP on was accepted and the switch bit was true. A forced sample at 00:40:05 Kyiv was a one-off read, not a new schedule. Do not copy any of that into the dashboard.
 
 ## 5. Skins
 
@@ -105,7 +113,7 @@ Every 15 minutes, two status calls (one per breaker) insert a sample and update 
 
 ### Skin B — poll only
 
-No message listener. The bar moves only on the 15-minute sample. Rejected as the default because the operator asked for the on/off edge to arrive with the message, and for the poll to be the meter check.
+No message listener. The bar moves only on the quarter-hour sample. This was not the original default. It is the live behavior, because the message count in section 6.5 is above the pack and the queue stayed off.
 
 ### Skin C — poll the switch every minute
 
@@ -113,7 +121,7 @@ Rejected. Two status calls a minute is about 86 000 calls in 30 days. The publis
 
 ## 6. Recommended shape
 
-One SQLite file. One poller in `bg_loop`. One message listener in the same process. One read route. One new dashboard section. No new service.
+One SQLite file. One poller in `bg_loop`. No message listener in the running process. One read route. One dashboard section. No new service.
 
 ### 6.1 Tables
 
@@ -204,7 +212,7 @@ The service switch was off. Opening it showed one type only: **Message Queue**, 
 
 The listener stays off. A counted read of data-point logs (type 7) from 2026-11-09 00:00 Kyiv, about 23 hours, did not finish: **Світло** already had 2 907 rows and `has_next` was still true when the log call stopped with code `40000309`. Each row had its own `event_time`. In that partial set: `phase_a` 1 270, `phase_b` 884, `phase_c` 742, `total_forward_energy` 10, `switch` 1. Spread over those 23 hours that partial set is already about 90 000 rows in a month, above the 68 000 message allowance, and the day is not fully read. **ІТП** returned an empty first page; it was off. Pulsar was not enabled. The 15-minute poll remains the only writer.
 
-The same check found that Tuya rejects a lowercase HMAC (`1004`). `sign_headers` now sends the signature in uppercase. The body hash inside the signed string stays lowercase. This is not deployed yet.
+The same check found that Tuya rejects a lowercase HMAC (`1004`). `sign_headers` sends the signature in uppercase. The body hash inside the signed string stays lowercase. That signer is what the live poll uses.
 
 A message that carries `switch` or `total_forward_energy` or a phase blob is one sample with `source=message`, then the same day-row update as a poll, unless the next paragraph says the event is a duplicate or older than the latest sample. A message with no new switch and no new counter still refreshes `phase_json` and `updated_at`, unless it is a duplicate or older than the latest sample.
 
@@ -316,7 +324,7 @@ Steps:
 2. Every `TUYA_POLL_INTERVAL_SEC`, one token if needed, then one status GET per configured id. Apply through the Phase 1 function. From 2026-11-09T22:28:13Z the interval is a Kyiv clock mark, not a countdown from process start. 900 seconds is :00, :15, :30, and :45. A restart in the middle of a slot waits for the next mark. A restart within 90 seconds after a mark still takes that mark.
 3. On process start and when the Kyiv date changes, call the same locked function with no payload, as in 6.6. Do not close yesterday from `bg_loop` with a second code path.
 
-Verify: unit test of the tick math. The counter fires when `tick * 30` is 900 and not when it is 870. Wall time of that tick is 29 sleeps after start, because the check runs before `sleep(30)`, the same way `deye_poll_tick` does. A fake HTTP client returns one fixture and asserts a single sample. The fake client has a 10 second timeout and a failure does not skip the Deye call in that tick. Do not hit `openapi.tuyaeu.com` from tests.
+Verify: a fake HTTP client returns one fixture and asserts a single sample. The fake client has a 10 second timeout and a failure does not skip the Deye call in that tick. Do not hit `openapi.tuyaeu.com` from tests. The first poll used a counter that fired when `tick * 30` was 900. From 2026-11-09T22:28:13Z that counter is gone. `breaker_clock_due` fires inside 90 seconds after a Kyiv midnight mark of `TUYA_POLL_INTERVAL_SEC`. 900 seconds is :00, :15, :30, and :45. A restart outside that grace waits for the next mark.
 
 Gate: operator can confirm rows exist after a deploy, but this phase itself does not deploy. Poll errors are logged with the Tuya code only.
 
@@ -371,13 +379,13 @@ Rollback: stop the listener. Poll remains.
 
 Done means:
 
-- Phases 1–4 accepted, or Phase 4 explicitly skipped by the operator.
-- `python -m unittest tests.test_breakers` passes.
-- The poll interval is 900 seconds unless env overrides it.
+- Phases 1–3 are done. Phase 4 was read and skipped: Pulsar only, and the counted rows already pass the message pack.
+- `python -m unittest tests.test_breakers` passes. The clock test replaced the old tick counter.
+- The poll interval is 900 seconds unless env overrides it, aligned to the Kyiv clock from midnight.
 - `GET /api/breakers` and the 10-second fragment do not read `breaker_sample`.
 - The bar is green for on and red for off, stops at now on today, and is empty before the first sample.
 - No code path sends a breaker command. The page has no control that could send one.
-- Production browser pass after deploy, or listed as not done.
+- Production browser pass after deploy. The lit faces shipped in `d33be15`. The clock shipped in `7b9d816`. A sample at 2026-11-10 00:45:21 Kyiv confirmed the clock.
 
 ## 10. Risks, questions, decisions
 
@@ -392,10 +400,7 @@ Done means:
 
 ### Open questions
 
-None blocking.
-
-- Phase 4 transport: read it, do not invent it.
-- If the operator skips Phase 4, the bar is 15-minute steps. That is allowed. Say so on the card.
+None. Phase 4 transport was read on the project screen. It is Pulsar only. The operator skipped it. The bar is quarter-hour steps. That is the live product.
 
 ### Decision log
 
@@ -420,6 +425,9 @@ None blocking.
 | 2026-11-09T21:14:48Z | Message rate measured from type-7 logs. Listener stays off. | Світло partial day already projects past 68 000 rows/month. Pulsar switch was not turned on. Poll signature must be uppercase. |
 | 2026-11-09T21:39:54Z | Ship the read-only page and the 15-minute poll. | Operator said yes via Agree & Continue. Tuya values are only in the server env. Pulsar stays off. Commit carries `#autodeploy`. |
 | 2026-11-09T22:28:13Z | Poll on the Kyiv quarter hour. | Operator: read at :00, :15, :30, :45. A service restart must not start a fresh 15 minutes. Grace is 90 seconds. The page still has no control. |
+| 2026-11-09T22:36:07Z | Clock deployed as `7b9d816`. | Service restart at that UTC time. The 00:30 mark was already outside the 90-second grace, so the next mark was 00:45. |
+| 2026-11-09T22:45:21Z | First automatic quarter-hour sample. | Both switches on. The page still only reads. |
+| 2026-11-09T22:48:00Z | Plan closed. | No open phase. Pulsar stays off. One-shot commands stay outside the page. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -463,7 +471,12 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T21:06:42Z | Phase 4. Pulsar is the only transport on the project screen. The queue stays off. The poll remains the writer. |
 | 2026-11-09T21:14:48Z | Counted data-point rows. One live breaker already exceeds the message pack. Queue stays off. Signature hex is uppercase. |
 | 2026-11-09T21:39:54Z | Deploy the section and the poll. No breaker control on the page. No Pulsar. |
+| 2026-11-09T22:11:07Z | Faces for lighting and heat, meters, and the hour bar. Still no control. |
+| 2026-11-09T22:17:24Z | Lit icons use a real fill and a halo. A black fill had looked off while the word said on. |
+| 2026-11-09T22:36:07Z | Quarter-hour clock is live. `7b9d816`. |
+| 2026-11-09T22:45:21Z | Clock sample stored for both breakers. |
+| 2026-11-09T22:48:00Z | Plan closed. No next phase. |
 
 ## 12. Handoff for a new chat
 
-Read this file and `plan_breakers_PROGRESS.md`. Phases 1–3 are on disk. Phase 4's listener is off: the project message screen offers only Pulsar, and that switch was not turned on. Do not enable it, and do not send a breaker command. The page only reads and shows. Do not add a breaker control. Do not call the company knowledge base. Do not print `TUYA_ACCESS_SECRET`. The 15-minute poll is the only writer, and it still does nothing until the server env has the access id, the secret, and at least one device id. The live site was not restarted.
+Read this file and `plan_breakers_PROGRESS.md`. The plan is closed. Phases 1–3 are live. Phase 4 stays off: the project screen offers only Pulsar, the counted rows already pass the message pack, and the operator skipped it. Do not enable Pulsar. Do not add a breaker control. The page only reads, including the active-timer list. One-shot commands in chat are not a license to put a switch on the page. Do not call the company knowledge base. Do not print `TUYA_ACCESS_SECRET` or the device ids. The quarter-hour poll is the only writer. The server env already has the five TUYA names. The live commit for the clock is `7b9d816`.

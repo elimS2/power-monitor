@@ -25,8 +25,11 @@ from tuya_breakers import (
     apply_breaker_status,
     breaker_config_from_env,
     breaker_http_timeout,
+    active_breaker_timers,
     breaker_clock_due,
     breaker_slot_start,
+    breaker_timer_is_active,
+    timer_rows,
     carry_configured_breakers,
     decode_phase,
     ingest_status_message,
@@ -538,6 +541,32 @@ class BreakerPollTests(unittest.TestCase):
         self.assertTrue(breaker_clock_due(at(0, 16, 30), None, 900))
         self.assertFalse(breaker_clock_due(at(0, 16, 31), None, 900))
 
+    def test_a_future_one_shot_is_shown_and_a_past_one_is_not(self):
+        payload = {"result": [
+            {
+                "timer_id": "912755531", "date": "20261110", "time": "02:30",
+                "loops": "0000000", "timezone_id": "Europe/Kiev", "enable": True,
+                "functions": [{"code": "switch", "value": False}],
+            },
+            {
+                "timer_id": "912559137", "date": "20261109", "time": "22:30",
+                "loops": "0000000", "timezone_id": "Europe/Kiev", "enable": True,
+                "functions": [{"code": "switch", "value": False}],
+            },
+            {"code": "switch", "value": True},
+        ]}
+        rows = timer_rows(payload)
+        self.assertEqual([row["timer_id"] for row in rows], ["912755531", "912559137"])
+        database.replace_breaker_timers("svitlo", rows, _ts(2026, 11, 10, 1, 5))
+        shown = active_breaker_timers(_ts(2026, 11, 10, 1, 5))
+        self.assertEqual([row["timer_id"] for row in shown], ["912755531"])
+        self.assertFalse(breaker_timer_is_active(shown[0], _ts(2026, 11, 10, 3, 0)))
+        from power_monitor import _breaker_timers_html
+        html = _breaker_timers_html(_ts(2026, 11, 10, 1, 5))
+        self.assertIn("Освітлення: вимкнути 10.11 02:30, разовий", html)
+        self.assertNotIn("<button", html)
+        self.assertIn("Активних таймерів немає", _breaker_timers_html(_ts(2026, 11, 10, 3, 0)))
+
     def test_sign_uses_the_cloud_string(self):
         headers = sign_headers("id", "secret", "GET", "/v1.0/token?grant_type=1", "", "1000")
         content = hashlib.sha256(b"").hexdigest()
@@ -592,7 +621,7 @@ class BreakerPollTests(unittest.TestCase):
         asyncio.run(poll_breakers(client, cfg, cache, 1_100.0))
         token_calls = [url for url in client.urls if "/token?" in url]
         self.assertEqual(len(token_calls), 1)
-        self.assertEqual(len(client.urls), 3)
+        self.assertEqual(len(client.urls), 5)
 
     def test_tuya_error_does_not_write_a_sample(self):
         client = _FakeTuya({"success": False, "code": 28841002})

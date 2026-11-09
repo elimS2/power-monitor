@@ -507,6 +507,51 @@ async def poll_breakers_http(cfg: BreakerPollConfig, cache: TokenCache, now: flo
         await poll_breakers(client, cfg, cache, now)
 
 
+def timer_rows(payload: dict) -> list[dict]:
+    """Cloud timer list. Items without a timer id are ignored."""
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, list):
+        return []
+    return [_timer_row(item) for item in result if isinstance(item, dict) and item.get("timer_id")]
+
+
+def _timer_row(item: dict) -> dict:
+    functions = item.get("functions") if isinstance(item.get("functions"), list) else []
+    switch = None
+    for fn in functions:
+        if isinstance(fn, dict) and fn.get("code") == "switch":
+            switch = 1 if fn.get("value") else 0
+    enable = item.get("enable", True)
+    return {
+        "timer_id": str(item["timer_id"]),
+        "fire_date": str(item.get("date") or ""),
+        "fire_time": str(item.get("time") or ""),
+        "loops": str(item.get("loops") or ""),
+        "timezone_id": str(item.get("timezone_id") or ""),
+        "switch": switch,
+        "enable": 1 if enable else 0,
+    }
+
+
+def breaker_timer_is_active(row: dict, now: float) -> bool:
+    """A one-shot stays visible until its minute has passed. A weekly loop stays while enabled."""
+    if not row.get("enable"):
+        return False
+    loops = str(row.get("loops") or "")
+    if "1" in loops:
+        return True
+    fire_date = str(row.get("fire_date") or "")
+    fire_time = str(row.get("fire_time") or "")
+    if len(fire_date) != 8 or len(fire_time) != 5:
+        return False
+    local = datetime.strptime(fire_date + fire_time, "%Y%m%d%H:%M").replace(tzinfo=UA_TZ)
+    return local.timestamp() + 60 > now
+
+
+def active_breaker_timers(now: float) -> list[dict]:
+    return [row for row in database.list_breaker_timers() if breaker_timer_is_active(row, now)]
+
+
 async def poll_breakers(client, cfg: BreakerPollConfig, cache: TokenCache, now: float) -> None:
     token = await _ensure_token(client, cfg, cache, now)
     for name, device_id in cfg.devices:
@@ -516,6 +561,35 @@ async def poll_breakers(client, cfg: BreakerPollConfig, cache: TokenCache, now: 
             log.warning("breaker %s code %s", name, exc.code)
             continue
         apply_breaker_status(name, now, payload, "poll")
+    await sync_breaker_timers(client, cfg, cache, now)
+
+
+async def sync_breaker_timers_http(cfg: BreakerPollConfig, cache: TokenCache, now: float, client_cls=None) -> None:
+    if client_cls is None:
+        client_cls = httpx.AsyncClient
+    async with client_cls(timeout=breaker_http_timeout()) as client:
+        await sync_breaker_timers(client, cfg, cache, now)
+
+
+async def sync_breaker_timers(client, cfg: BreakerPollConfig, cache: TokenCache, now: float) -> None:
+    token = await _ensure_token(client, cfg, cache, now)
+    for name, device_id in cfg.devices:
+        try:
+            payload = await _device_timers(client, cfg, token, device_id, now)
+        except TuyaCallError as exc:
+            log.warning("breaker timers %s code %s", name, exc.code)
+            continue
+        database.replace_breaker_timers(name, timer_rows(payload), now)
+
+
+async def _device_timers(client, cfg: BreakerPollConfig, token: str, device_id: str, now: float) -> dict:
+    if not _DEVICE_ID_RE.fullmatch(device_id):
+        raise TuyaCallError("bad-id")
+    path = f"/v2.0/cloud/timer/device/{device_id}"
+    headers = sign_headers(
+        cfg.access_id, cfg.access_secret, "GET", path, token, str(int(now * 1000)),
+    )
+    return await _get_json(client, cfg.host + path, headers)
 
 
 async def _ensure_token(client, cfg: BreakerPollConfig, cache: TokenCache, now: float) -> str:

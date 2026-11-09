@@ -193,6 +193,19 @@ def init_db():
                 ts         REAL NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS breaker_timer (
+                device       TEXT NOT NULL,
+                timer_id     TEXT NOT NULL,
+                fire_date    TEXT,
+                fire_time    TEXT,
+                loops        TEXT,
+                timezone_id  TEXT,
+                switch       INTEGER,
+                enable       INTEGER NOT NULL,
+                updated_at   REAL NOT NULL,
+                PRIMARY KEY (device, timer_id)
+            );
+
             CREATE TABLE IF NOT EXISTS breaker_day (
                 device            TEXT NOT NULL,
                 day               TEXT NOT NULL,
@@ -1947,6 +1960,31 @@ def parse_boiler_schedule(text: str) -> list[dict]:
         results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
     log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
     return results
+
+
+def replace_breaker_timers(device: str, rows: list, now: float) -> None:
+    """Replace one device's cloud timer rows. A failed fetch must not call this."""
+    with _conn() as db:
+        db.execute("DELETE FROM breaker_timer WHERE device=?", (device,))
+        for row in rows:
+            db.execute(
+                """INSERT INTO breaker_timer
+                   (device, timer_id, fire_date, fire_time, loops, timezone_id, switch, enable, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    device, row["timer_id"], row["fire_date"], row["fire_time"], row["loops"],
+                    row["timezone_id"], row["switch"], row["enable"], now,
+                ),
+            )
+
+
+def list_breaker_timers() -> list:
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT device, timer_id, fire_date, fire_time, loops, timezone_id, switch, enable
+               FROM breaker_timer ORDER BY fire_date, fire_time, device"""
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def read_breaker_board(day: str, now: float) -> dict:

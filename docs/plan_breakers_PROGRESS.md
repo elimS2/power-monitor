@@ -1,11 +1,11 @@
 # Progress — basement breakers
 
 - Plan: `power-monitor/docs/plan_breakers.md`
-- Status: `LIVE READ ONLY`
-- Active skin: Skin A
-- Last updated: 2026-11-09T22:28:13Z
-- Current phase: 4 read the message screen. The queue stays off.
-- Next allowed step: none. Pulsar stays off. The page only reads.
+- Status: `CLOSED — LIVE READ ONLY`
+- Active skin: Skin B live. Skin A messages stayed off.
+- Last updated: 2026-11-09T22:48:00Z
+- Current phase: none. The plan is closed.
+- Next allowed step: none. Pulsar stays off. The page only reads. Do not add a control.
 
 ## Phase checklist
 
@@ -15,7 +15,7 @@
 | 1 Store samples and day row | done | 2026-11-09T20:37:30Z. Temp db tests passed. No page, no poller, no deploy. |
 | 2 15-minute poll | done | 2026-11-09T20:45:39Z. Fake HTTP client. No deploy. Live poll waits for server env. |
 | 3 Read route and section | done | 2026-11-09T20:58:02Z. Read-only. No button, no form, no deploy. |
-| 4 Status messages | listener off | 2026-11-09T21:06:42Z. Screen offers only Pulsar. Switch left off. No webhook. |
+| 4 Status messages | skipped | 2026-11-09T21:14:48Z. Pulsar only, and the counted rows already pass the pack. Listener stays off. Not an open phase. |
 
 ## Gate log
 
@@ -35,6 +35,9 @@
 | 2026-11-09T22:11:07Z | Visual | Two read-only faces: lighting and heat. Meters under each icon. Hour scale with a now mark. Still no control. |
 | 2026-11-09T22:17:24Z | Icons | On-state icons were filled black, so the word said on while the mark looked off. Fill now follows the lamp color, with a halo behind a lit face. Still no control. |
 | 2026-11-09T22:28:13Z | Clock | Polls land on Kyiv :00, :15, :30, :45. A restart mid-slot waits for the next mark. Still no page control. |
+| 2026-11-09T22:36:07Z | Clock live | Server `7b9d816`, service restarted. The 00:30 mark was already past the 90-second grace. |
+| 2026-11-09T22:45:21Z | Clock check | Both breakers stored a sample. Both switches on. |
+| 2026-11-09T22:48:00Z | Close | No open phase. One-shot commands stay outside the page. |
 
 ## Log
 
@@ -51,6 +54,8 @@
 | 2026-11-09T21:14:48Z | Rate check says the message pack is too small for live phase reports. Listener stays off. Poll HMAC signature is uppercase so a later deploy is not rejected with 1004. Not deployed. |
 | 2026-11-09T22:17:24Z | Lit icons use currentColor plus a halo. This commit tag is `#autodeploy`. The page still only reads. |
 | 2026-11-09T22:28:13Z | Quarter-hour clock replaces the restart countdown. This commit tag is `#autodeploy`. The page still only reads. |
+| 2026-11-09T22:45:21Z | The first automatic quarter-hour sample is stored for both breakers. |
+| 2026-11-09T22:48:00Z | Plan text matched the live site. No next phase. |
 
 ## Review history
 

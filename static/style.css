@@ -116,7 +116,9 @@ details[open] summary::before { content: '▼ '; }
 .sb-table th.sb-now-hour { color: #e2e8f0; font-weight: 700; }
 .sb-bar-on { background: #22c55e; }
 .sb-bar-actual { background: #f87171; }
-.brk-note, .brk-empty, .brk-age, .brk-legend { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
+.brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
+.brk-timers { list-style: none; padding: 0; }
+.brk-timers li { padding: 0.12rem 0; color: var(--text); }
 .brk-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
 .brk-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;
