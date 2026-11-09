@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-08T23:27:27Z
-- Current phase: 3 complete locally. Waiting for a yes before Phase 4.
-- Next allowed step: Phase 4 only after an explicit yes. Do not deploy until asked. Neighbor statistics stay deferred. The page does not call the new route yet.
+- Last updated: 2026-11-09T13:00:34Z
+- Current phase: 4 complete locally. Waiting for a yes before deploy.
+- Next allowed step: deploy only if the operator asks. No `#автооновити` unless asked. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -14,8 +14,8 @@
 | Plan | reviewed, ready for local work | 2026-11-08T23:05:00Z. Critic round 3 APPROVE, 0 CRITICAL, 0 HIGH. Code waits for an explicit yes. |
 | 1 Queue column and scoped reads | done locally | 2026-11-08T22:58:59Z. Tests passed. Pushed as `446887b`. Not deployed. |
 | 2 All queues + `schedule_changes` | done locally | 2026-11-08T23:07:29Z. 18 tests OK. Pushed as `32aa109`. Not deployed. |
-| 3 `GET /api/schedule-board` | done locally, gate open | 2026-11-08T23:27:27Z. 30 tests OK. Route is a read. Page does not call it yet. Not deployed. |
-| 4 Board UI | not started | Depends on Phase 3. Old grid stays behind kv `schedule_board`. |
+| 3 `GET /api/schedule-board` | done locally | 2026-11-08T23:27:27Z. 30 tests OK. Route is a read. Not deployed. |
+| 4 Board UI | done locally, gate open | 2026-11-09T13:00:34Z. Board is outside the 10s fragment. Live browser pass waits for deploy. |
 | Deploy | not started | Only if the operator asks. No `#автооновити` unless asked. |
 | Later: neighbor buildings | not started | Telegram or Svitlobot. Separate from `schedule_changes` and our `power_events`. Not on the request path. |
 
@@ -26,6 +26,7 @@
 | 2026-11-08T22:58:59Z | Phase 1 | Code and tests done. Asking whether to start Phase 2. |
 | 2026-11-08T23:07:29Z | Phase 2 | All queues and change rows stored. Asking whether to start Phase 3. |
 | 2026-11-08T23:27:27Z | Phase 3 | Read route and writers done. Asking whether to start Phase 4. |
+| 2026-11-09T13:00:34Z | Phase 4 | Board UI done locally. Asking whether to deploy. |
 
 ## Log
 
@@ -41,6 +42,7 @@
 | 2026-11-08T22:58:59Z | Phase 1. `schedule_history.queue` and `emergency` added. Old rows become `5.1` / `0`. `schedule_history_for_date` requires a queue. The three dashboard callers and `fetch_dtek_schedule` pass `DTEK_QUEUE`. Fetch still keeps only today and tomorrow in `schedule_cache` and still returns early when our queue is missing. `python -m unittest tests.test_schedule_board` — 4 OK in 0.278s. Not deployed. |
 | 2026-11-08T23:07:29Z | Phase 2. `store_published_schedule` writes every published queue and date. `classify_grid_changes` runs inside the snapshot transaction. Missing our queue does not clear `schedule_cache` and does not invent an all-ok grid. `python -m unittest tests.test_schedule_board` — 18 OK. Neighbor-building overlay deferred (Telegram or Svitlobot). Not deployed. |
 | 2026-11-08T23:27:27Z | Phase 3. `schedule_day` holds the outage bar, the voltage bar, and the match. `save_event` still inserts every event and only `down`/`up` touch the outage columns. `save_deye_log` updates voltage from the one sample it just stored. `GET /api/schedule-board` reads those rows and fills an open end from the clock. `bg_loop` carries an open outage across midnight and runs the one-time `power_events` backfill. 30 tests OK. Not deployed. |
+| 2026-11-09T13:00:34Z | Phase 4. `#pm-sched-board` is a sibling of `#pm-sched-content`. While the flag is on, the fragment is only today's text from `schedule_cache`. The browser loads `/api/schedule-board` on day change, tab focus, and every 60s for today. Group and layer toggles do not fetch. `updScheduleNow` does not paint the old row index when the board exists. Flag `0` restores the old grid. Live site not opened. Not deployed. |
 
 ## Review history
 

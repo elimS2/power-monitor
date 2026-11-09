@@ -389,6 +389,20 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
             ep_schedule_board(key="not-a-real-key", date="2026-11-09")
         self.assertEqual(caught.exception.status_code, 403)
 
+    def test_board_flag_is_on_unless_explicitly_off(self):
+        database.init_db()
+        import power_monitor
+        self.assertTrue(power_monitor._schedule_board_on())
+        database.kv_set("schedule_board", "0")
+        self.assertFalse(power_monitor._schedule_board_on())
+        database.kv_set("schedule_board", "1")
+        self.assertTrue(power_monitor._schedule_board_on())
+        page = power_monitor._build_schedule_html(False)
+        fragment = power_monitor._build_schedule_fragment(False)
+        self.assertIn('id="pm-sched-board"', page)
+        self.assertNotIn("pm-sched-board", fragment)
+        self.assertNotIn("schedule_history_for_date", fragment)
+
     def test_fragment_builder_does_not_call_the_board(self):
         text = Path("power_monitor.py").read_text(encoding="utf-8")
         start = text.index("def _build_update_fragments")

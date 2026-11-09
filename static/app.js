@@ -37,6 +37,11 @@
 
   // Schedule "now" indicator — move every 30 min (server renders once, we keep it current)
   function updScheduleNow() {
+    var board = document.getElementById('pm-sched-board');
+    if (board) {
+      if (typeof window.pmPaintBoardNow === 'function') window.pmPaintBoardNow();
+      return;
+    }
     var now = new Date();
     var fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', hour: 'numeric', minute: 'numeric', hour12: false });
     var parts = fmt.formatToParts(now);
@@ -148,6 +153,246 @@
   }
 
   var key = document.body.getAttribute('data-pm-key') || '';
+
+  var schedBoard = document.getElementById('pm-sched-board');
+  if (schedBoard && key) {
+    var ourQueue = schedBoard.getAttribute('data-our-queue') || '';
+    var boardPayload = null;
+    var selectedDate = '';
+    var WEEKDAYS = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя'];
+    var KIND = { added: 'додано', removed: 'скасовано', moved: 'перенесено', severity: 'змінено' };
+    var LAYER_KEYS = [
+      ['pm_sched_show_off', 'Відключення', '1'],
+      ['pm_sched_show_changed', 'Змінені', '1'],
+      ['pm_sched_show_cancelled', 'Скасовані', '1'],
+      ['pm_sched_show_actual', 'Наші фактичні', '1'],
+      ['pm_sched_show_voltage', 'Проблеми напруги', '0']
+    ];
+
+    function layerOn(storageKey, fallback) {
+      var saved = localStorage.getItem(storageKey);
+      return (saved === null ? fallback : saved) === '1';
+    }
+    function extraGroups() {
+      try { return JSON.parse(localStorage.getItem('pm_sched_groups') || '[]'); }
+      catch (e) { return []; }
+    }
+    function groupVisible(queue) {
+      if (queue === ourQueue) return true;
+      return extraGroups().indexOf(queue) >= 0;
+    }
+    function kyivToday() {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(new Date());
+    }
+    function weekdayName(iso) {
+      var parts = iso.split('-');
+      var utc = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]));
+      var day = utc.getUTCDay();
+      return WEEKDAYS[day === 0 ? 6 : day - 1];
+    }
+    function slotClock(index) {
+      var total = index * 30;
+      var h = Math.floor(total / 60);
+      var m = total % 60;
+      if (h >= 24) return '24:00';
+      return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    }
+    function kyivMidnightMs(iso) {
+      var parts = iso.split('-');
+      var utcMidnight = Date.UTC(+parts[0], +parts[1] - 1, +parts[2], 0, 0, 0);
+      var fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Europe/Kyiv', hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      var guess = new Date(utcMidnight);
+      var map = {};
+      fmt.formatToParts(guess).forEach(function(p) { map[p.type] = p.value; });
+      var hour = map.hour === '24' ? 0 : +map.hour;
+      var asUtc = Date.UTC(+map.year, +map.month - 1, +map.day, hour, +map.minute, +map.second);
+      return utcMidnight - (asUtc - guess.getTime());
+    }
+    function fmtKyiv(ts) {
+      var text = new Intl.DateTimeFormat('uk-UA', {
+        timeZone: 'Europe/Kyiv', hourCycle: 'h23',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      }).format(new Date(ts * 1000));
+      return text.replace(',', '');
+    }
+    function currentSlot() {
+      var fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Kyiv', hour: 'numeric', minute: 'numeric', hour12: false
+      });
+      var map = {};
+      fmt.formatToParts(new Date()).forEach(function(p) { map[p.type] = p.value; });
+      var hour = parseInt(map.hour, 10);
+      var minute = parseInt(map.minute, 10);
+      return hour * 2 + (minute >= 30 ? 1 : 0);
+    }
+
+    function loadBoard(date) {
+      var url = '/api/schedule-board?key=' + encodeURIComponent(key);
+      if (date) url += '&date=' + encodeURIComponent(date);
+      fetch(url, { cache: 'no-store' }).then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+        if (!data) return;
+        boardPayload = data;
+        selectedDate = data.date;
+        renderBoard();
+      }).catch(function() {});
+    }
+
+    function renderBoard() {
+      var data = boardPayload;
+      if (!data) return;
+      var dates = data.available_dates || [];
+      var index = dates.indexOf(data.date);
+      var showOff = layerOn('pm_sched_show_off', '1');
+      var showChanged = layerOn('pm_sched_show_changed', '1');
+      var showCancelled = layerOn('pm_sched_show_cancelled', '1');
+      var showActual = layerOn('pm_sched_show_actual', '1');
+      var showVoltage = layerOn('pm_sched_show_voltage', '0');
+      var html = '';
+      html += '<div class="sb-controls"><button type="button" id="sb-prev"' + (index <= 0 ? ' disabled' : '') + '>‹</button>';
+      html += '<span class="sb-date" id="sb-date">' + data.date + ' (' + weekdayName(data.date) + ')</span>';
+      html += '<button type="button" id="sb-next"' + (index < 0 || index >= dates.length - 1 ? ' disabled' : '') + '>›</button></div>';
+      html += '<div class="sb-checks" id="sb-groups">';
+      Object.keys(data.groups || {}).sort().forEach(function(queue) {
+        var ours = queue === ourQueue;
+        var on = groupVisible(queue);
+        html += '<label class="' + (ours ? 'sb-ours' : '') + '"><input type="checkbox" data-sb-group="' + queue + '"' +
+          (on ? ' checked' : '') + (ours ? ' disabled' : '') + '> ' + queue + (ours ? ' наша' : '') + '</label>';
+      });
+      html += '</div><div class="sb-checks" id="sb-layers">';
+      LAYER_KEYS.forEach(function(item) {
+        var on = layerOn(item[0], item[2]);
+        html += '<label><input type="checkbox" data-sb-layer="' + item[0] + '"' + (on ? ' checked' : '') + '> ' + item[1] + '</label>';
+      });
+      html += '</div>';
+      if (data.emergency) {
+        html += '<div class="sb-banner">Екстрені відключення: опублікований графік не діє</div>';
+      }
+      if (!data.overlay_ready) {
+        html += '<div class="sb-note">Фактичні ще не зведені</div>';
+      }
+      html += '<div class="sb-wrap"><table class="sb-table"><tr><th class="sb-label"></th>';
+      for (var h = 0; h < 24; h++) html += '<th colspan="2">' + (h < 10 ? '0' : '') + h + '</th>';
+      html += '</tr>';
+      var slotNow = currentSlot();
+      Object.keys(data.groups || {}).sort().forEach(function(queue) {
+        if (!groupVisible(queue)) return;
+        var group = data.groups[queue];
+        html += '<tr class="' + (queue === ourQueue ? 'sb-ours' : '') + '" data-sb-queue="' + queue + '"><td class="sb-label">' + queue + '</td>';
+        if (!group.has_snapshot) {
+          html += '<td class="sb-empty" colspan="48">Немає знімка</td></tr>';
+          return;
+        }
+        var changed = (data.changed_slots && data.changed_slots[queue]) || [];
+        var cancelled = (data.cancelled_slots && data.cancelled_slots[queue]) || [];
+        for (var i = 0; i < 48; i++) {
+          var status = group.grid[i] || 'ok';
+          var cls = 'sb-cell';
+          if (showOff) cls += ' sg-' + status;
+          if (showChanged && changed.indexOf(i) >= 0) cls += ' sb-changed';
+          if (showCancelled && cancelled.indexOf(i) >= 0) cls += ' sb-cancelled';
+          if (queue === ourQueue && data.date === kyivToday() && i === slotNow) cls += ' sb-now';
+          html += '<td class="' + cls + '" data-sb-slot="' + i + '"></td>';
+        }
+        html += '</tr>';
+      });
+      html += '</table></div>';
+      if (showActual && data.overlay_ready) html += laneHtml(data.actual, 'sb-bar-actual', data.date);
+      if (showVoltage) {
+        var highs = (data.voltage || []).filter(function(item) { return item.band === 'high'; });
+        var lows = (data.voltage || []).filter(function(item) { return item.band === 'low'; });
+        html += laneHtml(highs, 'sb-bar-high', data.date);
+        html += laneHtml(lows, 'sb-bar-low', data.date);
+      }
+      if (data.match) {
+        html += '<div class="sb-match">Збіглось ' + data.match.hit_min + ' хв · Світло було всупереч графіку ' +
+          data.match.miss_min + ' хв · Позапланово не було ' + data.match.unplanned_min + ' хв</div>';
+      }
+      html += '<div class="sb-caption">За різницею знімків, не окреме поле ДТЕК</div>';
+      var visibleChanges = (data.changes || []).filter(function(row) { return groupVisible(row.queue); });
+      if (!visibleChanges.length) {
+        html += '<div class="sb-note">Змін ще не було</div>';
+      } else {
+        html += '<table class="sb-changes"><tr><th>Коли побачили</th><th>Група</th><th>Що сталося</th><th>Було</th><th>Стало</th></tr>';
+        visibleChanges.forEach(function(row) {
+          var was = slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + (row.from_status || '');
+          var became = row.kind === 'moved'
+            ? slotClock(row.peer_start_slot) + '–' + slotClock(row.peer_end_slot) + ' ' + (row.to_status || '')
+            : slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + (row.to_status || '');
+          var name = row.queue === ourQueue ? '<strong>' + row.queue + '</strong>' : row.queue;
+          html += '<tr><td>' + fmtKyiv(row.fetched_at) + '</td><td>' + name + '</td><td>' +
+            (KIND[row.kind] || row.kind) + '</td><td>' + was + '</td><td>' + became + '</td></tr>';
+        });
+        html += '</table>';
+      }
+      schedBoard.innerHTML = html;
+      var prev = document.getElementById('sb-prev');
+      var next = document.getElementById('sb-next');
+      if (prev) prev.addEventListener('click', function() {
+        if (index > 0) loadBoard(dates[index - 1]);
+      });
+      if (next) next.addEventListener('click', function() {
+        if (index >= 0 && index < dates.length - 1) loadBoard(dates[index + 1]);
+      });
+      schedBoard.querySelectorAll('[data-sb-group]').forEach(function(input) {
+        input.addEventListener('change', function() {
+          var queue = input.getAttribute('data-sb-group');
+          var list = extraGroups().filter(function(item) { return item !== queue; });
+          if (input.checked) list.push(queue);
+          localStorage.setItem('pm_sched_groups', JSON.stringify(list));
+          renderBoard();
+        });
+      });
+      schedBoard.querySelectorAll('[data-sb-layer]').forEach(function(input) {
+        input.addEventListener('change', function() {
+          localStorage.setItem(input.getAttribute('data-sb-layer'), input.checked ? '1' : '0');
+          renderBoard();
+        });
+      });
+    }
+
+    function laneHtml(items, className, iso) {
+      if (!items || !items.length) return '';
+      var startMs = kyivMidnightMs(iso);
+      var endMs = startMs + 86400000;
+      var span = endMs - startMs;
+      var html = '<div class="sb-lane">';
+      items.forEach(function(item) {
+        var left = ((item.start * 1000) - startMs) / span * 100;
+        var width = ((item.end - item.start) * 1000) / span * 100;
+        if (width < 0) width = 0;
+        html += '<div class="sb-bar ' + className + '" style="left:' + left + '%;width:' + width + '%"></div>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    window.pmPaintBoardNow = function() {
+      if (!boardPayload || boardPayload.date !== kyivToday()) return;
+      var slot = currentSlot();
+      schedBoard.querySelectorAll('[data-sb-slot]').forEach(function(cell) {
+        cell.classList.remove('sb-now');
+      });
+      var row = schedBoard.querySelector('tr[data-sb-queue="' + ourQueue + '"]');
+      if (!row) return;
+      var cell = row.querySelector('[data-sb-slot="' + slot + '"]');
+      if (cell) cell.classList.add('sb-now');
+    };
+
+    loadBoard('');
+    setInterval(function() {
+      if (selectedDate && selectedDate === kyivToday()) loadBoard(selectedDate);
+    }, 60000);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') loadBoard(selectedDate);
+    });
+  }
 
   // Admin keys (only for admin)
   var adminKeysContainer = document.getElementById('admin-keys-container');

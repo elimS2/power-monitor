@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-08T23:27:27Z
+- Last updated: 2026-11-09T13:00:34Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -616,10 +616,11 @@ No CRITICAL left. No HIGH left open. Status set to `DRAFT READY FOR REVIEW`. Thi
 | 2026-11-08T22:58:59Z | Phase 1 done locally. `python -m unittest tests.test_schedule_board` — 4 tests OK. Windows holds the temp WAL open because `sqlite3`'s context manager does not close the connection; the test ignores that cleanup error. Production `_conn()` is unchanged. Next is the human gate before Phase 2. No deploy. |
 | 2026-11-08T23:07:29Z | Phase 2 done locally. Same test module, 18 OK. A four-hour block shifted by two hours is one `moved` row of the edges that actually changed (16–20 onto 24–28), because the overlap stays `off`. Neighbor outages from Telegram or Svitlobot are written into the plan as later work, not this phase. Human gate before Phase 3. No deploy. |
 | 2026-11-08T23:27:27Z | Phase 3 done locally. `python -m unittest tests.test_schedule_board` — 30 OK. The route test rejects a bad key with 403 and a spy connection rejects any `deye_log` or `power_events` read. Human gate before Phase 4. No deploy. |
+| 2026-11-09T13:00:34Z | Phase 4 done locally. The board shell is outside `#pm-sched-content`. The 10s fragment is only today's text summary and does not request `/api/schedule-board`. `updScheduleNow` returns immediately when the board element exists. Checkbox and group changes stay in the browser. Flag test: missing kv shows the board, `0` hides it. Browser click-through of the live site was not done because this phase is not deployed. |
 
 ## 12. Handoff for a new chat
 
-- Phases 1–3 are done locally. Do not start Phase 4 until the operator says yes. Neighbor-building statistics stay deferred. The board route is not wired into the page yet.
+- Phases 1–4 are done locally (phase 4 at 2026-11-09T13:00:34Z). The page draws the board when `schedule_board` is not `0`. Deploy has not happened. Neighbor-building statistics stay deferred. Do not deploy until the operator asks.
 - Skin A is active.
 - Read this file and the progress file first. Obey the invariants in section 4.
 - Do not deploy, commit, or push unless the operator asks.

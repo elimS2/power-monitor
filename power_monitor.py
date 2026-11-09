@@ -933,7 +933,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
 
     return {
         "pm_status_block": f'<div class="status {status_cls}"><img src="/icons/{icon}" style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:0.5rem">{status_text}</div><div class="duration">{duration_text}{dur_ext}</div>',
-        "pm_sched": _build_schedule_inner(is_down),
+        "pm_sched": _build_schedule_fragment(is_down),
         "pm_weather": weather_html,
         "pm_alert": alert_html,
         "pm_mk": f'<div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>',
@@ -1114,14 +1114,39 @@ def _build_schedule_inner(is_down: bool) -> str:
     return inner
 
 
+def _schedule_board_on() -> bool:
+    """Missing kv means the board is on. Only an explicit 0 hides it."""
+    return kv_get("schedule_board") != "0"
+
+
+def _build_schedule_text_only() -> str:
+    """Today's text from the in-memory cache. No history query."""
+    day = dtek.schedule_cache.get("today") if dtek.schedule_cache else None
+    if not day or not day.get("grid"):
+        return '<div class="sg-text">Немає знімка на сьогодні</div>'
+    return dtek.grid_text_summary(day["grid"], day["date"][:10], "Сьогодні")
+
+
+def _build_schedule_fragment(is_down: bool) -> str:
+    if _schedule_board_on():
+        return _build_schedule_text_only()
+    return _build_schedule_inner(is_down)
+
+
 def _build_schedule_html(is_down: bool) -> str:
-    """Build full schedule details block. Uses pm-sched-content wrapper for fragment updates."""
-    inner = _build_schedule_inner(is_down)
-    if not inner:
-        return ""
+    """Full schedule block. The board sits outside the fragment that reloads."""
+    if _schedule_board_on():
+        inner = _build_schedule_text_only()
+        board = f'<div id="pm-sched-board" data-our-queue="{DTEK_QUEUE}"></div>'
+    else:
+        inner = _build_schedule_inner(is_down)
+        if not inner:
+            return ""
+        board = ""
     return f"""
 <details id="sched_details" open data-ls-key="sched_open" data-default-open="1">
 <summary><h2 style="display:inline">Графік відключень (черга {DTEK_QUEUE})</h2></summary>
+{board}
 <div id="pm-sched-content">{inner}</div>
 </details>
 """
