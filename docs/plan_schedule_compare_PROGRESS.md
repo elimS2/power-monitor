@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T16:37:16Z
-- Current phase: fact lane and now line are on the live site, script `34734dd`.
-- Next allowed step: confirm the live match line, then stop. Neighbor buildings stay skipped.
+- Last updated: 2026-11-09T16:38:00Z
+- Current phase: possible slots count as outages on the live site, script `b8b1a82`.
+- Next allowed step: none until the operator asks. Neighbor buildings stay skipped.
 
 ## Phase checklist
 
@@ -41,7 +41,8 @@
 | 2026-11-09T13:45:03Z | Deploy check | Live page loads `/app.js?v=34734dd` and `/style.css?v=34734dd`. The green/red note is visible. Green `#22c55e` ends on the dashed line, red `#f87171` is on the same row, hour 15 is bright, queue 5.1 blinks yellow, other groups do not. |
 | 2026-11-09T13:50:11Z | Later ideas | Operator skipped neighbor buildings. Both that idea and elevator trips for the basement-battery forecast are written in the local card, not started. |
 | 2026-11-09T16:34:02Z | Match line | A possible slot now counts as an outage. Dark minutes there are a hit, light minutes are a miss. The read rescores the loaded row so the old stored zero does not stick. Not deployed. |
-| 2026-11-09T16:37:16Z | Deploy | Operator asked to ship that score. This commit carries `#autodeploy`. |
+| 2026-11-09T16:37:16Z | Deploy | Operator asked to ship that score. Commit `b8b1a82` carries `#autodeploy`. |
+| 2026-11-09T16:38:00Z | Deploy check | Live `GET /api/schedule-board` for 2026-11-09 returned hit 593, miss 14, unplanned 14. The script treats a possible slot as an outage. |
 
 ## Log
 
