@@ -116,9 +116,33 @@ details[open] summary::before { content: '▼ '; }
 .sb-table th.sb-now-hour { color: #e2e8f0; font-weight: 700; }
 .sb-bar-on { background: #22c55e; }
 .sb-bar-actual { background: #f87171; }
-.brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
-.brk-timers { list-style: none; padding: 0; }
-.brk-timers li { padding: 0.12rem 0; color: var(--text); }
+.brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers-empty { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
+.brk-when-cards { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.35rem 0 0.55rem; }
+.brk-when {
+  min-width: 8.6rem; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0.65rem 0.8rem 0.55rem; text-align: center;
+}
+.brk-when-off { box-shadow: inset 0 0 0 1px rgba(248,113,113,0.55), 0 0 18px rgba(248,113,113,0.16); }
+.brk-when-on { box-shadow: inset 0 0 0 1px rgba(34,197,94,0.5), 0 0 18px rgba(34,197,94,0.16); }
+.brk-when-time { font-size: 1.65rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.03em; line-height: 1.1; }
+.brk-when-verb { font-weight: 700; margin: 0.15rem 0 0.05rem; }
+.brk-when-off .brk-when-verb { color: #fca5a5; }
+.brk-when-on .brk-when-verb { color: #6ee7b7; }
+.brk-when-who { font-weight: 700; }
+.brk-when-meta { color: var(--muted); font-size: 0.75rem; }
+.brk-when-scale .brk-hours { margin-left: 0; }
+.brk-when-lane {
+  position: relative; height: 18px; background: rgba(255,255,255,0.06); border-radius: 4px;
+}
+.brk-when-pin {
+  position: absolute; top: -4px; width: 8px; height: 26px; margin-left: -4px; border-radius: 3px;
+}
+.brk-when-pin.brk-when-off { background: #f87171; box-shadow: 0 0 8px rgba(248,113,113,0.85); }
+.brk-when-pin.brk-when-on { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.85); }
+.brk-when-lane .brk-now {
+  position: absolute; top: -3px; bottom: -3px; width: 1px; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, #e2e8f0 0 2px, transparent 2px 4px);
+}
 .brk-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0.4rem 0 0.8rem; }
 .brk-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;

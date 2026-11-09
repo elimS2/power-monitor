@@ -1292,24 +1292,54 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
 
 
 def _breaker_timers_html(now: float | None) -> str:
-    """Active cloud timers. The list is a display, not a control."""
+    """Active cloud timers as cards and a day scale. Not a control."""
+    from schedule_board import kyiv_date_str, kyiv_day_bounds
+
     if now is None:
         now = time.time()
     rows = active_breaker_timers(now)
     if not rows:
-        return '<p class="brk-timers">Активних таймерів немає.</p>'
-    items = []
+        return '<p class="brk-timers-empty">Активних таймерів немає.</p>'
+    day = kyiv_date_str(now)
+    start, end = kyiv_day_bounds(day)
+    span = end - start or 1
+    today_compact = day.replace("-", "")
+    now_frac = min(100, max(0, (now - start) / span * 100))
+    hours = "".join(f'<span>{hour:02d}</span>' for hour in range(24))
     names = {"svitlo": "Освітлення", "itp": "Обігрів"}
+    cards = []
+    marks = []
     for row in rows:
-        title = names.get(row["device"], row["device"])
-        verb = "вимкнути" if row.get("switch") == 0 else "увімкнути"
+        off = row.get("switch") == 0
+        tone = "off" if off else "on"
+        verb = "Вимкнути" if off else "Увімкнути"
         fire_date = str(row.get("fire_date") or "")
-        when = row.get("fire_time") or ""
-        if len(fire_date) == 8:
-            when = f"{fire_date[6:8]}.{fire_date[4:6]} {when}"
+        clock = str(row.get("fire_time") or "—")
+        label_date = f"{fire_date[6:8]}.{fire_date[4:6]}" if len(fire_date) == 8 else ""
         kind = "разовий" if "1" not in str(row.get("loops") or "") else "повтор"
-        items.append(f"<li>{title}: {verb} {when}, {kind}</li>")
-    return '<ul class="brk-timers">' + "".join(items) + "</ul>"
+        who = names.get(row["device"], row["device"])
+        cards.append(
+            f'<article class="brk-when brk-when-{tone}">'
+            f'<div class="brk-when-time">{clock}</div>'
+            f'<div class="brk-when-verb">{verb}</div>'
+            f'<div class="brk-when-who">{who}</div>'
+            f'<div class="brk-when-meta">{label_date} · {kind}</div>'
+            "</article>"
+        )
+        if fire_date == today_compact and len(clock) == 5 and clock[2] == ":":
+            hh, mm = int(clock[:2]), int(clock[3:])
+            frac = min(100, max(0, (hh * 3600 + mm * 60) / span * 100))
+            marks.append(
+                f'<i class="brk-when-pin brk-when-{tone}" style="left:{frac:.2f}%"></i>'
+            )
+    return (
+        '<div class="brk-when-wrap">'
+        f'<div class="brk-when-cards">{"".join(cards)}</div>'
+        '<div class="brk-when-scale">'
+        f'<div class="brk-hours">{hours}</div>'
+        f'<div class="brk-when-lane">{"".join(marks)}<i class="brk-now" style="left:{now_frac:.2f}%"></i></div>'
+        "</div></div>"
+    )
 
 
 def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
@@ -1948,16 +1978,16 @@ async def dashboard(key: str = Query("")):
 <div id="pm-alert">{alert_html}</div>
 
 <div id="dashboard-sections">
+{_wrap_dashboard_section("breaker_details", _breaker_section_html(), allowed)}
 {_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі</h2></summary><div id="pm-voltage">{voltage_html}</div></details>', allowed) if "voltage_details" in allowed else ""}
 {_wrap_dashboard_section("sched_details", schedule_html, allowed) if schedule_html else ""}
+{_wrap_dashboard_section("collections_details", '<details id="collections_details" open data-ls-key="collections_open" data-default-open="1"><summary><h2 style="display:inline">Участь у зборах</h2></summary><div id="pm-collections"></div></details>', allowed)}
 {_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
 {f'<div class="dashboard-section" data-section-id="ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="ev_details" open data-ls-key="ev_open" data-default-open="1"><summary><h2 style="display:inline">Події</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Графік</th><th>Тривалість</th></tr><tbody id="pm-events-tbody">{ev_rows}</tbody></table></details></div>' if "ev_details" in allowed else ""}
-{_wrap_dashboard_section("collections_details", '<details id="collections_details" open data-ls-key="collections_open" data-default-open="1"><summary><h2 style="display:inline">Участь у зборах</h2></summary><div id="pm-collections"></div></details>', allowed)}
 {f'<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="links_details" open data-ls-key="links_open" data-default-open="1"><summary><h2 style="display:inline">Посилання</h2></summary><table><tr><th>Опис</th><th>Посилання</th></tr><tr><td>Банка на воду (АКБ)</td><td><a href="https://send.monobank.ua/jar/4St1oZaDFH" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/4St1oZaDFH</a></td></tr><tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr><tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr><tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr><tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr><tr><td>Інструкція з брелоків СКД</td><td><a href="/skd/brelok-chornovola6.pdf?key={key}" target="_blank" style="color:#6ee7b7">Брелоки СКД, Чорновола 6 (PDF)</a></td></tr><tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr></table></details></div>' if "links_details" in allowed else ""}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
-{_wrap_dashboard_section("breaker_details", _breaker_section_html(), allowed)}
 {(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
 {_wrap_dashboard_section("legend_details", legend_html, allowed) if "legend_details" in allowed else ""}
 {_wrap_dashboard_section("avatars_details", '<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0"><summary><h2 style="display:inline">Аватарки каналу</h2></summary><table><tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr><tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr><tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr><tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr><tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr><tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr><tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr><tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr><tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr></table></details>', allowed) if "avatars_details" in allowed else ""}

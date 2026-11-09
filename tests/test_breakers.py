@@ -563,7 +563,12 @@ class BreakerPollTests(unittest.TestCase):
         self.assertFalse(breaker_timer_is_active(shown[0], _ts(2026, 11, 10, 3, 0)))
         from power_monitor import _breaker_timers_html
         html = _breaker_timers_html(_ts(2026, 11, 10, 1, 5))
-        self.assertIn("Освітлення: вимкнути 10.11 02:30, разовий", html)
+        self.assertIn("02:30", html)
+        self.assertIn("Вимкнути", html)
+        self.assertIn("Освітлення", html)
+        self.assertIn("10.11", html)
+        self.assertIn("разовий", html)
+        self.assertIn("brk-when-pin", html)
         self.assertNotIn("<button", html)
         self.assertIn("Активних таймерів немає", _breaker_timers_html(_ts(2026, 11, 10, 3, 0)))
 

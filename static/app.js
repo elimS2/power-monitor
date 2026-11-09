@@ -95,9 +95,25 @@
 
   // Drag-drop section reorder
   var ORDER_KEY = 'pm_section_order';
+  var ORDER_REV_KEY = 'pm_section_order_rev';
+  var ORDER_REV = '2026-11-10-top4';
+  var ORDER_PREFIX = ['breaker_details', 'voltage_details', 'sched_details', 'collections_details'];
   var container = document.getElementById('dashboard-sections');
   if (container) {
     var order = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
+    if (localStorage.getItem(ORDER_REV_KEY) !== ORDER_REV) {
+      var domIds = Array.from(container.querySelectorAll('.dashboard-section')).map(function(s) {
+        return s.dataset.sectionId;
+      });
+      var base = (order && order.length) ? order.slice() : domIds.slice();
+      domIds.forEach(function(id) {
+        if (base.indexOf(id) < 0) base.push(id);
+      });
+      var rest = base.filter(function(id) { return ORDER_PREFIX.indexOf(id) < 0; });
+      order = ORDER_PREFIX.filter(function(id) { return domIds.indexOf(id) >= 0; }).concat(rest);
+      localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+      localStorage.setItem(ORDER_REV_KEY, ORDER_REV);
+    }
     if (order) {
       var byId = {};
       container.querySelectorAll('.dashboard-section').forEach(function(s) {
