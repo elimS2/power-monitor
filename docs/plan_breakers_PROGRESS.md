@@ -1,11 +1,11 @@
 # Progress — basement breakers
 
 - Plan: `power-monitor/docs/plan_breakers.md`
-- Status: `PHASE 1 DONE`
+- Status: `PHASE 2 DONE`
 - Active skin: Skin A
-- Last updated: 2026-11-09T20:37:30Z
-- Current phase: 1 done. Store only.
-- Next allowed step: none until the operator says to start Phase 2.
+- Last updated: 2026-11-09T20:45:39Z
+- Current phase: 2 done. Poll writes rows. Page still hidden.
+- Next allowed step: none until the operator says to start Phase 3.
 
 ## Phase checklist
 
@@ -13,7 +13,7 @@
 |---|---|---|
 | Plan | reviewed | 2026-11-09T20:27:13Z. Critic approved. |
 | 1 Store samples and day row | done | 2026-11-09T20:37:30Z. Temp db tests passed. No page, no poller, no deploy. |
-| 2 15-minute poll | not started | |
+| 2 15-minute poll | done | 2026-11-09T20:45:39Z. Fake HTTP client. No deploy. Live poll waits for server env. |
 | 3 Read route and section | not started | |
 | 4 Status messages | not started | Transport still unread. |
 
@@ -25,6 +25,7 @@
 | 2026-11-09T20:02:31Z | Lead review | Contracts added. Implementation still not approved. |
 | 2026-11-09T20:17:31Z | Critic round 1 | REVISE. Fixes folded. Implementation still not approved. |
 | 2026-11-09T20:37:30Z | Phase 1 | Operator yes via Agree & Continue. Writer and tests landed. Production not restarted. |
+| 2026-11-09T20:45:39Z | Phase 2 | Operator yes via Agree & Continue. Poller landed. Production not restarted. Env on the server is still empty, so a later deploy would not call Tuya until those values are set. |
 
 ## Log
 
@@ -34,6 +35,7 @@
 | 2026-11-09T20:02:31Z | Lead review against `database.py`, `power_monitor.py`, `api/dashboard.py`, `static/app.js`. No code. |
 | 2026-11-09T20:27:13Z | Review closed. Critic `grok-4.7-xhigh-fast`, three rounds, last verdict APPROVE, 0 critical, 0 high. No code. |
 | 2026-11-09T20:37:30Z | Phase 1. `init_db` creates `breaker_sample`, `breaker_day`, `breaker_message`. `apply_breaker_status` is the only writer. Company KB skipped on purpose. `tests.test_breakers` and `tests.test_schedule_board`: 44 tests OK. |
+| 2026-11-09T20:45:39Z | Phase 2. Tick fires when `tick * 30` is 900, not 870. Timeout 10s. Breaker errors do not cancel the Deye step. Company KB skipped again. `tests.test_breakers`: 22 OK. |
 
 ## Review history
 

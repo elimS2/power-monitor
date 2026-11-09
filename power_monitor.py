@@ -43,6 +43,11 @@ from config import (
     DEYE_POLL_INTERVAL_SEC,
     DEYE_POLL_PORT,
     DEYE_POLL_SERIAL,
+    TUYA_ACCESS_ID,
+    TUYA_ACCESS_SECRET,
+    TUYA_BREAKER_ITP,
+    TUYA_BREAKER_SVITLO,
+    TUYA_POLL_INTERVAL_SEC,
     GIT_COMMIT,
     STALE_THRESHOLD_SEC,
     TG_BOT_TOKEN,
@@ -54,6 +59,15 @@ from config import (
     VOLTAGE_STATUS,
     WEBHOOK_HOST,
     WMO_EMOJI,
+)
+from tuya_breakers import (
+    TokenCache,
+    breaker_config_from_env,
+    breaker_poll_due,
+    carry_configured_breakers,
+    poll_breakers_http,
+    poll_is_enabled,
+    run_deye_then_breakers,
 )
 from database import (
     api_key_config_list,
@@ -425,6 +439,9 @@ async def _refresh_deye_aggregates() -> None:
         _refresh_deye_aggregates.running = False
 
 
+_breaker_tokens = TokenCache()
+
+
 async def bg_loop():
     cleanup_tick = 0
     schedule_tick = 0
@@ -432,7 +449,9 @@ async def bg_loop():
     deye_poll_tick = 0
     deye_agg_tick = 0
     deploy_tick = 0
+    breaker_tick = 0
     carried_day = None
+    breaker_carried_day = None
     while True:
         try:
             today_kyiv = datetime.now(UA_TZ).strftime("%Y-%m-%d")
@@ -440,6 +459,16 @@ async def bg_loop():
                 carry_open_outage()
                 backfill_schedule_actuals()
                 carried_day = today_kyiv
+            breaker_cfg = breaker_config_from_env(
+                TUYA_ACCESS_ID, TUYA_ACCESS_SECRET, TUYA_BREAKER_SVITLO, TUYA_BREAKER_ITP,
+            )
+            if poll_is_enabled(breaker_cfg) and breaker_carried_day != today_kyiv:
+                try:
+                    carry_configured_breakers(time.time(), breaker_cfg.devices)
+                except Exception as exc:
+                    log.error("breaker carry: %s", exc.__class__.__name__)
+                else:
+                    breaker_carried_day = today_kyiv
             await detection.watchdog()
             cleanup_tick += 1
             if cleanup_tick >= 2880:  # ~24h at 30s interval
@@ -450,11 +479,25 @@ async def bg_loop():
                 if deye_agg_tick >= 11:
                     deye_agg_tick = 1
                 asyncio.create_task(_refresh_deye_aggregates())
-            if DEYE_POLL_IP:
-                deye_poll_tick += 1
-                if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
-                    await _poll_deye()
-                    deye_poll_tick = 0
+            async def _deye_step():
+                nonlocal deye_poll_tick
+                if DEYE_POLL_IP:
+                    deye_poll_tick += 1
+                    if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
+                        await _poll_deye()
+                        deye_poll_tick = 0
+
+            async def _breaker_step():
+                nonlocal breaker_tick
+                if not poll_is_enabled(breaker_cfg):
+                    return
+                breaker_tick += 1
+                if not breaker_poll_due(breaker_tick, TUYA_POLL_INTERVAL_SEC):
+                    return
+                breaker_tick = 0
+                await poll_breakers_http(breaker_cfg, _breaker_tokens, time.time())
+
+            await run_deye_then_breakers(_deye_step, _breaker_step)
             date_rolled = (
                 dtek.schedule_cache
                 and dtek.schedule_cache.get("today")

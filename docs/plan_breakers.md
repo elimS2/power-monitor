@@ -1,10 +1,10 @@
 # Basement breakers
 
-- Status: `PHASE 1 DONE`
+- Status: `PHASE 2 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T20:37:30Z
+- Last updated: 2026-11-09T20:45:39Z
 - Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -399,6 +399,7 @@ None blocking.
 | 2026-11-09T20:22:51Z | Critic round 2, same model, verdict REVISE. 1 HIGH and 1 MEDIUM accepted. | A no-sample call creates today only when yesterday's row exists. A duplicate or late message does not insert a sample. |
 | 2026-11-09T20:27:13Z | Critic round 3, same model, verdict APPROVE. 0 CRITICAL, 0 HIGH. Post-approve wording confirmed in the same pass. | A duplicate or late message stops before the day update. An older id is stored. Status `REVIEWED — READY FOR LOCAL WORK`. Phase 1 still needs an explicit yes. |
 | 2026-11-09T20:37:30Z | Phase 1 implemented. Operator said yes via Agree & Continue. | Tables and `apply_breaker_status` only. No page, no poller, no deploy. Company KB was not queried: this repo is not on it. Disk patterns used: `init_db`, `kyiv_date_str` / `kyiv_day_bounds`, temporary SQLite tests. `python -m unittest tests.test_breakers tests.test_schedule_board` passed, 44 tests. |
+| 2026-11-09T20:45:39Z | Phase 2 implemented. Operator said yes via Agree & Continue. | 15-minute status poll and midnight carry. No page, no commands, no deploy. Poller stays off until `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and at least one device id are set in the server env. `tests.test_breakers`: 22 tests OK. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -436,7 +437,8 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T20:22:51Z | Critic round 2, `grok-4.7-xhigh-fast`, verdict REVISE: 0 CRITICAL, 1 HIGH, 1 MEDIUM. Both accepted. A no-sample call creates today only when yesterday's row exists. A late or duplicate message does not insert a sample. |
 | 2026-11-09T20:27:13Z | Critic round 3 approved 0/0. Post-approve edits (duplicate stops before the day update; older id is stored) were confirmed in the same session, also 0/0. Status `REVIEWED — READY FOR LOCAL WORK`. Phase 1 still needs an explicit yes. |
 | 2026-11-09T20:37:30Z | Phase 1 done. Samples and the day row write through one lock. Live site was not restarted. Phase 2 waits for an explicit yes. |
+| 2026-11-09T20:45:39Z | Phase 2 done. The poll sits after the Deye tick in its own try, timeout 10 seconds. Live site was not restarted. Phase 3 waits for an explicit yes. |
 
 ## 12. Handoff for a new chat
 
-Read this file and `plan_breakers_PROGRESS.md`. Phase 1 is done. Do not start Phase 2 without an explicit yes. Do not call the company knowledge base. Do not send a breaker command. Do not print `TUYA_ACCESS_SECRET`. Tests stay on a temp database. Skin A stays the default. The writer is `apply_breaker_status` in `tuya_breakers.py`. It does not open a network connection.
+Read this file and `plan_breakers_PROGRESS.md`. Phases 1 and 2 are done. Do not start Phase 3 without an explicit yes. Do not call the company knowledge base. Do not send a breaker command. Do not print `TUYA_ACCESS_SECRET`. Tests stay on a temp database. Skin A stays the default. The poller is `poll_breakers` in `tuya_breakers.py`, called from `bg_loop` after the Deye tick. It does nothing until the server env has the access id, the secret, and at least one device id.

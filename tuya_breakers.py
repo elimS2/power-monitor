@@ -1,17 +1,28 @@
 """Decode a Tuya breaker status payload and store one day row.
 
-No HTTP here. The poller and the message listener call this function.
-The page does not.
+The poller in this file reads status. It does not send switch commands.
+The page does not call Tuya.
 """
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import logging
+import re
 import threading
+from dataclasses import dataclass
 from typing import Any
+
+import httpx
 
 import database
 from schedule_board import kyiv_date_str, kyiv_day_bounds, shift_date
+
+log = logging.getLogger("power_monitor.breakers")
+TUYA_HOST = "https://openapi.tuyaeu.com"
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
 
 _breaker_lock = threading.Lock()
 _DEVICES = frozenset({"svitlo", "itp"})
@@ -320,3 +331,162 @@ def _fault(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError("fault")
     return value
+
+
+# ─── Cloud poll (no commands) ───────────────────────────────────
+
+
+@dataclass(frozen=True)
+class BreakerPollConfig:
+    access_id: str
+    access_secret: str
+    devices: tuple[tuple[str, str], ...]
+    host: str = TUYA_HOST
+
+
+class TokenCache:
+    def __init__(self) -> None:
+        self.token = ""
+        self.refresh_at = 0.0
+
+
+class TuyaCallError(Exception):
+    def __init__(self, code: object) -> None:
+        self.code = code
+        super().__init__(str(code))
+
+
+def breaker_config_from_env(access_id: str, secret: str, svitlo: str, itp: str) -> BreakerPollConfig:
+    devices: list[tuple[str, str]] = []
+    if svitlo:
+        devices.append(("svitlo", svitlo))
+    if itp:
+        devices.append(("itp", itp))
+    return BreakerPollConfig(access_id.strip(), secret.strip(), tuple(devices))
+
+
+def poll_is_enabled(cfg: BreakerPollConfig) -> bool:
+    return bool(cfg.access_id and cfg.access_secret and cfg.devices)
+
+
+def breaker_poll_due(tick: int, interval_sec: int, loop_sec: int = 30) -> bool:
+    """Same clock as the Deye tick: the check runs before sleep(loop_sec)."""
+    return tick * loop_sec >= interval_sec
+
+
+def breaker_http_timeout() -> float:
+    return 10.0
+
+
+def sign_headers(
+    access_id: str,
+    secret: str,
+    method: str,
+    path: str,
+    token: str,
+    now_ms: str,
+    body: bytes = b"",
+) -> dict[str, str]:
+    """The string that opened the EU status route on 2026-11-09."""
+    content = hashlib.sha256(body).hexdigest()
+    string_to_sign = f"{method}\n{content}\n\n{path}"
+    message = f"{access_id}{token}{now_ms}{string_to_sign}"
+    sign = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    headers = {
+        "client_id": access_id,
+        "sign": sign,
+        "t": now_ms,
+        "sign_method": "HMAC-SHA256",
+    }
+    if token:
+        headers["access_token"] = token
+    return headers
+
+
+def carry_configured_breakers(ts: float, devices: tuple[tuple[str, str], ...]) -> None:
+    """Close yesterday and open today. No HTTP and no new sample."""
+    for name, _device_id in devices:
+        apply_breaker_status(name, ts, None, "poll")
+
+
+def _public_error(exc: Exception) -> str:
+    if isinstance(exc, TuyaCallError):
+        return str(exc.code)
+    return exc.__class__.__name__
+
+
+async def run_deye_then_breakers(deye_step, breaker_step) -> None:
+    """Deye first. A breaker error must not cancel the rest of the tick."""
+    await deye_step()
+    try:
+        await breaker_step()
+    except Exception as exc:
+        log.error("breaker poll: %s", _public_error(exc))
+
+
+async def poll_breakers_http(cfg: BreakerPollConfig, cache: TokenCache, now: float, client_cls=None) -> None:
+    if client_cls is None:
+        client_cls = httpx.AsyncClient
+    async with client_cls(timeout=breaker_http_timeout()) as client:
+        await poll_breakers(client, cfg, cache, now)
+
+
+async def poll_breakers(client, cfg: BreakerPollConfig, cache: TokenCache, now: float) -> None:
+    token = await _ensure_token(client, cfg, cache, now)
+    for name, device_id in cfg.devices:
+        try:
+            payload = await _device_status(client, cfg, token, device_id, now)
+        except TuyaCallError as exc:
+            log.warning("breaker %s code %s", name, exc.code)
+            continue
+        apply_breaker_status(name, now, payload, "poll")
+
+
+async def _ensure_token(client, cfg: BreakerPollConfig, cache: TokenCache, now: float) -> str:
+    if cache.token and now < cache.refresh_at:
+        return cache.token
+    path = "/v1.0/token?grant_type=1"
+    headers = sign_headers(
+        cfg.access_id, cfg.access_secret, "GET", path, "", str(int(now * 1000)),
+    )
+    body = await _get_json(client, cfg.host + path, headers)
+    result = body.get("result") if isinstance(body, dict) else None
+    token = result.get("access_token") if isinstance(result, dict) else ""
+    if not token:
+        raise TuyaCallError("no-token")
+    try:
+        expire = int(result.get("expire_time") or 0)
+    except (TypeError, ValueError):
+        expire = 0
+    cache.token = token
+    cache.refresh_at = now + max(0, expire - 60)
+    return token
+
+
+async def _device_status(client, cfg: BreakerPollConfig, token: str, device_id: str, now: float) -> dict:
+    if not _DEVICE_ID_RE.fullmatch(device_id):
+        raise TuyaCallError("bad-id")
+    path = f"/v1.0/devices/{device_id}/status"
+    headers = sign_headers(
+        cfg.access_id, cfg.access_secret, "GET", path, token, str(int(now * 1000)),
+    )
+    return await _get_json(client, cfg.host + path, headers)
+
+
+async def _get_json(client, url: str, headers: dict[str, str]) -> dict:
+    try:
+        response = await client.get(url, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise TuyaCallError("timeout") from exc
+    except httpx.HTTPError as exc:
+        raise TuyaCallError("http") from exc
+    if response.status_code != 200:
+        raise TuyaCallError(response.status_code)
+    try:
+        body = response.json()
+    except Exception as exc:
+        raise TuyaCallError("bad-json") from exc
+    if not isinstance(body, dict) or not body.get("success"):
+        code = body.get("code") if isinstance(body, dict) else "error"
+        raise TuyaCallError(code)
+    return body

@@ -1,7 +1,10 @@
 """Breaker day rows. Phase 1 stores samples. No network and no live database."""
 from __future__ import annotations
 
+import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import tempfile
 import threading
@@ -10,10 +13,26 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+
 import database
 from config import UA_TZ
 from schedule_board import kyiv_day_bounds
-from tuya_breakers import apply_breaker_status, decode_phase
+from tuya_breakers import (
+    BreakerPollConfig,
+    TokenCache,
+    apply_breaker_status,
+    breaker_config_from_env,
+    breaker_http_timeout,
+    breaker_poll_due,
+    carry_configured_breakers,
+    decode_phase,
+    poll_breakers,
+    poll_breakers_http,
+    poll_is_enabled,
+    run_deye_then_breakers,
+    sign_headers,
+)
 
 
 def _ts(year: int, month: int, day: int, hour: int, minute: int) -> float:
@@ -256,6 +275,163 @@ class BreakerStoreTests(unittest.TestCase):
 
     def _sample_count(self, device: str) -> int:
         return len(self._samples(device))
+
+
+class _JsonResponse:
+    def __init__(self, body: dict, status: int = 200):
+        self.status_code = status
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+class _FakeTuya:
+    def __init__(self, status_body: dict, token_body: dict | None = None):
+        self.urls: list[str] = []
+        self._status = status_body
+        self._token = token_body or {
+            "success": True,
+            "result": {"access_token": "tok", "expire_time": 7200},
+        }
+
+    async def get(self, url, headers=None):
+        self.urls.append(url)
+        if "/v1.0/token?" in url:
+            return _JsonResponse(self._token)
+        return _JsonResponse(self._status)
+
+
+class BreakerPollTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def test_tick_fires_at_900_not_870(self):
+        self.assertFalse(breaker_poll_due(29, 900))
+        self.assertTrue(breaker_poll_due(30, 900))
+        self.assertEqual(29 * 30, 870)
+        self.assertEqual(30 * 30, 900)
+
+    def test_sign_uses_the_cloud_string(self):
+        headers = sign_headers("id", "secret", "GET", "/v1.0/token?grant_type=1", "", "1000")
+        content = hashlib.sha256(b"").hexdigest()
+        string_to_sign = "GET\n" + content + "\n\n/v1.0/token?grant_type=1"
+        expected = hmac.new(b"secret", ("id1000" + string_to_sign).encode(), hashlib.sha256).hexdigest()
+        self.assertEqual(headers["sign"], expected)
+        self.assertNotIn("access_token", headers)
+        business = sign_headers("id", "secret", "GET", "/v1.0/devices/abc/status", "tok", "1000")
+        business_string = "GET\n" + content + "\n\n/v1.0/devices/abc/status"
+        business_expected = hmac.new(
+            b"secret", ("id" + "tok" + "1000" + business_string).encode(), hashlib.sha256,
+        ).hexdigest()
+        self.assertEqual(business["sign"], business_expected)
+        self.assertEqual(business["access_token"], "tok")
+
+    def test_empty_secret_disables_the_poller(self):
+        cfg = breaker_config_from_env("id", "", "deviceone", "")
+        self.assertFalse(poll_is_enabled(cfg))
+        one = breaker_config_from_env("id", "secret", "deviceone", "")
+        self.assertEqual(one.devices, (("svitlo", "deviceone"),))
+        self.assertTrue(poll_is_enabled(one))
+
+    def test_fake_client_writes_one_sample_and_uses_a_ten_second_timeout(self):
+        body = _payload(True, 1000000, _blob(234.0, 2.2, 465))
+        seen: list[float] = []
+
+        class _Opening:
+            def __init__(self, timeout):
+                seen.append(timeout)
+                self._inner = _FakeTuya(body)
+
+            async def __aenter__(self):
+                return self._inner
+
+            async def __aexit__(self, *_args):
+                return False
+
+        cfg = BreakerPollConfig("id", "secret", (("svitlo", "abc123"),))
+        asyncio.run(poll_breakers_http(cfg, TokenCache(), 1_700_000_000.0, client_cls=_Opening))
+        self.assertEqual(seen, [breaker_http_timeout()])
+        self.assertEqual(breaker_http_timeout(), 10.0)
+        with database._conn() as db:
+            count = db.execute("SELECT COUNT(*) AS n FROM breaker_sample").fetchone()["n"]
+        self.assertEqual(count, 1)
+
+    def test_cached_token_is_not_requested_again(self):
+        body = _payload(True, 1000000, _blob(230, 1, 100))
+        client = _FakeTuya(body)
+        cfg = BreakerPollConfig("id", "secret", (("svitlo", "abc123"),))
+        cache = TokenCache()
+        asyncio.run(poll_breakers(client, cfg, cache, 1_000.0))
+        asyncio.run(poll_breakers(client, cfg, cache, 1_100.0))
+        token_calls = [url for url in client.urls if "/token?" in url]
+        self.assertEqual(len(token_calls), 1)
+        self.assertEqual(len(client.urls), 3)
+
+    def test_tuya_error_does_not_write_a_sample(self):
+        client = _FakeTuya({"success": False, "code": 28841002})
+        client._token = {"success": False, "code": 28841002}
+        cfg = BreakerPollConfig("id", "secret", (("svitlo", "abc123"),))
+        with self.assertRaises(Exception):
+            asyncio.run(poll_breakers(client, cfg, TokenCache(), 1_000.0))
+        with database._conn() as db:
+            count = db.execute("SELECT COUNT(*) AS n FROM breaker_sample").fetchone()["n"]
+        self.assertEqual(count, 0)
+        self.assertEqual(len(client.urls), 1)
+
+    def test_status_failure_does_not_drop_the_other_breaker(self):
+        ok = _payload(True, 1000000, _blob(230, 1, 100))
+
+        class _OneFails(_FakeTuya):
+            async def get(self, url, headers=None):
+                self.urls.append(url)
+                if "/token?" in url:
+                    return _JsonResponse(self._token)
+                if url.endswith("/badid999/status"):
+                    return _JsonResponse({"success": False, "code": 1100})
+                return _JsonResponse(ok)
+
+        client = _OneFails(ok)
+        cfg = BreakerPollConfig("id", "secret", (("svitlo", "abc123"), ("itp", "badid999")))
+        asyncio.run(poll_breakers(client, cfg, TokenCache(), _ts(2026, 11, 9, 12, 0)))
+        with database._conn() as db:
+            rows = db.execute("SELECT device FROM breaker_sample").fetchall()
+        self.assertEqual([row["device"] for row in rows], ["svitlo"])
+
+    def test_breaker_failure_still_runs_deye_first(self):
+        called: list[str] = []
+
+        async def deye():
+            called.append("deye")
+
+        async def breaker():
+            called.append("breaker")
+            raise httpx.ReadTimeout("slow")
+
+        asyncio.run(run_deye_then_breakers(deye, breaker))
+        self.assertEqual(called, ["deye", "breaker"])
+
+    def test_carry_opens_today_without_a_new_sample(self):
+        apply_breaker_status(
+            "svitlo", _ts(2026, 11, 8, 22, 0),
+            _payload(True, 1000000, _blob(230, 1, 100)), "poll",
+        )
+        before = 1
+        carry_configured_breakers(_ts(2026, 11, 9, 0, 10), (("svitlo", "abc123"),))
+        with database._conn() as db:
+            count = db.execute("SELECT COUNT(*) AS n FROM breaker_sample").fetchone()["n"]
+            today = db.execute(
+                "SELECT energy_today_kwh FROM breaker_day WHERE device='svitlo' AND day='2026-11-09'"
+            ).fetchone()
+        self.assertEqual(count, before)
+        self.assertEqual(today["energy_today_kwh"], 0.0)
 
 
 if __name__ == "__main__":

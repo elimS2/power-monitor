@@ -107,6 +107,14 @@ DEYE_POLL_IP = os.getenv("DEYE_POLL_IP", "").strip()
 DEYE_POLL_PORT = int(os.getenv("DEYE_POLL_PORT", "0") or "0")
 DEYE_POLL_SERIAL = os.getenv("DEYE_POLL_SERIAL", "").strip()  # Required for Solarman (8899)
 DEYE_POLL_INTERVAL_SEC = int(os.getenv("DEYE_POLL_INTERVAL_SEC", "30") or "30")
+
+# Basement breakers (Tuya cloud). Empty secret disables the poller.
+# Empty device id skips that one breaker. Never commit the values.
+TUYA_ACCESS_ID = os.getenv("TUYA_ACCESS_ID", "").strip()
+TUYA_ACCESS_SECRET = os.getenv("TUYA_ACCESS_SECRET", "").strip()
+TUYA_BREAKER_SVITLO = os.getenv("TUYA_BREAKER_SVITLO", "").strip()
+TUYA_BREAKER_ITP = os.getenv("TUYA_BREAKER_ITP", "").strip()
+TUYA_POLL_INTERVAL_SEC = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "900") or "900")
 DEYE_POLL_LOG = Path(os.getenv("DEYE_POLL_LOG", str(Path(__file__).parent / "logs" / "deye_poll.log")))
 
 # ─── Weather ────────────────────────────────────────────────
