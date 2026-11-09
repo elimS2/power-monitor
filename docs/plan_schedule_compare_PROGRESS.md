@@ -3,7 +3,7 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:07:30Z
+- Last updated: 2026-11-09T13:16:00Z
 - Current phase: deployed. Board is on the live site.
 - Next allowed step: none until the operator asks. Neighbor statistics stay deferred.
 
@@ -29,6 +29,7 @@
 | 2026-11-09T13:00:34Z | Phase 4 | Board UI done locally. Asking whether to deploy. |
 | 2026-11-09T13:06:11Z | Deploy | Operator asked to ship. Slot words ok/off/maybe on the board are shown as світло/відключення/можливе. Commit carries #autodeploy. |
 | 2026-11-09T13:07:30Z | Deploy check | Live dashboard has `#pm-sched-board`. Visible text is Ukrainian: date 09.11.2026, weekday, наша, layer names, emergency banner, match line. Power-monitor has no separate deploy page; shipping is the `#autodeploy` commit, which the server pulled. |
+| 2026-11-09T13:16:00Z | Layout | The hour grid used a 980px minimum and the actual/voltage bars sat outside that scroller, so the bars did not move with the hours. Bars are now a row inside the same table, over the 48 hour columns only. The table is 100% of the card. |
 
 ## Log
 

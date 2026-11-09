@@ -285,7 +285,7 @@
       if (!data.overlay_ready) {
         html += '<div class="sb-note">Фактичні ще не зведені</div>';
       }
-      html += '<div class="sb-wrap"><table class="sb-table"><tr><th class="sb-label"></th>';
+      html += '<div class="sb-wrap"><table class="sb-table"><colgroup><col class="sb-col-label"><col span="48"></colgroup><tr><th class="sb-label"></th>';
       for (var h = 0; h < 24; h++) html += '<th colspan="2">' + (h < 10 ? '0' : '') + h + '</th>';
       html += '</tr>';
       var slotNow = currentSlot();
@@ -310,14 +310,14 @@
         }
         html += '</tr>';
       });
-      html += '</table></div>';
-      if (showActual && data.overlay_ready) html += laneHtml(data.actual, 'sb-bar-actual', data.date);
+      if (showActual && data.overlay_ready) html += laneRow(data.actual, 'sb-bar-actual', data.date);
       if (showVoltage) {
         var highs = (data.voltage || []).filter(function(item) { return item.band === 'high'; });
         var lows = (data.voltage || []).filter(function(item) { return item.band === 'low'; });
-        html += laneHtml(highs, 'sb-bar-high', data.date);
-        html += laneHtml(lows, 'sb-bar-low', data.date);
+        html += laneRow(highs, 'sb-bar-high', data.date);
+        html += laneRow(lows, 'sb-bar-low', data.date);
       }
+      html += '</table></div>';
       if (data.match) {
         html += '<div class="sb-match">Збіглось ' + data.match.hit_min + ' хв · Світло було всупереч графіку ' +
           data.match.miss_min + ' хв · Позапланово не було ' + data.match.unplanned_min + ' хв</div>';
@@ -365,20 +365,21 @@
       });
     }
 
-    function laneHtml(items, className, iso) {
+    function laneRow(items, className, iso) {
       if (!items || !items.length) return '';
       var startMs = kyivMidnightMs(iso);
-      var endMs = startMs + 86400000;
-      var span = endMs - startMs;
-      var html = '<div class="sb-lane">';
+      var span = 86400000;
+      var bars = '';
       items.forEach(function(item) {
         var left = ((item.start * 1000) - startMs) / span * 100;
         var width = ((item.end - item.start) * 1000) / span * 100;
-        if (width < 0) width = 0;
-        html += '<div class="sb-bar ' + className + '" style="left:' + left + '%;width:' + width + '%"></div>';
+        if (left < 0) { width += left; left = 0; }
+        if (left >= 100 || width <= 0) return;
+        if (left + width > 100) width = 100 - left;
+        bars += '<div class="sb-bar ' + className + '" style="left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%"></div>';
       });
-      html += '</div>';
-      return html;
+      if (!bars) return '';
+      return '<tr class="sb-lane-row"><td class="sb-label"></td><td class="sb-lane-cell" colspan="48">' + bars + '</td></tr>';
     }
 
     window.pmPaintBoardNow = function() {
