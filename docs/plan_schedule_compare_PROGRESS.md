@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:00:34Z
+- Last updated: 2026-11-09T13:06:11Z
 - Current phase: 4 complete locally. Waiting for a yes before deploy.
-- Next allowed step: deploy only if the operator asks. No `#автооновити` unless asked. Neighbor statistics stay deferred.
+- Next allowed step: deploy is in progress. The operator asked to ship. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -27,6 +27,7 @@
 | 2026-11-08T23:07:29Z | Phase 2 | All queues and change rows stored. Asking whether to start Phase 3. |
 | 2026-11-08T23:27:27Z | Phase 3 | Read route and writers done. Asking whether to start Phase 4. |
 | 2026-11-09T13:00:34Z | Phase 4 | Board UI done locally. Asking whether to deploy. |
+| 2026-11-09T13:06:11Z | Deploy | Operator asked to ship. Slot words ok/off/maybe on the board are shown as світло/відключення/можливе. Commit carries #autodeploy. |
 
 ## Log
 

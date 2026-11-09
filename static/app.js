@@ -161,6 +161,7 @@
     var selectedDate = '';
     var WEEKDAYS = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя'];
     var KIND = { added: 'додано', removed: 'скасовано', moved: 'перенесено', severity: 'змінено' };
+    var STATUS = { ok: 'світло', off: 'відключення', maybe: 'можливе' };
     var LAYER_KEYS = [
       ['pm_sched_show_off', 'Відключення', '1'],
       ['pm_sched_show_changed', 'Змінені', '1'],
@@ -185,6 +186,13 @@
       return new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit'
       }).format(new Date());
+    }
+    function prettyDate(iso) {
+      var parts = iso.split('-');
+      return parts[2] + '.' + parts[1] + '.' + parts[0];
+    }
+    function statusName(code) {
+      return STATUS[code] || code || '';
     }
     function weekdayName(iso) {
       var parts = iso.split('-');
@@ -256,7 +264,7 @@
       var showVoltage = layerOn('pm_sched_show_voltage', '0');
       var html = '';
       html += '<div class="sb-controls"><button type="button" id="sb-prev"' + (index <= 0 ? ' disabled' : '') + '>‹</button>';
-      html += '<span class="sb-date" id="sb-date">' + data.date + ' (' + weekdayName(data.date) + ')</span>';
+      html += '<span class="sb-date" id="sb-date">' + prettyDate(data.date) + ' (' + weekdayName(data.date) + ')</span>';
       html += '<button type="button" id="sb-next"' + (index < 0 || index >= dates.length - 1 ? ' disabled' : '') + '>›</button></div>';
       html += '<div class="sb-checks" id="sb-groups">';
       Object.keys(data.groups || {}).sort().forEach(function(queue) {
@@ -321,10 +329,10 @@
       } else {
         html += '<table class="sb-changes"><tr><th>Коли побачили</th><th>Група</th><th>Що сталося</th><th>Було</th><th>Стало</th></tr>';
         visibleChanges.forEach(function(row) {
-          var was = slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + (row.from_status || '');
+          var was = slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + statusName(row.from_status);
           var became = row.kind === 'moved'
-            ? slotClock(row.peer_start_slot) + '–' + slotClock(row.peer_end_slot) + ' ' + (row.to_status || '')
-            : slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + (row.to_status || '');
+            ? slotClock(row.peer_start_slot) + '–' + slotClock(row.peer_end_slot) + ' ' + statusName(row.to_status)
+            : slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + statusName(row.to_status);
           var name = row.queue === ourQueue ? '<strong>' + row.queue + '</strong>' : row.queue;
           html += '<tr><td>' + fmtKyiv(row.fetched_at) + '</td><td>' + name + '</td><td>' +
             (KIND[row.kind] || row.kind) + '</td><td>' + was + '</td><td>' + became + '</td></tr>';
