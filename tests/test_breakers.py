@@ -25,7 +25,8 @@ from tuya_breakers import (
     apply_breaker_status,
     breaker_config_from_env,
     breaker_http_timeout,
-    breaker_poll_due,
+    breaker_clock_due,
+    breaker_slot_start,
     carry_configured_breakers,
     decode_phase,
     ingest_status_message,
@@ -517,11 +518,25 @@ class BreakerPollTests(unittest.TestCase):
         database.DB_PATH = self._old_path
         self._tmpdir.cleanup()
 
-    def test_tick_fires_at_900_not_870(self):
-        self.assertFalse(breaker_poll_due(29, 900))
-        self.assertTrue(breaker_poll_due(30, 900))
-        self.assertEqual(29 * 30, 870)
-        self.assertEqual(30 * 30, 900)
+    def test_poll_follows_the_kyiv_quarter_hour(self):
+        def at(hour, minute, second=0, day=10):
+            return datetime(2026, 11, day, hour, minute, second, tzinfo=UA_TZ).timestamp()
+
+        quarter = at(0, 15, 20)
+        self.assertTrue(breaker_clock_due(quarter, None, 900))
+        slot = breaker_slot_start(quarter, 900)
+        local = datetime.fromtimestamp(slot, UA_TZ)
+        self.assertEqual((local.hour, local.minute, local.second), (0, 15, 0))
+        self.assertFalse(breaker_clock_due(quarter, slot, 900))
+        self.assertFalse(breaker_clock_due(at(0, 17), None, 900))
+        self.assertFalse(breaker_clock_due(at(0, 14, 50), breaker_slot_start(at(0, 0, 10), 900), 900))
+        self.assertTrue(breaker_clock_due(at(0, 30, 5), slot, 900))
+        self.assertTrue(breaker_clock_due(at(0, 0, 10), None, 900))
+        self.assertTrue(breaker_clock_due(at(0, 45, 10), None, 900))
+        night = breaker_slot_start(at(23, 45, 10), 900)
+        self.assertTrue(breaker_clock_due(at(0, 0, 10, day=11), night, 900))
+        self.assertTrue(breaker_clock_due(at(0, 16, 30), None, 900))
+        self.assertFalse(breaker_clock_due(at(0, 16, 31), None, 900))
 
     def test_sign_uses_the_cloud_string(self):
         headers = sign_headers("id", "secret", "GET", "/v1.0/token?grant_type=1", "", "1000")

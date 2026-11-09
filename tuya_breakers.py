@@ -13,11 +13,13 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import httpx
 
 import database
+from config import UA_TZ
 from schedule_board import kyiv_date_str, kyiv_day_bounds, shift_date
 
 log = logging.getLogger("power_monitor.breakers")
@@ -417,9 +419,33 @@ def poll_is_enabled(cfg: BreakerPollConfig) -> bool:
     return bool(cfg.access_id and cfg.access_secret and cfg.devices)
 
 
-def breaker_poll_due(tick: int, interval_sec: int, loop_sec: int = 30) -> bool:
-    """Same clock as the Deye tick: the check runs before sleep(loop_sec)."""
-    return tick * loop_sec >= interval_sec
+# The loop wakes about every 30s. A mark is still taken if the wake is this late.
+BREAKER_SLOT_GRACE_SEC = 90
+
+
+def breaker_slot_start(now: float, interval_sec: int, tz=UA_TZ) -> float:
+    """Kyiv midnight, then the interval mark that contains now. 900s is :00 :15 :30 :45."""
+    if interval_sec <= 0:
+        raise ValueError("interval")
+    local = datetime.fromtimestamp(now, tz)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = (local - midnight).total_seconds()
+    index = int(elapsed // interval_sec)
+    return midnight.timestamp() + index * interval_sec
+
+
+def breaker_clock_due(
+    now: float,
+    last_slot: float | None,
+    interval_sec: int,
+    tz=UA_TZ,
+    grace_sec: float = BREAKER_SLOT_GRACE_SEC,
+) -> bool:
+    """True once, near a clock mark. A restart in the middle of a slot waits for the next mark."""
+    slot = breaker_slot_start(now, interval_sec, tz)
+    if last_slot is not None and abs(last_slot - slot) < 0.5:
+        return False
+    return (now - slot) <= grace_sec
 
 
 def breaker_http_timeout() -> float:

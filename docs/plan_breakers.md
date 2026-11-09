@@ -313,7 +313,7 @@ Touch: `config.py`, `tuya_breakers.py` HTTP, `power_monitor.py` `bg_loop` and th
 Steps:
 
 1. Read env. Disabled when the secret or both ids are empty.
-2. Every `TUYA_POLL_INTERVAL_SEC`, one token if needed, then one status GET per configured id. Apply through the Phase 1 function.
+2. Every `TUYA_POLL_INTERVAL_SEC`, one token if needed, then one status GET per configured id. Apply through the Phase 1 function. From 2026-11-09T22:28:13Z the interval is a Kyiv clock mark, not a countdown from process start. 900 seconds is :00, :15, :30, and :45. A restart in the middle of a slot waits for the next mark. A restart within 90 seconds after a mark still takes that mark.
 3. On process start and when the Kyiv date changes, call the same locked function with no payload, as in 6.6. Do not close yesterday from `bg_loop` with a second code path.
 
 Verify: unit test of the tick math. The counter fires when `tick * 30` is 900 and not when it is 870. Wall time of that tick is 29 sleeps after start, because the check runs before `sleep(30)`, the same way `deye_poll_tick` does. A fake HTTP client returns one fixture and asserts a single sample. The fake client has a 10 second timeout and a failure does not skip the Deye call in that tick. Do not hit `openapi.tuyaeu.com` from tests.
@@ -419,6 +419,7 @@ None blocking.
 | 2026-11-09T21:06:42Z | Phase 4 listener left off. Operator said yes via Agree & Continue. | Message screen offers only Pulsar. Switch was not enabled. `ingest_status_message` is tested and not called from the loop. 34 breaker tests OK. No deploy. |
 | 2026-11-09T21:14:48Z | Message rate measured from type-7 logs. Listener stays off. | Світло partial day already projects past 68 000 rows/month. Pulsar switch was not turned on. Poll signature must be uppercase. |
 | 2026-11-09T21:39:54Z | Ship the read-only page and the 15-minute poll. | Operator said yes via Agree & Continue. Tuya values are only in the server env. Pulsar stays off. Commit carries `#autodeploy`. |
+| 2026-11-09T22:28:13Z | Poll on the Kyiv quarter hour. | Operator: read at :00, :15, :30, :45. A service restart must not start a fresh 15 minutes. Grace is 90 seconds. The page still has no control. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 

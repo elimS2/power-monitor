@@ -63,7 +63,8 @@ from config import (
 from tuya_breakers import (
     TokenCache,
     breaker_config_from_env,
-    breaker_poll_due,
+    breaker_clock_due,
+    breaker_slot_start,
     carry_configured_breakers,
     poll_breakers_http,
     poll_is_enabled,
@@ -450,7 +451,7 @@ async def bg_loop():
     deye_poll_tick = 0
     deye_agg_tick = 0
     deploy_tick = 0
-    breaker_tick = 0
+    breaker_slot_mark = None
     carried_day = None
     breaker_carried_day = None
     while True:
@@ -489,14 +490,14 @@ async def bg_loop():
                         deye_poll_tick = 0
 
             async def _breaker_step():
-                nonlocal breaker_tick
+                nonlocal breaker_slot_mark
                 if not poll_is_enabled(breaker_cfg):
                     return
-                breaker_tick += 1
-                if not breaker_poll_due(breaker_tick, TUYA_POLL_INTERVAL_SEC):
+                now = time.time()
+                if not breaker_clock_due(now, breaker_slot_mark, TUYA_POLL_INTERVAL_SEC):
                     return
-                breaker_tick = 0
-                await poll_breakers_http(breaker_cfg, _breaker_tokens, time.time())
+                await poll_breakers_http(breaker_cfg, _breaker_tokens, now)
+                breaker_slot_mark = breaker_slot_start(now, TUYA_POLL_INTERVAL_SEC)
 
             await run_deye_then_breakers(_deye_step, _breaker_step)
             date_rolled = (
