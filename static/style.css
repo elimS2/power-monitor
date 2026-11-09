@@ -218,12 +218,14 @@ details[open] summary::before { content: '▼ '; }
   display: flex; align-items: center; justify-content: center; gap: 0.35rem;
   margin: 0 0.2rem 0.35rem;
 }
-.vchart-day, .vchart-help {
+.vchart-day, .vchart-help, .vchart-full {
   width: 28px; height: 28px; padding: 0; border-radius: 8px; cursor: pointer;
   border: 1px solid #475569; background: #1e293b; color: #e2e8f0;
   font-size: 1.05rem; line-height: 1;
 }
-.vchart-day:hover, .vchart-help:hover { background: #334155; }
+.vchart-day:hover, .vchart-help:hover, .vchart-full:hover { background: #334155; }
+.vchart-full { display: inline-flex; align-items: center; justify-content: center; }
+.vchart-full svg { width: 14px; height: 14px; display: block; }
 .vchart-day:disabled { opacity: 0.35; cursor: default; }
 .vchart-day-label {
   min-width: 0; text-align: center; color: var(--muted); font-size: 0.75rem;
@@ -284,3 +286,24 @@ details[open] summary::before { content: '▼ '; }
 .vchart-line { width: 14px; height: 3px; border-radius: 2px; }
 .vchart-box { width: 12px; height: 10px; border-radius: 2px; }
 .vchart-dash { width: 14px; height: 0; border-top: 2px dashed currentColor; }
+#pm-voltage:fullscreen {
+  background: var(--bg, #0f172a);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 1rem 1.1rem 0.75rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#pm-voltage:fullscreen .vboard { display: none; }
+#pm-voltage:fullscreen .vchart {
+  flex: 1; min-height: 0; margin: 0;
+  display: flex; flex-direction: column;
+}
+#pm-voltage:fullscreen .vchart-frame {
+  flex: 1; min-height: 0;
+  grid-template-rows: minmax(0, 1fr) 12px 16px;
+}
+#pm-voltage:fullscreen .vchart-plot { height: 100%; min-height: 0; }
+#pm-voltage:fullscreen .vchart-main { width: 100%; height: 100%; }

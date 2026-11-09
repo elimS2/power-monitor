@@ -33,6 +33,8 @@ class VoltageChartTests(unittest.TestCase):
         self.assertIn("vchart-main", html)
         self.assertIn("vchart-strip", html)
         self.assertIn("Колесо збільшує", html)
+        self.assertIn("vchart-full", html)
+        self.assertIn("На весь екран", html)
         self.assertIn("vchart-next", html)
         self.assertIn("disabled", html)
 

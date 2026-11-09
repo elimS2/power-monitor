@@ -163,6 +163,13 @@ def build_voltage_chart(
         '<div class="vchart-head-side">'
         f"{span_html}"
         '<button type="button" class="vchart-reset" hidden>Скинути</button>'
+        '<button type="button" class="vchart-full" aria-label="На весь екран">'
+        '<svg class="vchart-full-enter" viewBox="0 0 16 16" aria-hidden="true">'
+        '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+        '<svg class="vchart-full-exit" viewBox="0 0 16 16" aria-hidden="true" hidden>'
+        '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg></button>'
         '<span class="vchart-help-wrap">'
         '<button type="button" class="vchart-help" aria-label="Як керувати графіком" aria-expanded="false">i</button>'
         '<div class="vchart-help-pop" hidden>'
@@ -171,6 +178,7 @@ def build_voltage_chart(
         "<p>Подвійний клік або «Скинути» повертає всю добу на екран.</p>"
         "<p>Біля курсора видно час і напругу.</p>"
         "<p>Стрілки гортають попередні доби. Жива доба — останні 24 години і ще 6 годин графіка вперед.</p>"
+        "<p>Кнопка з кутами розгортає графік на весь екран. Esc згортає.</p>"
         "</div></span>"
         "</div></div>"
         '<div class="vchart-nav">'

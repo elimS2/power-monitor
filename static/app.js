@@ -332,7 +332,36 @@
     vchartLayout(meta, z);
     var btn = document.querySelector('#pm-voltage .vchart-reset');
     if (btn) btn.hidden = !vZoom;
+    vchartSyncFullscreen();
   }
+
+  function vchartInFullscreen() {
+    var host = document.getElementById('pm-voltage');
+    return !!(host && document.fullscreenElement === host);
+  }
+
+  function vchartSyncFullscreen() {
+    var btn = document.querySelector('#pm-voltage .vchart-full');
+    if (!btn) return;
+    var on = vchartInFullscreen();
+    btn.setAttribute('aria-label', on ? 'Згорнути' : 'На весь екран');
+    var enter = btn.querySelector('.vchart-full-enter');
+    var exit = btn.querySelector('.vchart-full-exit');
+    if (enter) enter.hidden = on;
+    if (exit) exit.hidden = !on;
+  }
+
+  function vchartToggleFullscreen() {
+    var host = document.getElementById('pm-voltage');
+    if (!host) return;
+    if (vchartInFullscreen()) {
+      if (document.exitFullscreen) document.exitFullscreen();
+    } else if (host.requestFullscreen) {
+      host.requestFullscreen();
+    }
+  }
+
+  document.addEventListener('fullscreenchange', vchartSyncFullscreen);
 
   document.addEventListener('wheel', function(e) {
     var host = e.target.closest && e.target.closest('#pm-voltage .vchart-plot, #pm-voltage .vchart-strip');
@@ -447,6 +476,10 @@
       vchartApply();
       return;
     }
+    if (e.target.closest && e.target.closest('#pm-voltage .vchart-full')) {
+      vchartToggleFullscreen();
+      return;
+    }
     var helpBtn = e.target.closest && e.target.closest('#pm-voltage .vchart-help');
     var pop = document.querySelector('#pm-voltage .vchart-help-pop');
     if (helpBtn && pop) {
@@ -474,6 +507,7 @@
     if (e.key !== 'Escape') return;
     var pop = document.querySelector('#pm-voltage .vchart-help-pop');
     if (!pop || pop.hidden) return;
+    e.preventDefault();
     pop.hidden = true;
     var help = document.querySelector('#pm-voltage .vchart-help');
     if (help) help.setAttribute('aria-expanded', 'false');
