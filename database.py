@@ -170,6 +170,42 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
         """)
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS breaker_sample (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          REAL    NOT NULL,
+                device      TEXT    NOT NULL,
+                switch      INTEGER NOT NULL,
+                energy_raw  INTEGER,
+                energy_kwh  REAL,
+                v_a REAL, i_a REAL, p_a REAL,
+                v_b REAL, i_b REAL, p_b REAL,
+                v_c REAL, i_c REAL, p_c REAL,
+                fault       INTEGER,
+                source      TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_breaker_sample_device_ts
+                ON breaker_sample(device, ts);
+
+            CREATE TABLE IF NOT EXISTS breaker_message (
+                message_id TEXT PRIMARY KEY,
+                device     TEXT NOT NULL,
+                ts         REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS breaker_day (
+                device            TEXT NOT NULL,
+                day               TEXT NOT NULL,
+                energy_base_kwh   REAL,
+                energy_kwh        REAL,
+                energy_today_kwh  REAL,
+                switch            INTEGER,
+                span_json         TEXT NOT NULL,
+                phase_json        TEXT,
+                updated_at        REAL NOT NULL,
+                PRIMARY KEY (device, day)
+            );
+        """)
         # Existing installs created schedule_history before queue/emergency existed.
         # CREATE TABLE IF NOT EXISTS does not add columns, so ALTER fills old rows
         # with queue 5.1. The queue index is created only after that ALTER: putting
