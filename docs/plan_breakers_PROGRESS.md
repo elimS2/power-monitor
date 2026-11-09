@@ -1,11 +1,11 @@
 # Progress — basement breakers
 
 - Plan: `power-monitor/docs/plan_breakers.md`
-- Status: `PHASE 4 LISTENER OFF`
+- Status: `LIVE READ ONLY`
 - Active skin: Skin A
-- Last updated: 2026-11-09T21:14:48Z
+- Last updated: 2026-11-09T21:39:54Z
 - Current phase: 4 read the message screen. The queue stays off.
-- Next allowed step: none. The counted report rate is already over the message pack, so Pulsar stays off. The page must still only read.
+- Next allowed step: none. Pulsar stays off. The page only reads.
 
 ## Phase checklist
 
@@ -30,6 +30,7 @@
 | 2026-11-09T20:58:02Z | Phase 3 | Operator yes via Agree & Continue. Section and read route landed. Production not restarted. |
 | 2026-11-09T21:06:42Z | Phase 4 | Message Service dialog: Message Queue / Pulsar only, AES-GCM, no HTTP. Cancel pressed. Server Message Log also off, so the monthly count is unknown. Listener not started. |
 | 2026-11-09T21:14:48Z | Rate | Type-7 logs since Kyiv midnight. Світло 2 907 rows and still has_next (stop code 40000309): phase_a 1270, phase_b 884, phase_c 742, energy 10, switch 1. Partial projection about 90 000/month. ІТП first page empty. Pulsar not enabled. |
+| 2026-11-09T21:39:54Z | Deploy | Operator yes. Server env has the five TUYA names. This commit tag is `#autodeploy`. No page control. |
 
 ## Log
 

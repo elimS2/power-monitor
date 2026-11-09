@@ -1,10 +1,10 @@
 # Basement breakers
 
-- Status: `PHASE 4 LISTENER OFF`
+- Status: `LIVE READ ONLY`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T21:14:48Z
+- Last updated: 2026-11-09T21:39:54Z
 - Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -418,6 +418,7 @@ None blocking.
 | 2026-11-09T20:58:02Z | Phase 3 implemented. Operator said yes via Agree & Continue. | Read-only section and `GET /api/breakers`. No control, no deploy. `tests.test_breakers` and `tests.test_schedule_board`: 62 tests OK. |
 | 2026-11-09T21:06:42Z | Phase 4 listener left off. Operator said yes via Agree & Continue. | Message screen offers only Pulsar. Switch was not enabled. `ingest_status_message` is tested and not called from the loop. 34 breaker tests OK. No deploy. |
 | 2026-11-09T21:14:48Z | Message rate measured from type-7 logs. Listener stays off. | Світло partial day already projects past 68 000 rows/month. Pulsar switch was not turned on. Poll signature must be uppercase. |
+| 2026-11-09T21:39:54Z | Ship the read-only page and the 15-minute poll. | Operator said yes via Agree & Continue. Tuya values are only in the server env. Pulsar stays off. Commit carries `#autodeploy`. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -460,6 +461,7 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T20:58:02Z | Phase 3 done. The section shows two lines and a green/red day bar. It has no button and no form. Live site was not restarted. Phase 4 waits for an explicit yes. |
 | 2026-11-09T21:06:42Z | Phase 4. Pulsar is the only transport on the project screen. The queue stays off. The poll remains the writer. |
 | 2026-11-09T21:14:48Z | Counted data-point rows. One live breaker already exceeds the message pack. Queue stays off. Signature hex is uppercase. |
+| 2026-11-09T21:39:54Z | Deploy the section and the poll. No breaker control on the page. No Pulsar. |
 
 ## 12. Handoff for a new chat
 
