@@ -3,7 +3,7 @@
 - Plan: `power-monitor/docs/plan_breakers.md`
 - Status: `LIVE READ ONLY`
 - Active skin: Skin A
-- Last updated: 2026-11-09T21:39:54Z
+- Last updated: 2026-11-09T22:17:24Z
 - Current phase: 4 read the message screen. The queue stays off.
 - Next allowed step: none. Pulsar stays off. The page only reads.
 
@@ -33,6 +33,7 @@
 | 2026-11-09T21:39:54Z | Deploy | Operator yes. Server env has the five TUYA names. This commit tag is `#autodeploy`. No page control. |
 | 2026-11-09T21:40:19Z | Deploy check | Server is `2997503` and the service is active. The live page has the section, the bar, and no button or form. Sample table is empty until the first 15-minute poll. |
 | 2026-11-09T22:11:07Z | Visual | Two read-only faces: lighting and heat. Meters under each icon. Hour scale with a now mark. Still no control. |
+| 2026-11-09T22:17:24Z | Icons | On-state icons were filled black, so the word said on while the mark looked off. Fill now follows the lamp color, with a halo behind a lit face. Still no control. |
 
 ## Log
 
@@ -47,6 +48,7 @@
 | 2026-11-09T20:58:02Z | Phase 3. `GET /api/breakers` reads `breaker_day` only. Green then red from stored spans. Null today renders `немає бази`. 62 tests OK. A local color fixture was not opened in the browser: the temporary page server did not answer. |
 | 2026-11-09T21:06:42Z | Phase 4. `ingest_status_message` accepts a decrypted report for the two ids and ignores any other id. `bg_loop` does not call it. 34 breaker tests OK. |
 | 2026-11-09T21:14:48Z | Rate check says the message pack is too small for live phase reports. Listener stays off. Poll HMAC signature is uppercase so a later deploy is not rejected with 1004. Not deployed. |
+| 2026-11-09T22:17:24Z | Lit icons use currentColor plus a halo. This commit tag is `#autodeploy`. The page still only reads. |
 
 ## Review history
 

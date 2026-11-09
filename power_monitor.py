@@ -1208,12 +1208,12 @@ def _breaker_icon(kind: str) -> str:
             '<rect x="10" y="16" width="8" height="32" rx="3"/>'
             '<rect x="22" y="12" width="8" height="36" rx="3"/>'
             '<rect x="34" y="16" width="8" height="32" rx="3"/>'
-            '<path d="M50 18c5 5 5 9 0 14s-5 9 0 14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
+            '<path class="brk-stroke" d="M50 18c5 5 5 9 0 14s-5 9 0 14"/>'
             "</svg>"
         )
     return (
         '<svg class="brk-ico" viewBox="0 0 64 64" aria-hidden="true">'
-        '<path d="M32 6v6M16 16l4 4M48 16l-4 4M10 32h6M48 32h6"/>'
+        '<path class="brk-stroke" d="M32 6v6M16 16l4 4M48 16l-4 4M10 32h6M48 32h6"/>'
         '<path d="M32 14c-8 0-14 6.2-14 14.2 0 5.4 2.8 9.6 6.4 12.4V46h15.2v-5.4c3.6-2.8 6.4-7 6.4-12.4C46 20.2 40 14 32 14z"/>'
         '<rect x="26" y="48" width="12" height="4" rx="1"/>'
         '<rect x="28" y="54" width="8" height="3" rx="1"/>'
