@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:26:16Z
+- Last updated: 2026-11-09T13:27:30Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -387,7 +387,7 @@ Data load: one `fetch('/api/schedule-board?...')` when the selected day changes,
 
 ### 6.8a Now marker and live match
 
-Recorded 2026-11-09T13:19:34Z. Built 2026-11-09T13:24:48Z after an explicit yes. The operator asked to ship it at 2026-11-09T13:26:16Z. The ship commit carries `#autodeploy`. Power-monitor has no deploy page; the tag is what pulls and restarts the service.
+Recorded 2026-11-09T13:19:34Z. Built 2026-11-09T13:24:48Z after an explicit yes. The operator asked to ship it at 2026-11-09T13:26:16Z. Commit `f7b9af7` carries `#autodeploy`. At 2026-11-09T13:27:30Z the live page loaded `/app.js?v=f7b9af7` and `/style.css?v=f7b9af7`. Queue 5.1 slot 30 (15:00–15:30) was `ok` while `data-pm-down` was `0`, so the cell was `sb-now-yes` with the lightning glyph and `sg-glow`.
 
 What was weak: `pmPaintBoardNow` only added `.sb-now`, a thin yellow inset. The old grid used `.sg-now-on` / `.sg-now-off` with the lightning glyph and the `sg-glow` / `sg-flash` animations.
 
