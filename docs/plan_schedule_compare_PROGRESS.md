@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_schedule_compare.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A
-- Last updated: 2026-11-09T13:41:37Z
-- Current phase: fact lane and now line are built locally. The live site is still `f7b9af7`.
-- Next allowed step: deploy section 6.8b only if the operator asks. Neighbor statistics stay deferred.
+- Last updated: 2026-11-09T13:44:14Z
+- Current phase: fact lane and now line are shipping. The operator asked to put them on the live site.
+- Next allowed step: confirm the live script is this deploy, then stop. Neighbor statistics stay deferred.
 
 ## Phase checklist
 
@@ -37,6 +37,7 @@
 | 2026-11-09T13:27:30Z | Deploy check | Live page loads `/app.js?v=f7b9af7` and `/style.css?v=f7b9af7`. The note about yellow and red is visible. Queue 5.1, slot 30, plan `ok`, light on, class `sb-now-yes`, lightning glyph, animation `sg-glow`. |
 | 2026-11-09T13:32:21Z | Fact lane and now line | Proposed, not built. Same fact row: green `#22c55e` where the light was on, red where it was not, green stops at now. A dashed minute line crosses every group. Our lightning stays. See plan 6.8b. |
 | 2026-11-09T13:41:37Z | Fact lane and now line | Operator said yes. One fact row: green `#22c55e` in the gaps, red `#f87171` on the outages, green stops at the clock. A dashed line sits on the current minute through the hour label and every group. Our cell still blinks; other groups do not. A local board showed one lane, the 02:00–03:00 outage in red, green up to the line, hour 15 lit, the line inside slot 31. Live site not updated. |
+| 2026-11-09T13:44:14Z | Deploy | Operator asked to ship the fact lane and the minute line. This commit carries `#autodeploy`. |
 
 ## Log
 

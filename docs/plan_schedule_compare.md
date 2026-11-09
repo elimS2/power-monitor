@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. Company KB does not index this repo.
-- Last updated: 2026-11-09T13:41:37Z
+- Last updated: 2026-11-09T13:44:14Z
 - Active skin: **Skin A** (stored snapshots + stored change rows + one JSON board)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -407,7 +407,7 @@ Not in the now-marker slice: coloring the whole day by match or a second fact ro
 
 ### 6.8b Fact lane both ways, and a now line through every group
 
-Proposed 2026-11-09T13:32:21Z. Built 2026-11-09T13:41:37Z after an explicit yes. Not on the live site until a later deploy.
+Proposed 2026-11-09T13:32:21Z. Built 2026-11-09T13:41:37Z after an explicit yes. The operator asked to ship it at 2026-11-09T13:44:14Z. The ship commit carries `#autodeploy`.
 
 The red fact lane stays one row. Where the light was on, the same row is green `#22c55e`, the color the voltage strip already uses for «світло було». The schedule cells stay the darker `#166534`, so a planned-on cell and a fact-on segment are not the same green. Red `#f87171` stays the outage. Green is the gaps between the stored outage intervals. On today it stops at the clock. The rest of today stays empty. On a past day with `overlay_ready` it fills the whole day around the red. No new request: the browser already has `actual`. The «Наші фактичні» checkbox still owns this row. When `overlay_ready` is false, the row stays hidden and the existing «Фактичні ще не зведені» line stays. When the row is shown, the board also says «Зелена смуга — світло було. Червона — не було.»
 
