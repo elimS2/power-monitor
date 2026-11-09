@@ -355,6 +355,32 @@ def init_db():
                     "UPDATE api_key_config SET sections=? WHERE label=?",
                     (updated, row["label"]),
                 )
+
+        def _append_breaker(raw: str | None) -> str | None:
+            if not raw:
+                return None
+            try:
+                sec = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(sec, list) or "breaker_details" in sec:
+                return None
+            sec.append("breaker_details")
+            return json.dumps(sec)
+
+        for row in db.execute("SELECT id, sections FROM roles WHERE sections IS NOT NULL").fetchall():
+            updated = _append_breaker(row["sections"])
+            if updated:
+                db.execute("UPDATE roles SET sections=? WHERE id=?", (updated, row["id"]))
+        for row in db.execute(
+            "SELECT label, sections FROM api_key_config WHERE sections IS NOT NULL AND role_id IS NULL"
+        ).fetchall():
+            updated = _append_breaker(row["sections"])
+            if updated:
+                db.execute(
+                    "UPDATE api_key_config SET sections=? WHERE label=?",
+                    (updated, row["label"]),
+                )
         # Migration: add footer_parts to roles
         try:
             db.execute("ALTER TABLE roles ADD COLUMN footer_parts TEXT")
@@ -547,7 +573,7 @@ def tg_test_chat_id() -> str:
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
     "alert_ev_details", "tg_details", "voltage_details",
-    "deye_details", "hb_details", "legend_details", "avatars_details",
+    "deye_details", "breaker_details", "hb_details", "legend_details", "avatars_details",
     "collections_details",
 ]
 
@@ -569,6 +595,7 @@ SECTION_LABELS = {
     "tg_details": "Історія Telegram",
     "voltage_details": "Напруга мережі",
     "deye_details": "Deye інвертор",
+    "breaker_details": "Автомати підвалу",
     "hb_details": "Роутер / Heartbeats",
     "legend_details": "Легенда повідомлень",
     "avatars_details": "Аватарки каналу",
@@ -1920,3 +1947,43 @@ def parse_boiler_schedule(text: str) -> list[dict]:
         results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
     log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
     return results
+
+
+def read_breaker_board(day: str, now: float) -> dict:
+    """One stored day for both breakers. Reads breaker_day only and does not write."""
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("bad date") from exc
+    today = kyiv_date_str(now)
+    with _conn() as db:
+        rows = db.execute(
+            """
+            SELECT device, energy_today_kwh, switch, span_json, phase_json, updated_at
+            FROM breaker_day WHERE day=?
+            """,
+            (day,),
+        ).fetchall()
+    found = {row["device"]: row for row in rows}
+    devices = {}
+    for name in ("svitlo", "itp"):
+        row = found.get(name)
+        if row is None:
+            devices[name] = {"ready": False}
+            continue
+        spans = json.loads(row["span_json"] or "[]")
+        if day == today:
+            for span in spans:
+                if isinstance(span, dict) and span.get("end") is None:
+                    span["end"] = now
+        phases = json.loads(row["phase_json"]) if row["phase_json"] else None
+        devices[name] = {
+            "ready": True,
+            "switch": row["switch"],
+            "energy_today_kwh": row["energy_today_kwh"],
+            "updated_at": row["updated_at"],
+            "spans": spans,
+            "phases": phases,
+        }
+    start, end = kyiv_day_bounds(day)
+    return {"date": day, "today": day == today, "start": start, "end": end, "devices": devices}

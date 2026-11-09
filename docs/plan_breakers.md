@@ -1,10 +1,10 @@
 # Basement breakers
 
-- Status: `PHASE 2 DONE`
+- Status: `PHASE 3 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not search it and do not write there.
-- Last updated: 2026-11-09T20:45:39Z
+- Last updated: 2026-11-09T20:58:02Z
 - Active skin: **Skin A** (15-minute status sample + stored day row + switch messages)
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -21,11 +21,22 @@ On the existing dashboard, for the two basement breakers labeled **Світло*
 - Record when the switch turned on or off, tight to the device message, not to the poll.
 - Keep a 15-minute sample of the meter and the phases so a missed message is corrected and the energy total still moves.
 
-The page reads stored rows. It does not call Tuya.
+The page reads stored rows. It does not call Tuya. It does not control a breaker.
+
+### Observe only
+
+The operator said this again on 2026-11-09T20:50:10Z. The dashboard shows what the breakers already did. It does not change them.
+
+- No button, switch, toggle, form, or link that turns a breaker on or off.
+- No POST, PUT, or timer call from the page, from `GET /api/breakers`, or from the 10-second fragment.
+- Phase 3 draws the lines and the bar. It does not add a control "for later".
+- Phase 4 only receives status messages. It does not send `switch`.
+- The poller only uses GET. A test fails if a breaker request uses any other method.
+- The one-shot **Світло** off at 22:30 on 2026-11-09 already sits in Tuya. This page does not edit or repeat it.
 
 ### Non-goals
 
-- Turning a breaker on or off from the dashboard. The one-shot **Світло** off at 22:30 on 2026-11-09 is already stored in Tuya. This work only observes it.
+- Turning a breaker on or off from the dashboard, now or in a later phase of this plan. See **Observe only**.
 - Polling faster than 15 minutes. The trial pack is the limit. See section 6.4.
 - A chart library, a second database, a second process.
 - Scanning `breaker_sample` inside an HTTP handler.
@@ -310,9 +321,9 @@ Rollback: clear `TUYA_ACCESS_SECRET` and restart. Writers stop. Rows remain.
 
 ### Phase 3 — read route and the section
 
-Goal: the dashboard shows the two lines, today's kWh, the phases, and the green/red bar.
+Goal: the dashboard shows the two lines, today's kWh, the phases, and the green/red bar. The section is read-only. See **Observe only**.
 
-Touch: `api/dashboard.py`, dashboard HTML, `static/app.js`, `static/style.css`, tests that the route does not select from `breaker_sample`.
+Touch: `api/dashboard.py`, dashboard HTML, `static/app.js`, `static/style.css`, tests that the route does not select from `breaker_sample`. Do not add a control.
 
 Steps:
 
@@ -321,7 +332,7 @@ Steps:
 3. Live lines inside `#pm-breakers-live`. Board outside it, as in 6.8. Fragment key `pm_breakers` only.
 4. Flag kv `breakers_board`. Missing means on. `0` hides the section and skips the board fetch. The poller keeps writing.
 
-Verify: unittest with a temp db and a request double. A local page fixture shows green then red from a two-span JSON, and the empty state when the row is missing. A null `energy_today_kwh` renders `немає бази` and not the lifetime counter. The route test and a test of the fragment builder fail if SQL against `breaker_sample` is issued.
+Verify: unittest with a temp db and a request double. A local page fixture shows green then red from a two-span JSON, and the empty state when the row is missing. A null `energy_today_kwh` renders `немає бази` and not the lifetime counter. The route test and a test of the fragment builder fail if SQL against `breaker_sample` is issued. The section HTML has no `button`, no `form`, and no control that posts a command. `GET /api/breakers` is the only new route.
 
 Gate: local UI only, unless the operator also asks to deploy.
 
@@ -362,7 +373,7 @@ Done means:
 - The poll interval is 900 seconds unless env overrides it.
 - `GET /api/breakers` and the 10-second fragment do not read `breaker_sample`.
 - The bar is green for on and red for off, stops at now on today, and is empty before the first sample.
-- No code path sends a breaker command.
+- No code path sends a breaker command. The page has no control that could send one.
 - Production browser pass after deploy, or listed as not done.
 
 ## 10. Risks, questions, decisions
@@ -400,6 +411,8 @@ None blocking.
 | 2026-11-09T20:27:13Z | Critic round 3, same model, verdict APPROVE. 0 CRITICAL, 0 HIGH. Post-approve wording confirmed in the same pass. | A duplicate or late message stops before the day update. An older id is stored. Status `REVIEWED — READY FOR LOCAL WORK`. Phase 1 still needs an explicit yes. |
 | 2026-11-09T20:37:30Z | Phase 1 implemented. Operator said yes via Agree & Continue. | Tables and `apply_breaker_status` only. No page, no poller, no deploy. Company KB was not queried: this repo is not on it. Disk patterns used: `init_db`, `kyiv_date_str` / `kyiv_day_bounds`, temporary SQLite tests. `python -m unittest tests.test_breakers tests.test_schedule_board` passed, 44 tests. |
 | 2026-11-09T20:45:39Z | Phase 2 implemented. Operator said yes via Agree & Continue. | 15-minute status poll and midnight carry. No page, no commands, no deploy. Poller stays off until `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, and at least one device id are set in the server env. `tests.test_breakers`: 22 tests OK. |
+| 2026-11-09T20:50:10Z | The page only reads and shows. It does not control the breakers. | Operator asked to make this explicit before Phase 3. No buttons, forms, or command routes in this plan. No code change in this step. |
+| 2026-11-09T20:58:02Z | Phase 3 implemented. Operator said yes via Agree & Continue. | Read-only section and `GET /api/breakers`. No control, no deploy. `tests.test_breakers` and `tests.test_schedule_board`: 62 tests OK. |
 
 #### Self-review round 1 (2026-11-09T19:55:00Z)
 
@@ -438,7 +451,9 @@ Critic round 1 (`grok-4.7-xhigh-fast`, 2026-11-09) returned REVISE: 0 CRITICAL, 
 | 2026-11-09T20:27:13Z | Critic round 3 approved 0/0. Post-approve edits (duplicate stops before the day update; older id is stored) were confirmed in the same session, also 0/0. Status `REVIEWED — READY FOR LOCAL WORK`. Phase 1 still needs an explicit yes. |
 | 2026-11-09T20:37:30Z | Phase 1 done. Samples and the day row write through one lock. Live site was not restarted. Phase 2 waits for an explicit yes. |
 | 2026-11-09T20:45:39Z | Phase 2 done. The poll sits after the Deye tick in its own try, timeout 10 seconds. Live site was not restarted. Phase 3 waits for an explicit yes. |
+| 2026-11-09T20:50:10Z | Observe-only rule written into the goal, Phase 3, and the done check. No code. |
+| 2026-11-09T20:58:02Z | Phase 3 done. The section shows two lines and a green/red day bar. It has no button and no form. Live site was not restarted. Phase 4 waits for an explicit yes. |
 
 ## 12. Handoff for a new chat
 
-Read this file and `plan_breakers_PROGRESS.md`. Phases 1 and 2 are done. Do not start Phase 3 without an explicit yes. Do not call the company knowledge base. Do not send a breaker command. Do not print `TUYA_ACCESS_SECRET`. Tests stay on a temp database. Skin A stays the default. The poller is `poll_breakers` in `tuya_breakers.py`, called from `bg_loop` after the Deye tick. It does nothing until the server env has the access id, the secret, and at least one device id.
+Read this file and `plan_breakers_PROGRESS.md`. Phases 1–3 are done. Do not start Phase 4 without an explicit yes. The page only reads and shows. Do not add a breaker control. Do not call the company knowledge base. Do not send a breaker command. Do not print `TUYA_ACCESS_SECRET`. Tests stay on a temp database. Skin A stays the default. The section id is `breaker_details`. `GET /api/breakers` reads `breaker_day` only. The poller still does nothing until the server env has the access id, the secret, and at least one device id. The live site was not restarted in Phase 3.

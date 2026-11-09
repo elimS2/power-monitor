@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+from fastapi import HTTPException
 
 import database
 from config import UA_TZ
@@ -300,6 +301,147 @@ class _FakeTuya:
         if "/v1.0/token?" in url:
             return _JsonResponse(self._token)
         return _JsonResponse(self._status)
+
+
+class BreakerPageTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def test_bars_are_green_then_red_and_the_other_breaker_is_empty(self):
+        import power_monitor
+        from database import read_breaker_board
+
+        apply_breaker_status("svitlo", _ts(2026, 11, 9, 12, 0), _payload(True, 1000000, _blob(230, 1, 100)), "poll")
+        apply_breaker_status("svitlo", _ts(2026, 11, 9, 18, 0), _payload(False, 1000200, _blob(230, 0, 0)), "poll")
+        now = _ts(2026, 11, 9, 20, 0)
+        payload = read_breaker_board("2026-11-09", now)
+        html = power_monitor._breaker_bars_html(payload)
+        self.assertLess(html.index("brk-on"), html.index("brk-off"))
+        self.assertIn("ІТП: ще немає знімка", html)
+        self.assertNotIn("<button", html.lower())
+        self.assertNotIn("<form", html.lower())
+
+    def test_missing_base_does_not_print_the_lifetime_total(self):
+        import power_monitor
+        from database import read_breaker_board
+
+        apply_breaker_status("svitlo", _ts(2026, 11, 9, 12, 0), _payload(True, 1000000, _blob(234, 2.2, 465)), "poll")
+        now = _ts(2026, 11, 9, 12, 5)
+        payload = read_breaker_board("2026-11-09", now)
+        html = power_monitor._breaker_lines_html(payload, now)
+        self.assertIn("немає бази", html)
+        self.assertNotIn("10000", html)
+        self.assertNotIn("energy_kwh", json.dumps(payload))
+
+    def test_read_fills_today_end_without_writing(self):
+        from database import read_breaker_board
+
+        apply_breaker_status("svitlo", _ts(2026, 11, 9, 12, 0), _payload(True, 1000000, _blob(230, 1, 100)), "poll")
+        now = _ts(2026, 11, 9, 15, 0)
+        payload = read_breaker_board("2026-11-09", now)
+        self.assertEqual(payload["devices"]["svitlo"]["spans"][0]["end"], now)
+        with database._conn() as db:
+            raw = db.execute(
+                "SELECT span_json FROM breaker_day WHERE device='svitlo' AND day='2026-11-09'"
+            ).fetchone()["span_json"]
+        self.assertIsNone(json.loads(raw)[0]["end"])
+
+    def test_old_day_keeps_a_null_end(self):
+        from database import read_breaker_board
+
+        apply_breaker_status("svitlo", _ts(2026, 11, 8, 12, 0), _payload(True, 1000000, _blob(230, 1, 100)), "poll")
+        payload = read_breaker_board("2026-11-08", _ts(2026, 11, 9, 12, 0))
+        self.assertIsNone(payload["devices"]["svitlo"]["spans"][0]["end"])
+
+    def test_route_rejects_a_bad_key_and_a_bad_day(self):
+        import api.deps as deps
+        from api.dashboard import ep_breakers
+
+        old = deps.API_KEYS
+        deps.API_KEYS = {"k": "admin"}
+        try:
+            with self.assertRaises(HTTPException) as denied:
+                ep_breakers(key="nope", day="2026-11-09")
+            self.assertEqual(denied.exception.status_code, 403)
+            with self.assertRaises(HTTPException) as bad:
+                ep_breakers(key="k", day="2026-13-40")
+            self.assertEqual(bad.exception.status_code, 400)
+            response = ep_breakers(key="k", day="2026-11-09")
+        finally:
+            deps.API_KEYS = old
+        body = json.loads(response.body)
+        self.assertFalse(body["devices"]["svitlo"]["ready"])
+        self.assertEqual(body["date"], "2026-11-09")
+
+    def test_page_and_fragment_do_not_read_samples(self):
+        import inspect
+
+        import power_monitor
+
+        source = inspect.getsource(database.read_breaker_board)
+        self.assertIn("FROM breaker_day", source)
+        self.assertNotIn("breaker_sample", source)
+        seen: list[str] = []
+
+        def wrapped(day, now):
+            seen.append(day)
+            return {
+                "date": day,
+                "today": True,
+                "devices": {"svitlo": {"ready": False}, "itp": {"ready": False}},
+            }
+
+        original = power_monitor.read_breaker_board
+        power_monitor.read_breaker_board = wrapped
+        try:
+            self.assertIn("ще немає знімка", power_monitor._breaker_live_html())
+        finally:
+            power_monitor.read_breaker_board = original
+        self.assertTrue(seen)
+
+    def test_hidden_flag_removes_the_section(self):
+        import power_monitor
+
+        self.assertIn("Автомати підвалу", power_monitor._breaker_section_html())
+        self.assertNotIn("<button", power_monitor._breaker_section_html().lower())
+        self.assertNotIn("<form", power_monitor._breaker_section_html().lower())
+        database.kv_set("breakers_board", "0")
+        self.assertEqual(power_monitor._breaker_section_html(), "")
+        self.assertEqual(power_monitor._breaker_live_html(), "")
+
+    def test_explicit_role_gains_the_section(self):
+        from database import role_create, role_list
+
+        role_create("Лише графік", ["sched_details"])
+        database.init_db()
+        roles = {row["name"]: row["sections"] for row in role_list()}
+        self.assertIn("breaker_details", roles["Базове"])
+        self.assertIn("breaker_details", roles["Лише графік"])
+        self.assertIsNone(roles["Усі"])
+
+    def test_page_script_does_not_reuse_the_fact_lane(self):
+        script = Path("static/app.js").read_text(encoding="utf-8")
+        chunk = script[script.index("pm-breakers-board"):]
+        self.assertNotIn("factOnSegments", chunk)
+        self.assertNotIn("<button", chunk)
+        route = Path("api/dashboard.py").read_text(encoding="utf-8")
+        self.assertEqual(route.count("/api/breakers"), 1)
+        self.assertIn('@router.get("/api/breakers")', route)
+        poller = Path("tuya_breakers.py").read_text(encoding="utf-8")
+        self.assertNotIn(".post(", poller)
+        self.assertNotIn(".put(", poller)
+        page = Path("power_monitor.py").read_text(encoding="utf-8")
+        start = page.index("def _build_update_fragments")
+        fragment = page[start:page.index("\ndef ", start + 10)]
+        self.assertIn("pm_breakers", fragment)
+        self.assertNotIn("breaker_sample", fragment)
 
 
 class BreakerPollTests(unittest.TestCase):

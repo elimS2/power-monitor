@@ -34,6 +34,22 @@ async def ep_status(key: str = Query("")):
     }
 
 
+@router.get("/api/breakers")
+def ep_breakers(key: str = Query(""), day: str = Query("")):
+    """One stored breaker day. Read only. Does not scan breaker_sample."""
+    check_permission(key, "dashboard")
+    from database import read_breaker_board
+    from schedule_board import kyiv_date_str
+
+    if not day:
+        day = kyiv_date_str(time.time())
+    try:
+        payload = read_breaker_board(day, time.time())
+    except ValueError:
+        raise HTTPException(400, "bad date") from None
+    return JSONResponse(payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
 @router.get("/api/schedule-board")
 def ep_schedule_board(key: str = Query(""), date: str = Query("")):
     """One stored day. Does not scan inverter samples or outage events."""

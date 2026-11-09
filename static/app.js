@@ -917,6 +917,13 @@
           el = document.getElementById('pm-ver-content');
           if (el) el.innerHTML = d.pm_ver;
         }
+        if (d.pm_breakers !== undefined) {
+          el = document.getElementById('pm-breakers-live');
+          if (el && el.innerHTML !== d.pm_breakers) {
+            el.innerHTML = d.pm_breakers;
+            if (window.pmRefreshBreakers) window.pmRefreshBreakers();
+          }
+        }
         if (d.pm_deye) {
           el = document.getElementById('pm-deye');
           if (el) {
@@ -971,5 +978,85 @@
       if (keyExpiredShown) clearInterval(fetchInterval);
     }, 10000);
     setTimeout(doFetch, 500);
+  }
+
+  var breakerBoard = document.getElementById('pm-breakers-board');
+  if (breakerBoard && key) {
+    var breakerDate = kyivTodayBreaker();
+    var breakerTimer = 0;
+
+    function kyivTodayBreaker() {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(new Date());
+    }
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function shiftBreakerDay(iso, days) {
+      var parts = iso.split('-');
+      var shifted = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2] + days));
+      return shifted.getUTCFullYear() + '-' + pad2(shifted.getUTCMonth() + 1) + '-' + pad2(shifted.getUTCDate());
+    }
+    function paintBreakers(data) {
+      var startMs = (data.start || 0) * 1000;
+      var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
+      var html = '<div class="brk-nav"><a href="#brk-prev" id="brk-prev">‹</a> <span id="brk-date">' +
+        data.date + '</span> <a href="#brk-next" id="brk-next">›</a></div>';
+      ['svitlo', 'itp'].forEach(function(name) {
+        var label = name === 'svitlo' ? 'Світло' : 'ІТП';
+        var device = data.devices[name] || { ready: false };
+        var spans = device.ready ? (device.spans || []) : [];
+        if (!spans.length) {
+          html += '<div class="brk-empty">' + label + ': ще немає знімка</div>';
+          return;
+        }
+        var bars = '';
+        var changes = [];
+        spans.forEach(function(span) {
+          if (span.end == null) return;
+          var left = (span.start * 1000 - startMs) / spanMs * 100;
+          var width = (span.end * 1000 - span.start * 1000) / spanMs * 100;
+          left = Math.min(100, Math.max(0, left));
+          width = Math.min(100 - left, Math.max(0, width));
+          var kind = span.switch ? 'brk-on' : 'brk-off';
+          bars += '<i class="brk-bar ' + kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+          var when = new Intl.DateTimeFormat('uk-UA', {
+            timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+          }).format(new Date(span.start * 1000));
+          changes.push(when + ' ' + (span.switch ? 'увімкнено' : 'вимкнено'));
+        });
+        html += '<div class="brk-row"><span class="brk-name">' + label + '</span><div class="brk-lane">' + bars + '</div></div>';
+        html += '<div class="brk-changes">' + changes.join(', ') + '</div>';
+      });
+      breakerBoard.innerHTML = html;
+      var prev = document.getElementById('brk-prev');
+      var next = document.getElementById('brk-next');
+      if (prev) prev.addEventListener('click', function(e) {
+        e.preventDefault();
+        loadBreakers(shiftBreakerDay(breakerDate, -1));
+      });
+      if (next) next.addEventListener('click', function(e) {
+        e.preventDefault();
+        loadBreakers(shiftBreakerDay(breakerDate, 1));
+      });
+    }
+    function loadBreakers(date) {
+      breakerDate = date || kyivTodayBreaker();
+      var url = '/api/breakers?key=' + encodeURIComponent(key) + '&day=' + encodeURIComponent(breakerDate);
+      fetch(url, { cache: 'no-store' }).then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+        if (!data || data.date !== breakerDate) return;
+        paintBreakers(data);
+      }).catch(function() {});
+    }
+    window.pmRefreshBreakers = function() {
+      if (breakerDate === kyivTodayBreaker()) loadBreakers(breakerDate);
+    };
+    loadBreakers(breakerDate);
+    breakerTimer = setInterval(function() {
+      if (breakerDate === kyivTodayBreaker()) loadBreakers(breakerDate);
+    }, 60000);
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) window.pmRefreshBreakers();
+    });
+    void breakerTimer;
   }
 })();
