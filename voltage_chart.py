@@ -89,12 +89,12 @@ def build_voltage_chart(
         f' data-w="{_PLOT_W:.0f}" data-ploth="{_PLOT_H:.0f}" data-striph="{_STRIP_H:.0f}"'
     )
     plot: list[str] = [
-        f'<svg class="vchart-main" viewBox="0 0 {_PLOT_W:.0f} {_PLOT_H:.0f}"{meta} role="img" '
+        f'<svg class="vchart-main" viewBox="0 0 {_PLOT_W:.0f} {_PLOT_H:.0f}" preserveAspectRatio="none"{meta} role="img" '
         f'aria-label="Напруга за добу і графік черги {queue}">'
         f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_PLOT_H:.0f}" fill="#0c121c"/>'
     ]
     strip: list[str] = [
-        f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" aria-hidden="true">'
+        f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" preserveAspectRatio="none" aria-hidden="true">'
         f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_STRIP_H:.0f}" fill="#0c121c"/>'
     ]
     for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "off"):

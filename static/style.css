@@ -226,6 +226,7 @@ details[open] summary::before { content: '▼ '; }
 .vchart-day:hover, .vchart-help:hover, .vchart-full:hover { background: #334155; }
 .vchart-full { display: inline-flex; align-items: center; justify-content: center; }
 .vchart-full svg { width: 14px; height: 14px; display: block; }
+.vchart-full svg[hidden] { display: none; }
 .vchart-day:disabled { opacity: 0.35; cursor: default; }
 .vchart-day-label {
   min-width: 0; text-align: center; color: var(--muted); font-size: 0.75rem;
