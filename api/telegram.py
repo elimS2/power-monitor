@@ -13,6 +13,11 @@ router = APIRouter(tags=["telegram"])
 log = logging.getLogger("power_monitor")
 
 
+def incoming_text(msg: dict) -> str:
+    """Words of a message. A photo notice keeps them in the caption."""
+    return (msg.get("text") or msg.get("caption") or "").strip()
+
+
 @router.post("/api/test-telegram")
 async def ep_test_telegram(key: str = Query(""), to_channel: bool = Query(False)):
     """Send current status to Telegram. to_channel=1 → main channel, else test or main."""
@@ -33,7 +38,7 @@ async def tg_webhook(request: Request):
     data = await request.json()
 
     msg = data.get("message") or data.get("channel_post") or {}
-    text = (msg.get("text") or "").strip()
+    text = incoming_text(msg)
     chat = msg.get("chat") or {}
     chat_id = chat.get("id")
     if not chat_id:
@@ -48,13 +53,10 @@ async def tg_webhook(request: Request):
             (cid, text, json.dumps(data, ensure_ascii=False), time.time()),
         )
 
-    fwd = msg.get("forward_origin") or msg.get("forward_from_chat") or {}
-    fwd_text = text
-
-    boiler_parsed = parse_boiler_schedule(fwd_text)
+    boiler_parsed = parse_boiler_schedule(text)
     if boiler_parsed:
         for entry in boiler_parsed:
-            save_boiler_schedule(entry["date"], entry["intervals"], fwd_text)
+            save_boiler_schedule(entry["date"], entry["intervals"], text)
         log.info("Boiler schedule parsed: %d day(s) from chat %s", len(boiler_parsed), cid)
         return {"ok": True}
 

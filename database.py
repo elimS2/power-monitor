@@ -36,10 +36,15 @@ _UA_MONTHS = {
     "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
     "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
-_BOILER_LINE_RE = re.compile(
-    r"(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s*:\s*([\d:,\s\-–]+)",
+_BOILER_DATE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})\s+("
+    + "|".join(_UA_MONTHS)
+    + r")(?!\w)(?:\s+(\d{4})(?:\s*(?:року|р\.))?)?"
 )
-_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
+_BOILER_NUMERIC_DATE_RE = re.compile(r"(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4})(?!\d)")
+_BOILER_RANGE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})[:.](\d{2})\s*(?:[-–—]|до)\s*(\d{1,2})[:.](\d{2})(?!\d)"
+)
 
 
 def _conn() -> sqlite3.Connection:
@@ -1952,31 +1957,102 @@ def schedule_history_for_date(target_date: str, queue: str) -> list[dict]:
     return [{"grid": json.loads(r["grid_json"]), "ts": r["fetched_at"]} for r in rows]
 
 
-def parse_boiler_schedule(text: str) -> list[dict]:
-    """Parse Oselya Service boiler/generator schedule from message text.
+def _boiler_clock(hour: int, minute: int, allow_midnight: bool) -> str | None:
+    if minute < 0 or minute > 59:
+        return None
+    if hour == 24 and minute == 0 and allow_midnight:
+        return "24:00"
+    if 0 <= hour <= 23:
+        return f"{hour:02d}:{minute:02d}"
+    return None
+
+
+def _boiler_year(explicit: str | None, month: int, today: datetime) -> int:
+    if explicit:
+        return int(explicit)
+    if today.month == 12 and month == 1:
+        return today.year + 1
+    return today.year
+
+
+def _boiler_date(year: int, month: int, day: int) -> str | None:
+    if not 1 <= month <= 12 or not 1 <= day <= 31:
+        return None
+    try:
+        return datetime(year, month, day).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _boiler_anchors(text: str, today: datetime) -> list[tuple[int, int, str]]:
+    found: list[tuple[int, int, str]] = []
+    for match in _BOILER_DATE_RE.finditer(text):
+        month = _UA_MONTHS[match.group(2)]
+        year = _boiler_year(match.group(3), month, today)
+        date = _boiler_date(year, month, int(match.group(1)))
+        if date:
+            found.append((match.start(), match.end(), date))
+    for match in _BOILER_NUMERIC_DATE_RE.finditer(text):
+        date = _boiler_date(int(match.group(3)), int(match.group(2)), int(match.group(1)))
+        if date:
+            found.append((match.start(), match.end(), date))
+    found.sort()
+    anchors: list[tuple[int, int, str]] = []
+    for start, end, date in found:
+        if anchors and start < anchors[-1][1]:
+            continue
+        anchors.append((start, end, date))
+    return anchors
+
+
+def _boiler_intervals(chunk: str) -> list[list[str]]:
+    intervals: list[list[str]] = []
+    for match in _BOILER_RANGE_RE.finditer(chunk):
+        start = _boiler_clock(int(match.group(1)), int(match.group(2)), False)
+        end = _boiler_clock(int(match.group(3)), int(match.group(4)), True)
+        if start is None or end is None:
+            continue
+        start_min = int(start[:2]) * 60 + int(start[3:])
+        end_min = 24 * 60 if end == "24:00" else int(end[:2]) * 60 + int(end[3:])
+        if end_min <= start_min:
+            continue
+        pair = [start, end]
+        if pair not in intervals:
+            intervals.append(pair)
+    return intervals
+
+
+def parse_boiler_schedule(text: str, today: datetime | None = None) -> list[dict]:
+    """Parse an Oselya boiler/generator notice.
+
+    A day is a date, then the time ranges before the next date. The date may be
+    ``10 листопада:``, ``10 листопада 2026 року з`` or ``10.11.2026``. A range
+    may use a hyphen or the word ``до``, and a dot or a colon in the clock.
+    Without a year, December reads January as the next year.
 
     Returns [{"date": "2026-03-02", "intervals": [["16:00","20:00"], ...]}]
     """
-    lower = text.lower()
-    if "котельн" not in lower and "генератор" not in lower:
+    if today is None:
+        today = datetime.now(UA_TZ)
+    lowered = text.replace("\xa0", " ").replace("\u202f", " ").lower()
+    if "котельн" not in lowered and "генератор" not in lowered:
         log.info("Boiler parse: keywords 'котельн/генератор' not found in: %r", text[:200])
         return []
-    year = datetime.now(UA_TZ).year
-    results = []
-    for m in _BOILER_LINE_RE.finditer(lower):
-        day = int(m.group(1))
-        month_name = m.group(2)
-        month = _UA_MONTHS.get(month_name)
-        if not month:
-            log.info("Boiler parse: unknown month %r", month_name)
-            continue
-        ranges_str = m.group(3)
-        intervals = _TIME_RANGE_RE.findall(ranges_str)
+    anchors = _boiler_anchors(lowered, today)
+    order: list[str] = []
+    by_date: dict[str, list[list[str]]] = {}
+    for index, (_, end, date) in enumerate(anchors):
+        nxt = anchors[index + 1][0] if index + 1 < len(anchors) else len(lowered)
+        intervals = _boiler_intervals(lowered[end:nxt])
         if not intervals:
-            log.info("Boiler parse: no time ranges in %r", ranges_str)
             continue
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        results.append({"date": date_str, "intervals": [list(iv) for iv in intervals]})
+        if date not in by_date:
+            order.append(date)
+            by_date[date] = []
+        for pair in intervals:
+            if pair not in by_date[date]:
+                by_date[date].append(pair)
+    results = [{"date": date, "intervals": by_date[date]} for date in order]
     log.info("Boiler parse result: %d day(s) from text len=%d", len(results), len(text))
     return results
 
