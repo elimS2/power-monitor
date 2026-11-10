@@ -201,6 +201,8 @@ details[open] summary::before { content: '▼ '; }
 .brk-off { background: #f87171; }
 .brk-plan-ok { background: #166534; }
 .brk-plan-off { background: #4b5563; }
+.brk-fact-on { background: #22c55e; }
+.brk-fact-off { background: #f87171; }
 .brk-boiler { background: #fb923c; }
 .brk-key { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin: 0 0.2rem 0 0.45rem; vertical-align: middle; }
 .brk-lane .brk-now {

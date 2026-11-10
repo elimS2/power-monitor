@@ -1147,6 +1147,40 @@
       if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>');
       return breakerLane(title, bars, '');
     }
+    function breakerFactLane(data, startMs, spanMs) {
+      var title = 'Факт';
+      var start = data.start || 0;
+      var end = data.end || start;
+      var horizon = end;
+      if (data.today) horizon = Math.min(end, Date.now() / 1000);
+      else if (Date.now() / 1000 < start) horizon = start;
+      if (horizon <= start) return breakerLane(title, '', '<div class="brk-empty">Факт: ще немає</div>');
+      var downs = data.grid_down || [];
+      var cuts = [start, horizon];
+      downs.forEach(function(gap) {
+        if (!gap || gap.length !== 2 || gap[1] <= start || gap[0] >= horizon) return;
+        cuts.push(Math.max(start, gap[0]));
+        cuts.push(Math.min(horizon, gap[1]));
+      });
+      cuts.sort(function(a, b) { return a - b; });
+      var points = [];
+      cuts.forEach(function(t) {
+        if (!points.length || points[points.length - 1] !== t) points.push(t);
+      });
+      var bars = '';
+      for (var i = 0; i < points.length - 1; i++) {
+        var leftTs = points[i];
+        var rightTs = points[i + 1];
+        if (rightTs <= leftTs) continue;
+        var mid = (leftTs + rightTs) / 2;
+        var dark = downs.some(function(gap) { return gap[0] <= mid && mid < gap[1]; });
+        var left = (leftTs * 1000 - startMs) / spanMs * 100;
+        var width = ((rightTs - leftTs) * 1000) / spanMs * 100;
+        bars += '<i class="brk-bar ' + (dark ? 'brk-fact-off' : 'brk-fact-on') +
+          '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+      }
+      return breakerLane(title, bars, '');
+    }
     function paintBreakers(data) {
       var startMs = (data.start || 0) * 1000;
       var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
@@ -1158,6 +1192,8 @@
         html += '<span data-brk-hour="' + hour + '">' + (hour < 10 ? '0' : '') + hour + '</span>';
       }
       html += '</div><div class="brk-plot">';
+      html += breakerPlanLane(data);
+      html += breakerFactLane(data, startMs, spanMs);
       [['svitlo', 'Освітлення', 'Світло'], ['itp', 'Обігрів', 'ІТП']].forEach(function(item) {
         var device = data.devices[item[0]] || { ready: false };
         var spans = device.ready ? (device.spans || []) : [];
@@ -1179,9 +1215,8 @@
           '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
           '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
       });
-      html += breakerPlanLane(data);
       html += breakerBoilerLane(data);
-      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено <i class="brk-key brk-plan-ok"></i> графік: є світло <i class="brk-key brk-plan-off"></i> немає <i class="brk-key brk-boiler"></i> котельня</div></div>';
+      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено <i class="brk-key brk-plan-ok"></i> графік: є світло <i class="brk-key brk-plan-off"></i> немає <i class="brk-key brk-fact-on"></i> факт: було <i class="brk-key brk-fact-off"></i> факт: не було <i class="brk-key brk-boiler"></i> котельня</div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');

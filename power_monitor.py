@@ -1412,6 +1412,8 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         frac = min(100, max(0, (now - start) / span_len * 100))
         now_mark = f'<i class="brk-now" style="left:{frac:.2f}%"></i>'
     tracks = []
+    tracks.append(_plan_lane_html(payload, now_mark))
+    tracks.append(_fact_lane_html(payload, now_mark, start, end, now))
     for name, title, _subtitle, _kind in _BREAKER_FACES:
         short = "ІТП" if name == "itp" else "Світло"
         device = payload["devices"][name]
@@ -1443,7 +1445,6 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
             f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div>'
             f'{_timer_pins_html(payload, name)}</div></div>'
         )
-    tracks.append(_plan_lane_html(payload, now_mark))
     tracks.append(_boiler_lane_html(payload, now_mark))
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
@@ -1453,8 +1454,52 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         '<i class="brk-key brk-off"></i> вимкнено '
         '<i class="brk-key brk-plan-ok"></i> графік: є світло '
         '<i class="brk-key brk-plan-off"></i> немає '
+        '<i class="brk-key brk-fact-on"></i> факт: було '
+        '<i class="brk-key brk-fact-off"></i> факт: не було '
         '<i class="brk-key brk-boiler"></i> котельня</div></div>'
     )
+
+
+def _fact_horizon(payload: dict, start: float, end: float, now: float | None) -> float:
+    """Fact stops at this minute. A future day has none yet."""
+    if payload.get("today"):
+        if now is None:
+            now = time.time()
+        return min(end, max(start, now))
+    if now is not None and start > now:
+        return start
+    return end
+
+
+def _fact_lane_html(payload: dict, now_mark: str, start: float, end: float, now: float | None) -> str:
+    """Actual grid presence up to this minute. The future of the day stays empty."""
+    title = "Факт"
+    horizon = _fact_horizon(payload, start, end, now)
+    span = end - start or 1
+    if horizon <= start:
+        return _lane_html(title, [], now_mark, '<div class="brk-empty">Факт: ще немає</div>')
+    downs = []
+    for pair in payload.get("grid_down") or []:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            downs.append((float(pair[0]), float(pair[1])))
+    cuts = {start, horizon}
+    for down_start, down_end in downs:
+        if down_end <= start or down_start >= horizon:
+            continue
+        cuts.add(max(start, down_start))
+        cuts.add(min(horizon, down_end))
+    points = sorted(cuts)
+    bars = []
+    for left, right in zip(points, points[1:]):
+        if right <= left:
+            continue
+        mid = (left + right) / 2
+        dark = any(down_start <= mid < down_end for down_start, down_end in downs)
+        kind = "brk-fact-off" if dark else "brk-fact-on"
+        left_pct = (left - start) / span * 100
+        width = (right - left) / span * 100
+        bars.append(f'<i class="brk-bar {kind}" style="left:{left_pct:.2f}%;width:{width:.2f}%"></i>')
+    return _lane_html(title, bars, now_mark, "")
 
 
 def _timer_pins_html(payload: dict, device: str) -> str:

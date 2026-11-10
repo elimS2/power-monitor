@@ -490,6 +490,8 @@ class BreakerPageTests(unittest.TestCase):
             )
         html = power_monitor._breaker_bars_html(read_breaker_board("2026-11-09", now))
         self.assertIn("brk-batt", html)
+        self.assertIn("brk-fact-off", html)
+        self.assertIn("brk-fact-on", html)
         self.assertLess(html.index("brk-on"), html.index("brk-batt"))
         self.assertIn("ІТП: ще немає знімка", html)
         self.assertIn("Графік 5.1: немає знімка", html)
@@ -533,8 +535,12 @@ class BreakerPageTests(unittest.TestCase):
         marked = power_monitor._breaker_bars_html(payload)
         self.assertIn('brk-when-on" style="left:85.42%"', marked)
         self.assertIn("brk-when-off brk-pin-end", marked)
-        heat = marked.split("Обігрів", 1)[1].split("Графік", 1)[0]
+        heat = marked.split("Обігрів", 1)[1].split("Котельня", 1)[0]
         light = marked.split("Освітлення", 1)[1].split("Обігрів", 1)[0]
+        self.assertLess(marked.index("Графік 5.1"), marked.index(">Факт<"))
+        self.assertLess(marked.index(">Факт<"), marked.index(">Освітлення<"))
+        self.assertLess(marked.index(">Освітлення<"), marked.index(">Обігрів<"))
+        self.assertLess(marked.index(">Обігрів<"), marked.index(">Котельня<"))
         self.assertIn("brk-pin-end", heat)
         self.assertNotIn("brk-pin-end", light)
         self.assertNotIn("<form", html.lower())
@@ -649,6 +655,9 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("Котельня", chunk)
         self.assertIn("brk-boiler", chunk)
         self.assertIn("brk-pin-end", chunk)
+        self.assertIn("brk-fact-on", chunk)
+        self.assertLess(chunk.index("html += breakerPlanLane"), chunk.index("html += breakerFactLane"))
+        self.assertLess(chunk.index("html += breakerFactLane"), chunk.index("Освітлення"))
         self.assertNotIn("brk-plan-maybe", chunk)
         route = Path("api/dashboard.py").read_text(encoding="utf-8")
         self.assertEqual(route.count("/api/breakers"), 1)
