@@ -209,6 +209,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS breaker_since_charge (
                 device            TEXT PRIMARY KEY,
                 accumulated_kwh   REAL NOT NULL,
+                accumulated_sec   REAL,
                 last_energy_kwh   REAL,
                 last_ts           REAL
             );
@@ -416,6 +417,10 @@ def init_db():
             )
         """)
         _seed_tg_channels(db)
+        try:
+            db.execute("ALTER TABLE breaker_since_charge ADD COLUMN accumulated_sec REAL")
+        except sqlite3.OperationalError:
+            pass
     from tuya_breakers import backfill_breaker_since_charge
     backfill_breaker_since_charge()
 
@@ -2011,11 +2016,9 @@ def read_breaker_board(day: str, now: float) -> dict:
             """,
             (day,),
         ).fetchall()
-        charge_rows = db.execute(
-            "SELECT device, accumulated_kwh FROM breaker_since_charge"
-        ).fetchall()
+        from tuya_breakers import since_charge_display
+        charge = since_charge_display(db, now)
     found = {row["device"]: row for row in rows}
-    charge = {row["device"]: row["accumulated_kwh"] for row in charge_rows}
     devices = {}
     for name in ("svitlo", "itp"):
         row = found.get(name)
@@ -2032,7 +2035,8 @@ def read_breaker_board(day: str, now: float) -> dict:
             "ready": True,
             "switch": row["switch"],
             "energy_today_kwh": row["energy_today_kwh"],
-            "since_charge_kwh": charge.get(name),
+            "since_charge_kwh": None if name not in charge else charge[name][0],
+            "since_charge_sec": None if name not in charge else charge[name][1],
             "updated_at": row["updated_at"],
             "spans": spans,
             "phases": phases,

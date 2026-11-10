@@ -341,26 +341,38 @@ def _up_since(events: list[dict], ts: float) -> float | None:
     return started
 
 
-def _step_since_charge(acc: float, last_energy: float | None, last_ts: float | None, ts: float, energy: float, events: list[dict]) -> tuple[float, float, float]:
-    if last_energy is not None and last_ts is not None and ts > last_ts and energy >= last_energy:
-        span = ts - last_ts
+def _step_since_charge(
+    acc: float,
+    acc_sec: float,
+    last_energy: float | None,
+    last_ts: float | None,
+    ts: float,
+    energy: float,
+    events: list[dict],
+) -> tuple[float, float, float, float]:
+    if last_ts is not None and ts > last_ts:
         dark = _dark_seconds(events, last_ts, ts)
-        if span > 0 and dark > 0:
-            acc += (energy - last_energy) * (dark / span)
+        acc_sec += dark
+        if last_energy is not None and energy >= last_energy and dark > 0:
+            span = ts - last_ts
+            if span > 0:
+                acc += (energy - last_energy) * (dark / span)
     up_since = _up_since(events, ts)
     if up_since is not None and ts - up_since > GRID_UP_RESET_SEC:
         acc = 0.0
-    return acc, energy, ts
+        acc_sec = 0.0
+    return acc, acc_sec, energy, ts
 
 
 def update_since_charge(db, device: str, ts: float, energy_kwh: float) -> None:
     """Add breaker energy only while the grid is down. Zero it after 15 minutes of grid."""
     events = _grid_events(db)
     row = db.execute(
-        "SELECT accumulated_kwh, last_energy_kwh, last_ts FROM breaker_since_charge WHERE device=?",
+        """SELECT accumulated_kwh, accumulated_sec, last_energy_kwh, last_ts
+           FROM breaker_since_charge WHERE device=?""",
         (device,),
     ).fetchone()
-    if row is None or row["last_ts"] is None:
+    if row is None or row["last_ts"] is None or row["accumulated_sec"] is None:
         samples = [
             (float(item["ts"]), float(item["energy_kwh"]))
             for item in db.execute(
@@ -369,16 +381,17 @@ def update_since_charge(db, device: str, ts: float, energy_kwh: float) -> None:
                 (device,),
             )
         ]
-        acc, last_energy, last_ts = 0.0, None, None
+        acc, acc_sec, last_energy, last_ts = 0.0, 0.0, None, None
         for sample_ts, sample_energy in samples:
-            acc, last_energy, last_ts = _step_since_charge(
-                acc, last_energy, last_ts, sample_ts, sample_energy, events,
+            acc, acc_sec, last_energy, last_ts = _step_since_charge(
+                acc, acc_sec, last_energy, last_ts, sample_ts, sample_energy, events,
             )
     elif ts <= float(row["last_ts"]):
         return
     else:
-        acc, last_energy, last_ts = _step_since_charge(
+        acc, acc_sec, last_energy, last_ts = _step_since_charge(
             float(row["accumulated_kwh"]),
+            float(row["accumulated_sec"] or 0),
             None if row["last_energy_kwh"] is None else float(row["last_energy_kwh"]),
             float(row["last_ts"]),
             ts,
@@ -387,15 +400,38 @@ def update_since_charge(db, device: str, ts: float, energy_kwh: float) -> None:
         )
     db.execute(
         """
-        INSERT INTO breaker_since_charge(device, accumulated_kwh, last_energy_kwh, last_ts)
-        VALUES(?,?,?,?)
+        INSERT INTO breaker_since_charge(
+            device, accumulated_kwh, accumulated_sec, last_energy_kwh, last_ts
+        ) VALUES(?,?,?,?,?)
         ON CONFLICT(device) DO UPDATE SET
             accumulated_kwh=excluded.accumulated_kwh,
+            accumulated_sec=excluded.accumulated_sec,
             last_energy_kwh=excluded.last_energy_kwh,
             last_ts=excluded.last_ts
         """,
-        (device, acc, last_energy, last_ts),
+        (device, acc, acc_sec, last_energy, last_ts),
     )
+
+
+def since_charge_display(db, now: float) -> dict[str, tuple[float, float]]:
+    """kWh and dark seconds, including the open outage up to now. Zero after 15 minutes of grid."""
+    rows = db.execute(
+        "SELECT device, accumulated_kwh, accumulated_sec, last_ts FROM breaker_since_charge"
+    ).fetchall()
+    events = _grid_events(db)
+    up_since = _up_since(events, now)
+    reset = up_since is not None and now - up_since > GRID_UP_RESET_SEC
+    shown = {}
+    for row in rows:
+        if reset:
+            shown[row["device"]] = (0.0, 0.0)
+            continue
+        seconds = float(row["accumulated_sec"] or 0)
+        last_ts = row["last_ts"]
+        if last_ts is not None and now > float(last_ts):
+            seconds += _dark_seconds(events, float(last_ts), now)
+        shown[row["device"]] = (float(row["accumulated_kwh"] or 0), seconds)
+    return shown
 
 
 def backfill_breaker_since_charge() -> None:
@@ -403,11 +439,13 @@ def backfill_breaker_since_charge() -> None:
     with database._conn() as db:
         for device in ("svitlo", "itp"):
             exists = db.execute(
-                "SELECT 1 FROM breaker_since_charge WHERE device=?",
+                "SELECT accumulated_sec FROM breaker_since_charge WHERE device=?",
                 (device,),
             ).fetchone()
-            if exists:
+            if exists is not None and exists["accumulated_sec"] is not None:
                 continue
+            if exists is not None:
+                db.execute("DELETE FROM breaker_since_charge WHERE device=?", (device,))
             last = db.execute(
                 """SELECT ts, energy_kwh FROM breaker_sample
                    WHERE device=? AND energy_kwh IS NOT NULL ORDER BY ts DESC LIMIT 1""",

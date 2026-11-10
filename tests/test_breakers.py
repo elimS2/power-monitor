@@ -84,10 +84,10 @@ class BreakerStoreTests(unittest.TestCase):
     def _charge(self, device: str):
         with database._conn() as db:
             row = db.execute(
-                "SELECT accumulated_kwh FROM breaker_since_charge WHERE device=?",
+                "SELECT accumulated_kwh, accumulated_sec FROM breaker_since_charge WHERE device=?",
                 (device,),
             ).fetchone()
-        return None if row is None else row["accumulated_kwh"]
+        return None if row is None else row
 
     def _grid(self, event: str, ts: float) -> None:
         with database._conn() as db:
@@ -99,14 +99,17 @@ class BreakerStoreTests(unittest.TestCase):
         self._grid("down", start - 60)
         apply_breaker_status("svitlo", start, _payload(True, 100000, _blob(230, 1, 100)), "poll")
         apply_breaker_status("svitlo", later, _payload(True, 100100, _blob(230, 1, 100)), "poll")
-        self.assertAlmostEqual(self._charge("svitlo"), 1.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_kwh"], 1.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_sec"], 3600, delta=1)
         kept = _ts(2026, 11, 10, 3, 10)
         self._grid("up", later)
         apply_breaker_status("svitlo", kept, _payload(True, 100120, _blob(230, 1, 100)), "poll")
-        self.assertAlmostEqual(self._charge("svitlo"), 1.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_kwh"], 1.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_sec"], 3600, delta=1)
         reset = later + 16 * 60
         apply_breaker_status("svitlo", reset, _payload(True, 100140, _blob(230, 1, 100)), "poll")
-        self.assertAlmostEqual(self._charge("svitlo"), 0.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_kwh"], 0.0, places=2)
+        self.assertAlmostEqual(self._charge("svitlo")["accumulated_sec"], 0, delta=1)
 
     def test_grid_on_does_not_count_as_battery_draw(self):
         start = _ts(2026, 11, 10, 12, 0)
@@ -114,7 +117,23 @@ class BreakerStoreTests(unittest.TestCase):
         self._grid("up", start)
         apply_breaker_status("itp", start, _payload(True, 50000, _blob(230, 1, 100)), "poll")
         apply_breaker_status("itp", later, _payload(True, 50100, _blob(230, 1, 100)), "poll")
-        self.assertAlmostEqual(self._charge("itp"), 0.0, places=2)
+        self.assertAlmostEqual(self._charge("itp")["accumulated_kwh"], 0.0, places=2)
+        self.assertAlmostEqual(self._charge("itp")["accumulated_sec"], 0, delta=1)
+
+    def test_short_grid_return_keeps_both_dark_stretches(self):
+        start = _ts(2026, 11, 10, 4, 0)
+        self._grid("down", start)
+        apply_breaker_status("svitlo", start, _payload(True, 200000, _blob(230, 1, 100)), "poll")
+        half = start + 30 * 60
+        apply_breaker_status("svitlo", half, _payload(True, 200050, _blob(230, 1, 100)), "poll")
+        self._grid("up", half)
+        self._grid("down", half + 3 * 60)
+        end = half + 3 * 60 + 60 * 60
+        apply_breaker_status("svitlo", end, _payload(True, 200150, _blob(230, 1, 100)), "poll")
+        row = self._charge("svitlo")
+        self.assertAlmostEqual(row["accumulated_sec"], 90 * 60, delta=1)
+        self.assertGreater(row["accumulated_kwh"], 0.5)
+        self.assertLess(row["accumulated_kwh"], 1.5)
 
     def test_first_sample_opens_a_span_and_hides_lifetime_energy(self):
         apply_breaker_status(
@@ -615,7 +634,8 @@ class BreakerPollTests(unittest.TestCase):
             "devices": {
                 "svitlo": {
                     "ready": True, "switch": 0, "energy_today_kwh": 1.5,
-                    "since_charge_kwh": 0.4, "updated_at": _ts(2026, 11, 10, 3, 0),
+                    "since_charge_kwh": 0.4, "since_charge_sec": 90 * 60,
+                    "updated_at": _ts(2026, 11, 10, 3, 0),
                     "phases": {}, "spans": [],
                 },
                 "itp": {"ready": False},
@@ -623,6 +643,7 @@ class BreakerPollTests(unittest.TestCase):
         }, _ts(2026, 11, 10, 3, 0))
         self.assertIn("З акумуляторів", card)
         self.assertIn("0.40 кВт·год", card)
+        self.assertIn("1 год 30 хв", card)
         self.assertNotIn("без світла", card)
         self.assertNotIn("<button", card)
         self.assertIn("Активних таймерів немає", _breaker_timers_html(_ts(2026, 11, 10, 3, 0)))

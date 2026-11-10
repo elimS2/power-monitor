@@ -1266,6 +1266,16 @@ def _breaker_power(phases: dict | None) -> str:
     return f"{total:.0f} Вт"
 
 
+def _battery_span(seconds: float) -> str:
+    minutes_total = max(0, int(round(float(seconds) / 60)))
+    hours, minutes = divmod(minutes_total, 60)
+    if hours and minutes:
+        return f"{hours} год {minutes} хв"
+    if hours:
+        return f"{hours} год"
+    return f"{minutes} хв"
+
+
 def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
     cards = []
     for name, title, subtitle, kind in _BREAKER_FACES:
@@ -1281,7 +1291,11 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
         today = device.get("energy_today_kwh")
         energy = "немає бази" if today is None else f"{today:.2f} кВт·год"
         drawn = device.get("since_charge_kwh")
-        battery = "—" if drawn is None else f"{drawn:.2f} кВт·год"
+        drawn_sec = device.get("since_charge_sec")
+        if drawn is None:
+            battery = "—"
+        else:
+            battery = f"{drawn:.2f} кВт·год · {_battery_span(drawn_sec or 0)}"
         if now is None:
             now = time.time()
         age = _breaker_age(device.get("updated_at"), now)
@@ -1417,7 +1431,7 @@ def _breaker_section_html() -> str:
     return (
         '<details id="breaker_details" open data-ls-key="breaker_open" data-default-open="1">'
         '<summary><h2 style="display:inline">Автомати підвалу</h2></summary>'
-        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — скільки цей автомат узяв після останньої зарядки, поки не було мережі. Знову нуль, коли мережа є понад 15 хвилин.</p>'
+        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час після останньої зарядки, лише поки немає мережі. Коротке ввімкнення не збиває. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
         "</details>"
