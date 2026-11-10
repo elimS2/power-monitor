@@ -203,6 +203,12 @@ details[open] summary::before { content: '▼ '; }
 .brk-plan-off { background: #4b5563; }
 .brk-fact-on { background: #22c55e; }
 .brk-fact-off { background: #f87171; }
+.alert-day .brk-hours { margin-left: 0; }
+.alert-day .brk-lane { margin-top: 0.35rem; }
+.brk-alert-off { background: #22c55e; }
+.brk-alert-yellow { background: #facc15; }
+.brk-alert-red { background: #f87171; }
+.brk-nav a.is-disabled { opacity: 0.35; pointer-events: none; }
 .brk-boiler { background: #fb923c; }
 .brk-key { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin: 0 0.2rem 0 0.45rem; vertical-align: middle; }
 .brk-lane .brk-now {

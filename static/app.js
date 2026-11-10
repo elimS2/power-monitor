@@ -1255,4 +1255,95 @@
     });
     void breakerTimer;
   }
+
+  var alertDay = document.getElementById('pm-alert-day');
+  if (alertDay && key) {
+    function alertToday() {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(new Date());
+    }
+    function shiftAlertDay(iso, days) {
+      var parts = iso.split('-');
+      var shifted = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2] + days));
+      var month = shifted.getUTCMonth() + 1;
+      var dayNum = shifted.getUTCDate();
+      return shifted.getUTCFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (dayNum < 10 ? '0' : '') + dayNum;
+    }
+    var alertDate = alertToday();
+    function paintAlertDay(data) {
+      var startMs = (data.start || 0) * 1000;
+      var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
+      var pretty = (data.date || '').split('-');
+      var html = '<div class="brk-chart alert-day"><div class="brk-nav"><a href="#alert-prev" id="alert-prev">‹</a> <span id="alert-date">' +
+        pretty[2] + '.' + pretty[1] + '.' + pretty[0] + '</span> <a href="#alert-next" id="alert-next"' +
+        (data.today ? ' class="is-disabled"' : '') + '>›</a></div><div class="brk-hours">';
+      for (var hour = 0; hour < 24; hour++) {
+        html += '<span data-alert-hour="' + hour + '">' + (hour < 10 ? '0' : '') + hour + '</span>';
+      }
+      html += '</div><div class="brk-lane">';
+      (data.segments || []).forEach(function(segment) {
+        var left = (segment.start * 1000 - startMs) / spanMs * 100;
+        var width = ((segment.end - segment.start) * 1000) / spanMs * 100;
+        left = Math.min(100, Math.max(0, left));
+        width = Math.min(100 - left, Math.max(0, width));
+        if (width <= 0) return;
+        var kind = segment.level === 'yellow' ? 'brk-alert-yellow' : (segment.level === 'red' ? 'brk-alert-red' : 'brk-alert-off');
+        html += '<i class="brk-bar ' + kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+      });
+      html += '<i class="brk-now" id="alert-now"></i></div>';
+      html += '<div class="brk-legend"><i class="brk-key brk-alert-off"></i> без тривоги <i class="brk-key brk-alert-yellow"></i> жовта <i class="brk-key brk-alert-red"></i> червона</div></div>';
+      alertDay.innerHTML = html;
+      paintAlertNow(data);
+      var prev = document.getElementById('alert-prev');
+      var next = document.getElementById('alert-next');
+      if (prev) prev.addEventListener('click', function(e) {
+        e.preventDefault();
+        loadAlertDay(shiftAlertDay(alertDate, -1));
+      });
+      if (next && !data.today) next.addEventListener('click', function(e) {
+        e.preventDefault();
+        loadAlertDay(shiftAlertDay(alertDate, 1));
+      });
+    }
+    function paintAlertNow(data) {
+      var mark = document.getElementById('alert-now');
+      if (!mark) return;
+      if (!data || !data.today || !data.start || !data.end) {
+        mark.style.display = 'none';
+        return;
+      }
+      var frac = (Date.now() / 1000 - data.start) / (data.end - data.start);
+      if (frac < 0) frac = 0;
+      if (frac > 1) frac = 1;
+      mark.style.display = '';
+      mark.style.left = (frac * 100).toFixed(2) + '%';
+      var parts = {};
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Kyiv', hour: '2-digit', hourCycle: 'h23'
+      }).formatToParts(new Date()).forEach(function(p) { parts[p.type] = p.value; });
+      var hourNow = parseInt(parts.hour, 10);
+      if (hourNow === 24) hourNow = 0;
+      alertDay.querySelectorAll('[data-alert-hour]').forEach(function(el) {
+        el.classList.toggle('brk-hour-now', +el.getAttribute('data-alert-hour') === hourNow);
+      });
+    }
+    var alertPayload = null;
+    function loadAlertDay(date) {
+      alertDate = date || kyivTodayBreaker();
+      var url = '/api/alerts-day?key=' + encodeURIComponent(key) + '&day=' + encodeURIComponent(alertDate);
+      fetch(url, { cache: 'no-store' }).then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+        if (!data || data.date !== alertDate) return;
+        alertPayload = data;
+        paintAlertDay(data);
+      }).catch(function() {});
+    }
+    loadAlertDay(alertDate);
+    setInterval(function() {
+      if (alertPayload && alertPayload.today) paintAlertNow(alertPayload);
+    }, 10000);
+    setInterval(function() {
+      if (alertDate === alertToday()) loadAlertDay(alertDate);
+    }, 60000);
+  }
 })();

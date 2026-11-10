@@ -1,14 +1,18 @@
 """Brovary raion 79: yellow and red come from the public alert feed."""
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
+import database
 from dtek import (
     alert_banner_html,
     alert_event_is_open,
     alert_event_view,
     brovary_alert_level,
 )
+from schedule_board import kyiv_day_bounds
 
 
 class BrovaryAlertLevelTests(unittest.TestCase):
@@ -54,6 +58,58 @@ class BrovaryAlertLevelTests(unittest.TestCase):
         self.assertFalse(alert_event_is_open("alert_on", "yellow"))
         self.assertFalse(alert_event_is_open("alert_yellow", "red"))
         self.assertTrue(alert_event_is_open("alert_off", None))
+
+
+class AlertDayTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        self.start, self.end = kyiv_day_bounds("2026-11-10")
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def _at(self, hour, minute=0):
+        return self.start + hour * 3600 + minute * 60
+
+    def _add(self, event, ts):
+        with database._conn() as db:
+            db.execute("INSERT INTO alert_events(event, ts) VALUES(?,?)", (event, ts))
+
+    def test_day_line_paints_clear_yellow_and_red_until_now(self):
+        self._add("alert_yellow", self._at(10))
+        self._add("alert_red", self._at(12))
+        self._add("alert_on", self._at(12, 30))
+        self._add("alert_off", self._at(13))
+        payload = database.read_alert_day("2026-11-10", self._at(15))
+        self.assertTrue(payload["today"])
+        levels = [segment["level"] for segment in payload["segments"]]
+        self.assertEqual(levels, ["off", "yellow", "red", "off"])
+        self.assertEqual(payload["segments"][-1]["end"], self._at(15))
+        self.assertLess(payload["segments"][-1]["end"], self.end)
+
+    def test_prior_alert_colors_the_start_of_the_day(self):
+        self._add("alert_yellow", self.start - 3600)
+        payload = database.read_alert_day("2026-11-10", self._at(2))
+        self.assertEqual(payload["segments"][0]["level"], "yellow")
+        self.assertEqual(payload["segments"][0]["start"], self.start)
+
+    def test_a_future_day_has_no_line_yet(self):
+        payload = database.read_alert_day("2026-11-11", self._at(15))
+        self.assertFalse(payload["today"])
+        self.assertEqual(payload["segments"], [])
+
+    def test_alert_table_starts_closed_under_the_day_line(self):
+        page = Path("power_monitor.py").read_text(encoding="utf-8")
+        self.assertIn('id="pm-alert-day"', page)
+        self.assertIn('id="alert_ev_table" data-ls-key="alert_ev_table_open" data-default-open="0"', page)
+        self.assertNotIn('id="alert_ev_table" open', page)
+        script = Path("static/app.js").read_text(encoding="utf-8")
+        self.assertIn("brk-alert-yellow", script)
+        self.assertIn("/api/alerts-day", script)
 
 
 if __name__ == "__main__":

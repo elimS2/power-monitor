@@ -1200,6 +1200,61 @@ def recent_alert_events(n: int = 30) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _alert_paint(event: str) -> str:
+    if event == "alert_yellow":
+        return "yellow"
+    if event in ("alert_red", "alert_on"):
+        return "red"
+    return "off"
+
+
+def read_alert_day(day: str, now: float) -> dict:
+    """One Kyiv day of Brovary alerts. The line stops at this minute."""
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("bad date") from exc
+    start, end = kyiv_day_bounds(day)
+    today = day == kyiv_date_str(now)
+    horizon = min(end, now) if today else end
+    if start > now:
+        horizon = start
+    with _conn() as db:
+        prior = db.execute(
+            """SELECT event FROM alert_events WHERE ts<=? ORDER BY ts DESC, id DESC LIMIT 1""",
+            (start,),
+        ).fetchone()
+        rows = db.execute(
+            """SELECT event, ts FROM alert_events
+               WHERE ts>? AND ts<? ORDER BY ts, id""",
+            (start, horizon),
+        ).fetchall()
+    level = _alert_paint(prior["event"]) if prior else "off"
+    segments: list[dict] = []
+    cursor = start
+    for row in rows:
+        ts = float(row["ts"])
+        if ts > cursor:
+            segments.append({"start": cursor, "end": ts, "level": level})
+            cursor = ts
+        level = _alert_paint(row["event"])
+    if horizon > cursor:
+        segments.append({"start": cursor, "end": horizon, "level": level})
+    merged: list[dict] = []
+    for segment in segments:
+        if merged and merged[-1]["level"] == segment["level"] and merged[-1]["end"] == segment["start"]:
+            merged[-1]["end"] = segment["end"]
+        else:
+            merged.append(segment)
+    return {
+        "date": day,
+        "today": today,
+        "start": start,
+        "end": end,
+        "segments": merged,
+    }
+
+
 def save_deye_log(
     load_power_w: float | None = None,
     load_l1_w: float | None = None,
