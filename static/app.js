@@ -1079,6 +1079,29 @@
       if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
       return hour * 60 + minute;
     }
+    function breakerTimerPins(data, device) {
+      var day = String(data.date || '').replace(/-/g, '');
+      var next = shiftBreakerDay(data.date || kyivTodayBreaker(), 1).replace(/-/g, '');
+      var pins = '';
+      (data.timers || []).forEach(function(row) {
+        if (row.device !== device || String(row.loops || '').indexOf('1') >= 0) return;
+        var clock = String(row.fire_time || '');
+        if (clock.length !== 5) return;
+        var tone = row.switch === 0 ? 'off' : 'on';
+        var edge = '';
+        var style = '';
+        if (row.fire_date === next && clock === '00:00') edge = ' brk-pin-end';
+        else if (row.fire_date === day && clock === '00:00') edge = ' brk-pin-start';
+        else if (row.fire_date === day) {
+          var hour = parseInt(clock.slice(0, 2), 10);
+          var minute = parseInt(clock.slice(3), 10);
+          var frac = Math.min(100, Math.max(0, (hour * 3600 + minute * 60) / 86400 * 100));
+          style = ' style="left:' + frac.toFixed(2) + '%"';
+        } else return;
+        pins += '<i class="brk-when-pin brk-when-' + tone + edge + '"' + style + '></i>';
+      });
+      return pins;
+    }
     function breakerLane(title, bars, empty) {
       return '<div class="brk-track"><span class="brk-track-name">' + title + '</span>' +
         '<div class="brk-lane-wrap">' + (empty || '') + '<div class="brk-lane">' + bars +
@@ -1154,7 +1177,7 @@
         });
         html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
           '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
-          '<i class="brk-now"></i></div></div></div>';
+          '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
       });
       html += breakerPlanLane(data);
       html += breakerBoilerLane(data);

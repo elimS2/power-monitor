@@ -526,6 +526,17 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("brk-plan-ok", html)
         self.assertIn("Графік 5.1", html)
         self.assertIn('class="brk-bar brk-boiler" style="left:70.83%;width:29.17%"', html)
+        payload["timers"] = [
+            {"device": "svitlo", "fire_date": "20261109", "fire_time": "20:30", "switch": 1, "loops": "0000000"},
+            {"device": "itp", "fire_date": "20261110", "fire_time": "00:00", "switch": 0, "loops": "0000000"},
+        ]
+        marked = power_monitor._breaker_bars_html(payload)
+        self.assertIn('brk-when-on" style="left:85.42%"', marked)
+        self.assertIn("brk-when-off brk-pin-end", marked)
+        heat = marked.split("Обігрів", 1)[1].split("Графік", 1)[0]
+        light = marked.split("Освітлення", 1)[1].split("Обігрів", 1)[0]
+        self.assertIn("brk-pin-end", heat)
+        self.assertNotIn("brk-pin-end", light)
         self.assertNotIn("<form", html.lower())
 
     def test_missing_base_does_not_print_the_lifetime_total(self):
@@ -637,6 +648,7 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("Графік ", chunk)
         self.assertIn("Котельня", chunk)
         self.assertIn("brk-boiler", chunk)
+        self.assertIn("brk-pin-end", chunk)
         self.assertNotIn("brk-plan-maybe", chunk)
         route = Path("api/dashboard.py").read_text(encoding="utf-8")
         self.assertEqual(route.count("/api/breakers"), 1)
@@ -713,7 +725,8 @@ class BreakerPollTests(unittest.TestCase):
         self.assertIn("Освітлення", html)
         self.assertIn("10.11", html)
         self.assertIn("разовий", html)
-        self.assertIn("brk-when-pin", html)
+        self.assertNotIn("brk-when-pin", html)
+        self.assertNotIn("brk-when-lane", html)
         self.assertNotIn("<button", html)
         from power_monitor import _breaker_lines_html
         card = _breaker_lines_html({

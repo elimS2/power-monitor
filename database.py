@@ -2127,7 +2127,7 @@ def read_breaker_board(day: str, now: float) -> dict:
             """,
             (day,),
         ).fetchall()
-        from tuya_breakers import since_charge_display
+        from tuya_breakers import active_breaker_timers, since_charge_display
         charge = since_charge_display(db, now)
         sched = db.execute(
             """SELECT grid_json FROM schedule_history
@@ -2166,6 +2166,16 @@ def read_breaker_board(day: str, now: float) -> dict:
         parsed = json.loads(sched["grid_json"])
         if isinstance(parsed, list) and len(parsed) == 48:
             schedule = parsed
+    timers = [
+        {
+            "device": row["device"],
+            "fire_date": row.get("fire_date") or "",
+            "fire_time": row.get("fire_time") or "",
+            "switch": row.get("switch"),
+            "loops": row.get("loops") or "",
+        }
+        for row in active_breaker_timers(now)
+    ]
     boiler = None
     if boiler_row and boiler_row["intervals"]:
         parsed_boiler = json.loads(boiler_row["intervals"])
@@ -2182,5 +2192,6 @@ def read_breaker_board(day: str, now: float) -> dict:
         "schedule_queue": DTEK_QUEUE,
         "schedule": schedule,
         "boiler": boiler,
+        "timers": timers,
         "devices": devices,
     }

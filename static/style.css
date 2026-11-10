@@ -190,7 +190,11 @@ details[open] summary::before { content: '▼ '; }
 .brk-plot { position: relative; display: grid; gap: 0.35rem; }
 .brk-track { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: 0.35rem; }
 .brk-track-name { color: var(--muted); font-size: 0.72rem; }
+.brk-lane-wrap { position: relative; }
 .brk-lane { position: relative; height: 16px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+.brk-lane-wrap > .brk-when-pin { z-index: 4; }
+.brk-lane-wrap > .brk-pin-end { left: auto; right: 0; margin-left: 0; }
+.brk-lane-wrap > .brk-pin-start { left: 0; margin-left: 0; }
 .brk-bar { position: absolute; top: 0; height: 100%; min-width: 1px; }
 .brk-on { background: #22c55e; }
 .brk-batt { background: #facc15; }

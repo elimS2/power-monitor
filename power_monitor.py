@@ -1329,23 +1329,14 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
 
 
 def _breaker_timers_html(now: float | None) -> str:
-    """Active cloud timers as cards and a day scale. Not a control."""
-    from schedule_board import kyiv_date_str, kyiv_day_bounds
-
+    """Active cloud timers as cards. The marks sit on the breaker lanes."""
     if now is None:
         now = time.time()
     rows = active_breaker_timers(now)
     if not rows:
         return '<p class="brk-timers-empty">Активних таймерів немає.</p>'
-    day = kyiv_date_str(now)
-    start, end = kyiv_day_bounds(day)
-    span = end - start or 1
-    today_compact = day.replace("-", "")
-    now_frac = min(100, max(0, (now - start) / span * 100))
-    hours = "".join(f'<span>{hour:02d}</span>' for hour in range(24))
     names = {"svitlo": "Освітлення", "itp": "Обігрів"}
     cards = []
-    marks = []
     for row in rows:
         off = row.get("switch") == 0
         tone = "off" if off else "on"
@@ -1363,20 +1354,7 @@ def _breaker_timers_html(now: float | None) -> str:
             f'<div class="brk-when-meta">{label_date} · {kind}</div>'
             "</article>"
         )
-        if fire_date == today_compact and len(clock) == 5 and clock[2] == ":":
-            hh, mm = int(clock[:2]), int(clock[3:])
-            frac = min(100, max(0, (hh * 3600 + mm * 60) / span * 100))
-            marks.append(
-                f'<i class="brk-when-pin brk-when-{tone}" style="left:{frac:.2f}%"></i>'
-            )
-    return (
-        '<div class="brk-when-wrap">'
-        f'<div class="brk-when-cards">{"".join(cards)}</div>'
-        '<div class="brk-when-scale">'
-        f'<div class="brk-hours">{hours}</div>'
-        f'<div class="brk-when-lane">{"".join(marks)}<i class="brk-now" style="left:{now_frac:.2f}%"></i></div>'
-        "</div></div>"
-    )
+    return f'<div class="brk-when-cards">{"".join(cards)}</div>'
 
 
 def _idle_tail(spans: list, updated) -> list:
@@ -1462,7 +1440,8 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
                     bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
         tracks.append(
             f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
+            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div>'
+            f'{_timer_pins_html(payload, name)}</div></div>'
         )
     tracks.append(_plan_lane_html(payload, now_mark))
     tracks.append(_boiler_lane_html(payload, now_mark))
@@ -1476,6 +1455,36 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         '<i class="brk-key brk-plan-off"></i> немає '
         '<i class="brk-key brk-boiler"></i> котельня</div></div>'
     )
+
+
+def _timer_pins_html(payload: dict, device: str) -> str:
+    """Future on/off marks for one breaker. Midnight of the next day sits on this day's edge."""
+    day = str(payload.get("date") or "")
+    if len(day) != 10:
+        return ""
+    day_compact = day.replace("-", "")
+    next_compact = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
+    pins = []
+    for row in payload.get("timers") or []:
+        if row.get("device") != device or "1" in str(row.get("loops") or ""):
+            continue
+        fire_date = str(row.get("fire_date") or "")
+        clock = str(row.get("fire_time") or "")
+        if len(clock) != 5 or clock[2] != ":":
+            continue
+        tone = "off" if row.get("switch") == 0 else "on"
+        if fire_date == next_compact and clock == "00:00":
+            pins.append(f'<i class="brk-when-pin brk-when-{tone} brk-pin-end"></i>')
+            continue
+        if fire_date != day_compact:
+            continue
+        if clock == "00:00":
+            pins.append(f'<i class="brk-when-pin brk-when-{tone} brk-pin-start"></i>')
+            continue
+        hour, minute = int(clock[:2]), int(clock[3:])
+        frac = min(100, max(0, (hour * 3600 + minute * 60) / 86400 * 100))
+        pins.append(f'<i class="brk-when-pin brk-when-{tone}" style="left:{frac:.2f}%"></i>')
+    return "".join(pins)
 
 
 def _clock_minutes(text: str) -> int | None:
