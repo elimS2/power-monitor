@@ -193,6 +193,7 @@ details[open] summary::before { content: '▼ '; }
 .brk-lane { position: relative; height: 16px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
 .brk-bar { position: absolute; top: 0; height: 100%; min-width: 1px; }
 .brk-on { background: #22c55e; }
+.brk-batt { background: #facc15; }
 .brk-off { background: #f87171; }
 .brk-key { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin: 0 0.2rem 0 0.45rem; vertical-align: middle; }
 .brk-lane .brk-now {

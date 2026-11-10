@@ -477,6 +477,20 @@ class BreakerPageTests(unittest.TestCase):
         payload = read_breaker_board("2026-11-09", now)
         html = power_monitor._breaker_bars_html(payload)
         self.assertLess(html.index("brk-on"), html.index("brk-off"))
+        self.assertIn("увімкнено, було світло", html)
+        self.assertIn("увімкнено, не було світла", html)
+        with database._conn() as db:
+            db.execute(
+                "INSERT INTO power_events(event, ts) VALUES('down', ?)",
+                (_ts(2026, 11, 9, 14, 0),),
+            )
+            db.execute(
+                "INSERT INTO power_events(event, ts) VALUES('up', ?)",
+                (_ts(2026, 11, 9, 16, 0),),
+            )
+        html = power_monitor._breaker_bars_html(read_breaker_board("2026-11-09", now))
+        self.assertIn("brk-batt", html)
+        self.assertLess(html.index("brk-on"), html.index("brk-batt"))
         self.assertIn("ІТП: ще немає знімка", html)
         self.assertNotIn("<button", html.lower())
         self.assertNotIn("<form", html.lower())

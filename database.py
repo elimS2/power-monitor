@@ -2006,6 +2006,36 @@ def list_breaker_timers() -> list:
     return [dict(row) for row in rows]
 
 
+def grid_down_intervals(start: float, end: float) -> list[tuple[float, float]]:
+    """City-power gaps inside [start, end]. Events outside the window only set the starting state."""
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT event, ts FROM power_events
+               WHERE event IN ('up', 'down') AND ts <= ?
+               ORDER BY ts, id""",
+            (end,),
+        ).fetchall()
+    state = None
+    for row in rows:
+        if float(row["ts"]) <= start:
+            state = row["event"]
+    dark_from = start if state == "down" else None
+    out = []
+    for row in rows:
+        ts = float(row["ts"])
+        if ts <= start or ts > end:
+            continue
+        if row["event"] == "down":
+            if dark_from is None:
+                dark_from = ts
+        elif dark_from is not None:
+            out.append((dark_from, ts))
+            dark_from = None
+    if dark_from is not None:
+        out.append((dark_from, end))
+    return out
+
+
 def read_breaker_board(day: str, now: float) -> dict:
     """One stored day for both breakers. Reads breaker_day only and does not write."""
     try:

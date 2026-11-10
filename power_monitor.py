@@ -90,6 +90,7 @@ from database import (
     has_grid_voltage_now,
     init_db,
     kv_get,
+    grid_down_intervals,
     kv_set,
     list_breaker_timers,
     tg_channel_label,
@@ -1396,6 +1397,27 @@ def _idle_tail(spans: list, updated) -> list:
     return copied
 
 
+def _on_span_pieces(start: float, end: float, downs: list[tuple[float, float]]) -> list[tuple[str, float, float]]:
+    """Split an on-span into green (grid present) and yellow (grid absent)."""
+    if end <= start:
+        return []
+    cuts = {start, end}
+    for down_start, down_end in downs:
+        if down_end <= start or down_start >= end:
+            continue
+        cuts.add(max(start, down_start))
+        cuts.add(min(end, down_end))
+    points = sorted(cuts)
+    pieces = []
+    for left, right in zip(points, points[1:]):
+        if right <= left:
+            continue
+        mid = (left + right) / 2
+        on_battery = any(down_start <= mid < down_end for down_start, down_end in downs)
+        pieces.append(("brk-batt" if on_battery else "brk-on", left, right))
+    return pieces
+
+
 def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     """Hour scale. Green is on, red is off. A missing end is not extended."""
     from schedule_board import kyiv_day_bounds
@@ -1403,6 +1425,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     start, end = kyiv_day_bounds(payload["date"])
     span_len = end - start or 1
     hours = "".join(f'<span data-brk-hour="{hour}">{hour:02d}</span>' for hour in range(24))
+    grid_down = grid_down_intervals(start, end if not payload.get("today") else (now if now is not None else end))
     now_mark = ""
     if payload.get("today"):
         if now is None:
@@ -1424,12 +1447,18 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
             for span in spans:
                 if not isinstance(span, dict) or span.get("end") is None:
                     continue
-                left = (float(span["start"]) - start) / span_len * 100
-                width = (float(span["end"]) - float(span["start"])) / span_len * 100
-                left = min(100, max(0, left))
-                width = min(100 - left, max(0, width))
-                kind = "brk-on" if span.get("switch") else "brk-off"
-                bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
+                if span.get("switch"):
+                    pieces = _on_span_pieces(float(span["start"]), float(span["end"]), grid_down)
+                else:
+                    pieces = [("brk-off", float(span["start"]), float(span["end"]))]
+                for kind, piece_start, piece_end in pieces:
+                    left = (piece_start - start) / span_len * 100
+                    width = (piece_end - piece_start) / span_len * 100
+                    left = min(100, max(0, left))
+                    width = min(100 - left, max(0, width))
+                    if width <= 0:
+                        continue
+                    bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
         tracks.append(
             f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
             f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
@@ -1437,7 +1466,8 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
         f'<div class="brk-plot">{"".join(tracks)}</div>'
-        '<div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено '
+        '<div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло '
+        '<i class="brk-key brk-batt"></i> увімкнено, не було світла '
         '<i class="brk-key brk-off"></i> вимкнено</div></div>'
     )
 
