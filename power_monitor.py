@@ -67,6 +67,7 @@ from tuya_breakers import (
     breaker_slot_start,
     carry_configured_breakers,
     active_breaker_timers,
+    breaker_shown_on,
     breaker_timer_followup_due,
     poll_breakers_http,
     poll_is_enabled,
@@ -1287,7 +1288,8 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
                 f'<div class="brk-state">ще немає знімка</div></article>'
             )
             continue
-        on = bool(device.get("switch"))
+        phases = device.get("phases")
+        on = breaker_shown_on(device.get("switch"), phases)
         today = device.get("energy_today_kwh")
         energy = "немає бази" if today is None else f"{today:.2f} кВт·год"
         drawn = device.get("since_charge_kwh")
@@ -1299,7 +1301,6 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
         if now is None:
             now = time.time()
         age = _breaker_age(device.get("updated_at"), now)
-        phases = device.get("phases")
         fault = ""
         if isinstance(phases, dict) and phases.get("fault"):
             fault = f'<div class="brk-fault">несправність {int(phases["fault"])}</div>'
@@ -1371,6 +1372,25 @@ def _breaker_timers_html(now: float | None) -> str:
     )
 
 
+def _idle_tail(spans: list, updated) -> list:
+    """Zero watts ends the green span at the sample that measured it."""
+    copied = [dict(span) for span in spans if isinstance(span, dict)]
+    if not copied or updated is None:
+        return copied
+    last = copied[-1]
+    end = last.get("end")
+    if not last.get("switch") or end is None:
+        return copied
+    start = float(last["start"])
+    updated = float(updated)
+    end = float(end)
+    if start < updated < end:
+        last["end"] = updated
+        copied[-1] = last
+        copied.append({"start": updated, "end": end, "switch": 0})
+    return copied
+
+
 def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     """Hour scale. Green is on, red is off. A missing end is not extended."""
     from schedule_board import kyiv_day_bounds
@@ -1389,6 +1409,8 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         short = "ІТП" if name == "itp" else "Світло"
         device = payload["devices"][name]
         spans = device.get("spans") if device.get("ready") else None
+        if spans and not breaker_shown_on(device.get("switch"), device.get("phases")):
+            spans = _idle_tail(spans, device.get("updated_at"))
         bars = []
         empty = ""
         if not spans:
@@ -1431,7 +1453,7 @@ def _breaker_section_html() -> str:
     return (
         '<details id="breaker_details" open data-ls-key="breaker_open" data-default-open="1">'
         '<summary><h2 style="display:inline">Автомати підвалу</h2></summary>'
-        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час, поки цей автомат увімкнений і немає мережі. Коротке ввімкнення мережі не збиває. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
+        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час, поки цей автомат увімкнений і немає мережі. Вимкнено і тоді, коли потужність рівно 0, навіть якщо біт хмари лишився увімкненим. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
         "</details>"

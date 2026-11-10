@@ -69,11 +69,12 @@ def apply_breaker_status(
             _insert_sample(
                 db, device, ts, source, switch, energy_raw, phases, fault,
             )
+            loaded = 1 if breaker_shown_on(switch, phases) else 0
             _apply_sample_to_day(
-                db, device, day, ts, switch, energy_raw, phases, fault,
+                db, device, day, ts, loaded, energy_raw, phases, fault,
             )
             if energy_raw is not None:
-                update_since_charge(db, device, ts, energy_raw / 100, switch)
+                update_since_charge(db, device, ts, energy_raw / 100, loaded)
 
 
 def decode_phase(value: Any) -> tuple[float, float, int] | None:
@@ -341,6 +342,30 @@ def _up_since(events: list[dict], ts: float) -> float | None:
     return started
 
 
+def _phase_watts(point) -> float | None:
+    if isinstance(point, tuple) and len(point) >= 3 and point[2] is not None:
+        return float(point[2])
+    if isinstance(point, dict) and point.get("p") is not None:
+        return float(point["p"])
+    return None
+
+
+def breaker_shown_on(switch, phases) -> bool:
+    """Off when the bit is off, or when every reported phase is exactly 0 W."""
+    if not switch:
+        return False
+    if not isinstance(phases, dict):
+        return True
+    watts = []
+    for name in ("a", "b", "c"):
+        value = _phase_watts(phases.get(name))
+        if value is not None:
+            watts.append(value)
+    if not watts:
+        return True
+    return sum(watts) != 0
+
+
 def _step_since_charge(
     acc: float,
     acc_sec: float,
@@ -383,9 +408,17 @@ def update_since_charge(db, device: str, ts: float, energy_kwh: float, switch: i
     )
     if needs_replay:
         samples = [
-            (float(item["ts"]), float(item["energy_kwh"]), int(item["switch"]))
+            (
+                float(item["ts"]),
+                float(item["energy_kwh"]),
+                1 if breaker_shown_on(item["switch"], {
+                    "a": {"p": item["p_a"]},
+                    "b": {"p": item["p_b"]},
+                    "c": {"p": item["p_c"]},
+                }) else 0,
+            )
             for item in db.execute(
-                """SELECT ts, energy_kwh, switch FROM breaker_sample
+                """SELECT ts, energy_kwh, switch, p_a, p_b, p_c FROM breaker_sample
                    WHERE device=? AND energy_kwh IS NOT NULL ORDER BY ts""",
                 (device,),
             )
@@ -456,6 +489,18 @@ def backfill_breaker_since_charge() -> None:
                 "SELECT accumulated_sec, last_switch FROM breaker_since_charge WHERE device=?",
                 (device,),
             ).fetchone()
+            rule = db.execute(
+                "SELECT val FROM kv WHERE key=?",
+                ("breaker_since_charge_rule",),
+            ).fetchone()
+            if rule is None or rule["val"] != "exact-zero":
+                db.execute("DELETE FROM breaker_since_charge")
+                db.execute(
+                    """INSERT INTO kv(key, val) VALUES(?, ?)
+                       ON CONFLICT(key) DO UPDATE SET val=excluded.val""",
+                    ("breaker_since_charge_rule", "exact-zero"),
+                )
+                exists = None
             if exists is not None and exists["accumulated_sec"] is not None and exists["last_switch"] is not None:
                 continue
             if exists is not None:

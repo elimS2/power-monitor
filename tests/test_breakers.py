@@ -27,6 +27,7 @@ from tuya_breakers import (
     breaker_http_timeout,
     active_breaker_timers,
     breaker_clock_due,
+    breaker_shown_on,
     breaker_slot_start,
     breaker_timer_followup_due,
     breaker_timer_is_active,
@@ -110,6 +111,27 @@ class BreakerStoreTests(unittest.TestCase):
         apply_breaker_status("svitlo", reset, _payload(True, 100140, _blob(230, 1, 100)), "poll")
         self.assertAlmostEqual(self._charge("svitlo")["accumulated_kwh"], 0.0, places=2)
         self.assertAlmostEqual(self._charge("svitlo")["accumulated_sec"], 0, delta=1)
+
+    def test_exact_zero_watts_is_off_even_when_the_bit_stays_on(self):
+        self.assertFalse(breaker_shown_on(1, {"a": {"p": 0}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertTrue(breaker_shown_on(1, {"a": {"p": 1}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertFalse(breaker_shown_on(0, {"a": {"p": 100}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertTrue(breaker_shown_on(1, None))
+        from power_monitor import _breaker_lines_html
+        html = _breaker_lines_html({
+            "devices": {
+                "svitlo": {"ready": False},
+                "itp": {
+                    "ready": True, "switch": 1, "energy_today_kwh": 1.0,
+                    "since_charge_kwh": 0.0, "since_charge_sec": 0,
+                    "updated_at": _ts(2026, 11, 10, 12, 45),
+                    "phases": {"a": {"p": 0}, "b": {"p": 0}, "c": {"p": 0}},
+                    "spans": [],
+                },
+            }
+        }, _ts(2026, 11, 10, 12, 45))
+        self.assertIn("Вимкнено", html)
+        self.assertNotIn("brk-lit", html)
 
     def test_off_breaker_does_not_collect_outage_time(self):
         start = _ts(2026, 11, 10, 2, 0)
