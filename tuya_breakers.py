@@ -574,6 +574,84 @@ def breaker_timer_is_active(row: dict, now: float) -> bool:
     return local.timestamp() + 60 > now
 
 
+OUTAGE_RESET_SEC = 900
+
+
+def dark_intervals_since_reset(events: list[dict], now: float, hold_sec: float = OUTAGE_RESET_SEC) -> list[tuple[float, float]]:
+    """Dark stretches since the last time the grid stayed on longer than hold_sec.
+
+    A shorter return does not reset the count and is not itself dark.
+    """
+    rows = [row for row in events if row.get("event") in ("down", "up")]
+    if not rows:
+        return []
+    if rows[-1]["event"] == "up" and now - float(rows[-1]["ts"]) > hold_sec:
+        return []
+    idx = len(rows) - 1
+    if rows[idx]["event"] == "up":
+        idx -= 1
+    episode_start = None
+    while idx >= 0:
+        if rows[idx]["event"] != "down":
+            idx -= 1
+            continue
+        episode_start = float(rows[idx]["ts"])
+        if idx == 0:
+            break
+        prev = rows[idx - 1]
+        if prev["event"] == "up" and episode_start - float(prev["ts"]) > hold_sec:
+            break
+        if prev["event"] == "up":
+            idx -= 2
+            continue
+        break
+    if episode_start is None:
+        return []
+    intervals: list[tuple[float, float]] = []
+    cursor = None
+    down = False
+    for row in rows:
+        ts = float(row["ts"])
+        if ts < episode_start:
+            continue
+        if row["event"] == "down" and not down:
+            cursor = ts
+            down = True
+        elif row["event"] == "up" and down and cursor is not None:
+            intervals.append((cursor, ts))
+            down = False
+    if down and cursor is not None and now > cursor:
+        intervals.append((cursor, now))
+    return intervals
+
+
+def _overlap_seconds(start: float, end: float, intervals: list[tuple[float, float]]) -> float:
+    total = 0.0
+    for left, right in intervals:
+        lo = max(start, left)
+        hi = min(end, right)
+        if hi > lo:
+            total += hi - lo
+    return total
+
+
+def outage_energy_kwh(samples: list[dict], intervals: list[tuple[float, float]]) -> float:
+    """Share of each meter step that falls inside a dark stretch."""
+    ordered = sorted(
+        (float(row["ts"]), float(row["energy_kwh"]))
+        for row in samples
+        if row.get("energy_kwh") is not None
+    )
+    total = 0.0
+    for (start, before), (end, after) in zip(ordered, ordered[1:]):
+        span = end - start
+        delta = after - before
+        if span <= 0 or delta <= 0 or not intervals:
+            continue
+        total += delta * _overlap_seconds(start, end, intervals) / span
+    return total
+
+
 def active_breaker_timers(now: float) -> list[dict]:
     return [row for row in database.list_breaker_timers() if breaker_timer_is_active(row, now)]
 

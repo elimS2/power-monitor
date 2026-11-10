@@ -1287,6 +1287,13 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
         fault = ""
         if isinstance(phases, dict) and phases.get("fault"):
             fault = f'<div class="brk-fault">несправність {int(phases["fault"])}</div>'
+        outage = device.get("outage_kwh")
+        outage_line = ""
+        if outage is not None:
+            outage_line = (
+                '<div><dt title="Росте, лише поки світла немає. Скидається, коли світло є понад 15 хв">'
+                f'Без світла</dt><dd>{outage:.2f} кВт·год</dd></div>'
+            )
         cards.append(
             f'<article class="brk-card {"brk-lit" if on else "brk-dark"}" data-brk="{name}">'
             f'<div class="brk-hero">{_breaker_icon(kind)}</div>'
@@ -1297,6 +1304,7 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             f'<div><dt>Струм</dt><dd>{_breaker_meter(phases, "i", 1, "А")}</dd></div>'
             f'<div><dt>Потужність</dt><dd>{_breaker_power(phases)}</dd></div>'
             f'<div><dt>За добу</dt><dd>{energy}</dd></div>'
+            f'{outage_line}'
             "</dl>"
             f'{fault}<div class="brk-age">{age}</div></article>'
         )

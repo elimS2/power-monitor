@@ -1987,8 +1987,36 @@ def list_breaker_timers() -> list:
     return [dict(row) for row in rows]
 
 
+def breaker_outage_kwh(now: float) -> dict[str, float]:
+    """kWh each breaker used while the grid was down since the last long restoration."""
+    from tuya_breakers import dark_intervals_since_reset, outage_energy_kwh
+
+    cutoff = now - 14 * 86400
+    with _conn() as db:
+        event_rows = db.execute(
+            """SELECT event, ts FROM power_events
+               WHERE event IN ('down', 'up') AND ts>=? AND ts<=? ORDER BY ts""",
+            (cutoff, now),
+        ).fetchall()
+        intervals = dark_intervals_since_reset([dict(row) for row in event_rows], now)
+        if not intervals:
+            return {"svitlo": 0.0, "itp": 0.0}
+        sample_from = min(left for left, _right in intervals) - 3600
+        sample_rows = db.execute(
+            """SELECT device, ts, energy_kwh FROM breaker_sample
+               WHERE ts>=? AND ts<=? AND energy_kwh IS NOT NULL
+               ORDER BY device, ts""",
+            (sample_from, now),
+        ).fetchall()
+    grouped = {"svitlo": [], "itp": []}
+    for row in sample_rows:
+        if row["device"] in grouped:
+            grouped[row["device"]].append({"ts": row["ts"], "energy_kwh": row["energy_kwh"]})
+    return {name: outage_energy_kwh(rows, intervals) for name, rows in grouped.items()}
+
+
 def read_breaker_board(day: str, now: float) -> dict:
-    """One stored day for both breakers. Reads breaker_day only and does not write."""
+    """One stored day for both breakers. Reads breaker_day. Today also gets outage kWh."""
     try:
         datetime.strptime(day, "%Y-%m-%d")
     except ValueError as exc:
@@ -2003,6 +2031,7 @@ def read_breaker_board(day: str, now: float) -> dict:
             (day,),
         ).fetchall()
     found = {row["device"]: row for row in rows}
+    outage = breaker_outage_kwh(now) if day == today else {}
     devices = {}
     for name in ("svitlo", "itp"):
         row = found.get(name)
@@ -2019,6 +2048,7 @@ def read_breaker_board(day: str, now: float) -> dict:
             "ready": True,
             "switch": row["switch"],
             "energy_today_kwh": row["energy_today_kwh"],
+            "outage_kwh": outage.get(name) if day == today else None,
             "updated_at": row["updated_at"],
             "spans": spans,
             "phases": phases,
