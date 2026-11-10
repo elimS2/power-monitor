@@ -452,7 +452,6 @@ _breaker_tokens = TokenCache()
 async def bg_loop():
     cleanup_tick = 0
     schedule_tick = 0
-    alert_tick = 0
     deye_poll_tick = 0
     deye_agg_tick = 0
     deploy_tick = 0
@@ -530,10 +529,7 @@ async def bg_loop():
                 await dtek.fetch_dtek_schedule()
                 await dtek.fetch_weather()
                 schedule_tick = 0
-            alert_tick += 1
-            if alert_tick >= 4:  # ~2min at 30s interval
-                await dtek.fetch_alert()
-                alert_tick = 0
+            await dtek.fetch_alert()
             if AUTO_DEPLOY_ENABLED:
                 deploy_tick += 1
                 if deploy_tick * 30 >= AUTO_DEPLOY_INTERVAL_SEC:
@@ -740,6 +736,28 @@ def _voltage_chart_html(chart_shift: int = 0) -> str:
     )
 
 
+def _alert_events_rows() -> str:
+    level = dtek.alert_cache.get("level") if dtek.alert_cache else None
+    known = bool(dtek.alert_cache)
+    rows = ""
+    alert_ev = recent_alert_events(20)
+    for i, ae in enumerate(alert_ev):
+        cls, label = dtek.alert_event_view(ae["event"])
+        if i == 0:
+            dur_sec = int(time.time() - ae["ts"])
+            dur_str = _format_duration(dur_sec)
+            if known and dtek.alert_event_is_open(ae["event"], level):
+                dur_str += " \u25b8"
+        else:
+            dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
+            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
+        rows += (
+            f'<tr><td>{_ts_fmt_full(ae["ts"])}</td><td class="{cls}">{label}</td>'
+            f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
+        )
+    return rows
+
+
 def _build_update_fragments(chart_shift: int = 0) -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
     is_down = kv_get("power_down") == "1"
@@ -835,18 +853,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
         safe_text = t["text"].replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
         tg_rows += f'<tr><td>{_ts_fmt_full(t["ts"])}</td><td class="{ok}">{t["status"]}</td><td>{short_chat}</td><td>{safe_text}</td></tr>\n'
 
-    alert_ev_rows = ""
-    alert_ev = recent_alert_events(20)
-    for i, ae in enumerate(alert_ev):
-        cls = "down" if ae["event"] == "alert_on" else "up"
-        label = "\U0001f534 Тривога" if ae["event"] == "alert_on" else "\U0001f7e2 Відбій"
-        if i == 0:
-            dur_sec = int(time.time() - ae["ts"])
-            dur_str = f"{_format_duration(dur_sec)} \u25b8" if ((ae["event"] == "alert_on" and dtek.alert_cache.get("active")) or (ae["event"] == "alert_off" and not dtek.alert_cache.get("active"))) else _format_duration(dur_sec)
-        else:
-            dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
-            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
-        alert_ev_rows += f'<tr><td>{_ts_fmt_full(ae["ts"])}</td><td class="{cls}">{label}</td><td style="color:var(--muted)">{dur_str}</td></tr>\n'
+    alert_ev_rows = _alert_events_rows()
 
     deye_log = recent_deye_log(30)
     deye_summary = "Немає даних"
@@ -975,9 +982,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
 
     voltage_html = _build_voltage_panel(deye_log, chart_shift)
 
-    alert_html = ""
-    if dtek.alert_cache:
-        alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>' if dtek.alert_cache.get("active") else '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
+    alert_html = dtek.alert_banner_html(dtek.alert_cache)
 
     weather_html = ""
     if dtek.weather_cache and dtek.weather_cache.get("temp") is not None:
@@ -1911,38 +1916,13 @@ async def dashboard(key: str = Query("")):
     voltage_html = _build_voltage_panel(deye_log)
 
     # ─── Alert events ───
-    alert_ev = recent_alert_events(20)
-    alert_ev_rows = ""
-    for i, ae in enumerate(alert_ev):
-        cls = "down" if ae["event"] == "alert_on" else "up"
-        label = "\U0001f534 Тривога" if ae["event"] == "alert_on" else "\U0001f7e2 Відбій"
-        if i == 0:
-            dur_sec = int(time.time() - ae["ts"])
-            dur_fmt = _format_duration(dur_sec)
-            if ae["event"] == "alert_on" and dtek.alert_cache.get("active"):
-                dur_str = f"{dur_fmt} \u25b8"
-            elif ae["event"] == "alert_off" and not dtek.alert_cache.get("active"):
-                dur_str = f"{dur_fmt} \u25b8"
-            else:
-                dur_str = dur_fmt
-        else:
-            dur_sec = int(alert_ev[i - 1]["ts"] - ae["ts"])
-            dur_str = _format_duration(dur_sec) if dur_sec > 0 else ""
-        alert_ev_rows += (
-            f'<tr><td>{_ts_fmt_full(ae["ts"])}</td><td class="{cls}">{label}</td>'
-            f'<td style="color:var(--muted)">{dur_str}</td></tr>\n'
-        )
+    alert_ev_rows = _alert_events_rows()
 
     # ─── DTEK schedule grid ───
     schedule_html = _build_schedule_html(is_down)
 
     # ─── Alert + Weather ───
-    alert_html = ""
-    if dtek.alert_cache:
-        if dtek.alert_cache.get("active"):
-            alert_html = '<div class="alert-banner alert-on">\U0001f534 \u0422\u0440\u0438\u0432\u043e\u0433\u0430!</div>'
-        else:
-            alert_html = '<div class="alert-banner alert-off">\U0001f7e2 \u0412\u0456\u0434\u0431\u0456\u0439</div>'
+    alert_html = dtek.alert_banner_html(dtek.alert_cache)
 
     weather_html = ""
     if dtek.weather_cache and dtek.weather_cache.get("temp") is not None:

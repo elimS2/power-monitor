@@ -34,7 +34,9 @@ td.down { color: #fca5a5; }
 .clocks span { white-space: nowrap; }
 .alert-banner { text-align: center; font-size: 0.95rem; font-weight: 600; padding: 0.3rem 0; margin-bottom: 0.2rem; border-radius: 6px; }
 .alert-on { background: rgba(220,38,38,0.15); color: #fca5a5; }
+.alert-yellow { background: rgba(234,179,8,0.18); color: #fde047; }
 .alert-off { color: var(--muted); }
+td.alert-yellow { color: #fde047; }
 .weather { text-align: center; font-size: 0.9rem; color: var(--muted); margin-bottom: 1rem; }
 details { margin: 1.2rem 0 0.5rem; }
 summary { cursor: pointer; list-style: none; padding: 0.3rem 0; }

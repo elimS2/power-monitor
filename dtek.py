@@ -4,7 +4,7 @@ DTEK schedule, weather, and alert fetch logic.
 Centralizes:
 - DTEK schedule API (planned outages)
 - Open-Meteo weather
-- alerts.com.ua (air raid alerts)
+- alerts.in.ua air-raid levels for Brovary raion 79
 """
 from __future__ import annotations
 
@@ -16,11 +16,8 @@ from datetime import datetime, timedelta
 import httpx
 
 from config import (
-    ALERT_API_URL,
-    ALERT_IN_UA_API,
-    ALERT_IN_UA_TOKEN,
-    ALERT_MATCH_LOCATIONS,
-    ALERT_REGION_IDS,
+    ALERT_ACTIVE_URL,
+    ALERT_BROVARY_LUID,
     DTEK_API_URL,
     DTEK_QUEUE,
     DTEK_REGION,
@@ -29,6 +26,7 @@ from config import (
 )
 from database import (
     _save_schedule_if_changed,
+    recent_alert_events,
     save_alert_event,
     save_weather_log,
 )
@@ -508,71 +506,125 @@ async def fetch_weather():
     save_weather_log(w["temp"], w["humidity"], w["wind"], w["code"], w["t_min"], w["t_max"], now)
 
 
-def _alert_matches_location(alert: dict) -> bool:
-    """Check if alert concerns our area (oblast, district, city)."""
-    parts = [
-        alert.get("location_title") or "",
-        alert.get("location_oblast") or "",
-        alert.get("location_raion") or "",
-    ]
-    combined = " ".join(parts)
-    return any(m in combined for m in ALERT_MATCH_LOCATIONS)
+def _record_level(item: dict) -> str:
+    """Yellow is explicit. A Brovary record without a level is red."""
+    named = item.get("alert_level")
+    if named == "yellow":
+        return "yellow"
+    if named == "red":
+        return "red"
+    al = item.get("al")
+    if al == 1 or al == "1":
+        return "yellow"
+    return "red"
+
+
+def brovary_alert_level(alerts: list) -> str | None:
+    """Yellow or red when raion 79 is in the feed. None is all-clear."""
+    found = None
+    for item in alerts:
+        if not isinstance(item, dict):
+            continue
+        raw = item.get("luid", item.get("location_uid"))
+        try:
+            luid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if luid != ALERT_BROVARY_LUID:
+            continue
+        if _record_level(item) == "red":
+            return "red"
+        found = "yellow"
+    return found
+
+
+def alert_banner_html(cache: dict) -> str:
+    if not cache:
+        return ""
+    level = cache.get("level")
+    if level == "yellow":
+        return '<div class="alert-banner alert-yellow">\U0001f7e1 Жовта тривога, Бровари</div>'
+    if level == "red":
+        return '<div class="alert-banner alert-on">\U0001f534 Червона тривога, Бровари</div>'
+    return '<div class="alert-banner alert-off">\U0001f7e2 Відбій, Бровари</div>'
+
+
+def alert_event_view(event: str) -> tuple[str, str]:
+    if event == "alert_yellow":
+        return "alert-yellow", "\U0001f7e1 Жовта"
+    if event == "alert_red":
+        return "down", "\U0001f534 Червона"
+    if event == "alert_on":
+        return "down", "\U0001f534 Тривога"
+    return "up", "\U0001f7e2 Відбій"
+
+
+def alert_event_is_open(event: str, level: str | None) -> bool:
+    if event == "alert_yellow":
+        return level == "yellow"
+    if event == "alert_red":
+        return level == "red"
+    if event == "alert_off":
+        return level is None
+    return False
+
+
+def _stored_level() -> tuple[bool, str | None]:
+    """Last saved level. The bool is false when the history table is empty."""
+    rows = recent_alert_events(1)
+    if not rows:
+        return False, None
+    event = rows[0]["event"]
+    if event == "alert_yellow":
+        return True, "yellow"
+    if event in ("alert_red", "alert_on"):
+        return True, "red"
+    if event == "alert_off":
+        return True, None
+    return False, None
+
+
+def _level_event(level: str | None) -> str:
+    if level == "yellow":
+        return "alert_yellow"
+    if level == "red":
+        return "alert_red"
+    return "alert_off"
 
 
 async def fetch_alert():
     global alert_cache, _alert_fetched_at
 
     now = time.time()
-    if now - _alert_fetched_at < 120:
+    if _alert_fetched_at and now - _alert_fetched_at < 20:
         return
 
-    active = False
-    changed = ""
-    in_ua_succeeded = False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                ALERT_ACTIVE_URL,
+                headers={"Accept": "application/json", "User-Agent": "power-monitor"},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        log.warning("Alert fetch failed: %s", e)
+        return
 
-    # Prefer alerts.in.ua (district-level) when token is set
-    if ALERT_IN_UA_TOKEN:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    ALERT_IN_UA_API,
-                    headers={"Authorization": f"Bearer {ALERT_IN_UA_TOKEN}"},
-                )
-                r.raise_for_status()
-                data = r.json()
-            for a in data.get("alerts", []):
-                if _alert_matches_location(a):
-                    active = True
-                    changed = a.get("updated_at", "")
-                    break
-            in_ua_succeeded = True
-        except Exception as e:
-            log.warning("alerts.in.ua fetch failed: %s, falling back to alerts.com.ua", e)
+    alerts = data.get("alerts") if isinstance(data, dict) else None
+    if not isinstance(alerts, list):
+        log.warning("Alert payload has no alerts list")
+        return
 
-    # Fallback to alerts.com.ua (oblast-level only)
-    if not ALERT_IN_UA_TOKEN or not in_ua_succeeded:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    ALERT_API_URL,
-                    headers={"X-API-Key": "test"},
-                )
-                r.raise_for_status()
-                data = r.json()
-            for s in data.get("states", []):
-                if s.get("id") in ALERT_REGION_IDS and s.get("alert"):
-                    active = True
-                    changed = s.get("changed", "")
-                    break
-        except Exception as e:
-            log.warning("Alert fetch failed: %s", e)
-            return
-
-    was_active = alert_cache.get("active") if alert_cache else None
-    if was_active is not None and active != was_active:
-        event = "alert_on" if active else "alert_off"
+    level = brovary_alert_level(alerts)
+    if alert_cache:
+        known, previous = True, alert_cache.get("level")
+    else:
+        known, previous = _stored_level()
+    if (known and previous != level) or (not known and level is not None):
+        event = _level_event(level)
         save_alert_event(event)
         log.info("Alert status changed: %s", event)
 
-    alert_cache = {"active": active, "changed": changed}
+    alert_cache = {"active": level is not None, "level": level}
     _alert_fetched_at = now
