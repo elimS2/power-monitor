@@ -2129,6 +2129,11 @@ def read_breaker_board(day: str, now: float) -> dict:
         ).fetchall()
         from tuya_breakers import since_charge_display
         charge = since_charge_display(db, now)
+        sched = db.execute(
+            """SELECT grid_json FROM schedule_history
+               WHERE target_date=? AND queue=? ORDER BY id DESC LIMIT 1""",
+            (day, DTEK_QUEUE),
+        ).fetchone()
     found = {row["device"]: row for row in rows}
     devices = {}
     for name in ("svitlo", "itp"):
@@ -2152,6 +2157,11 @@ def read_breaker_board(day: str, now: float) -> dict:
             "spans": spans,
             "phases": phases,
         }
+    schedule = None
+    if sched and sched["grid_json"]:
+        parsed = json.loads(sched["grid_json"])
+        if isinstance(parsed, list) and len(parsed) == 48:
+            schedule = parsed
     start, end = kyiv_day_bounds(day)
     window_end = now if day == today and start <= now <= end else end
     return {
@@ -2160,5 +2170,7 @@ def read_breaker_board(day: str, now: float) -> dict:
         "start": start,
         "end": end,
         "grid_down": [list(pair) for pair in grid_down_intervals(start, window_end)],
+        "schedule_queue": DTEK_QUEUE,
+        "schedule": schedule,
         "devices": devices,
     }

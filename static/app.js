@@ -1069,6 +1069,34 @@
       }
       return pieces;
     }
+    function breakerPlanLane(data) {
+      var queue = data.schedule_queue || '5.1';
+      var title = 'Графік ' + queue;
+      var grid = data.schedule;
+      var bars = '';
+      var empty = '';
+      if (!grid || grid.length !== 48) {
+        empty = '<div class="brk-empty">' + title + ': немає знімка</div>';
+      } else {
+        var index = 0;
+        while (index < 48) {
+          var status = grid[index] === 'maybe' || grid[index] === 'off' ? grid[index] : 'ok';
+          var end = index + 1;
+          while (end < 48) {
+            var next = grid[end] === 'maybe' || grid[end] === 'off' ? grid[end] : 'ok';
+            if (next !== status) break;
+            end += 1;
+          }
+          var left = index / 48 * 100;
+          var width = (end - index) / 48 * 100;
+          bars += '<i class="brk-bar brk-plan-' + status + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+          index = end;
+        }
+      }
+      return '<div class="brk-track"><span class="brk-track-name">' + title + '</span>' +
+        '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
+        '<i class="brk-now"></i></div></div></div>';
+    }
     function paintBreakers(data) {
       var startMs = (data.start || 0) * 1000;
       var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
@@ -1101,7 +1129,8 @@
           '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
           '<i class="brk-now"></i></div></div></div>';
       });
-      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено</div></div>';
+      html += breakerPlanLane(data);
+      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено <i class="brk-key brk-plan-ok"></i> графік: є світло <i class="brk-key brk-plan-maybe"></i> можливе <i class="brk-key brk-plan-off"></i> немає</div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');

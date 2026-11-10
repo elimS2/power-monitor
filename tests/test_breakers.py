@@ -492,7 +492,32 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("brk-batt", html)
         self.assertLess(html.index("brk-on"), html.index("brk-batt"))
         self.assertIn("ІТП: ще немає знімка", html)
+        self.assertIn("Графік 5.1: немає знімка", html)
         self.assertNotIn("<button", html.lower())
+
+    def test_plan_lane_uses_the_queue_snapshot(self):
+        import json
+
+        import power_monitor
+        from database import read_breaker_board
+
+        grid = ["ok"] * 48
+        grid[4:10] = ["maybe"] * 6
+        grid[20] = "off"
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO schedule_history(target_date, grid_json, fetched_at, queue, emergency)
+                   VALUES(?,?,?,?,?)""",
+                ("2026-11-09", json.dumps(grid), 1, "5.1", 0),
+            )
+        payload = read_breaker_board("2026-11-09", _ts(2026, 11, 9, 20, 0))
+        self.assertEqual(payload["schedule_queue"], "5.1")
+        self.assertEqual(payload["schedule"][4], "maybe")
+        html = power_monitor._breaker_bars_html(payload)
+        self.assertIn("brk-plan-maybe", html)
+        self.assertIn("brk-plan-off", html)
+        self.assertIn("brk-plan-ok", html)
+        self.assertIn("Графік 5.1", html)
         self.assertNotIn("<form", html.lower())
 
     def test_missing_base_does_not_print_the_lifetime_total(self):
@@ -600,6 +625,8 @@ class BreakerPageTests(unittest.TestCase):
         self.assertNotIn("<button", chunk)
         self.assertIn("brk-batt", chunk)
         self.assertIn("не було світла", chunk)
+        self.assertIn("brk-plan-ok", chunk)
+        self.assertIn("Графік ", chunk)
         route = Path("api/dashboard.py").read_text(encoding="utf-8")
         self.assertEqual(route.count("/api/breakers"), 1)
         self.assertIn('@router.get("/api/breakers")', route)

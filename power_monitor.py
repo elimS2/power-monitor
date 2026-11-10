@@ -1464,12 +1464,49 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
             f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
             f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
         )
+    tracks.append(_plan_lane_html(payload, now_mark))
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
         f'<div class="brk-plot">{"".join(tracks)}</div>'
         '<div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло '
         '<i class="brk-key brk-batt"></i> увімкнено, не було світла '
-        '<i class="brk-key brk-off"></i> вимкнено</div></div>'
+        '<i class="brk-key brk-off"></i> вимкнено '
+        '<i class="brk-key brk-plan-ok"></i> графік: є світло '
+        '<i class="brk-key brk-plan-maybe"></i> можливе '
+        '<i class="brk-key brk-plan-off"></i> немає</div></div>'
+    )
+
+
+def _plan_lane_html(payload: dict, now_mark: str) -> str:
+    """Queue 5.1 for the same day, on the same hour scale as the breaker bars."""
+    queue = payload.get("schedule_queue") or DTEK_QUEUE
+    title = f"Графік {queue}"
+    grid = payload.get("schedule")
+    if not isinstance(grid, list) or len(grid) != 48:
+        return (
+            f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
+            f'<div class="brk-lane-wrap"><div class="brk-empty">{title}: немає знімка</div>'
+            f'<div class="brk-lane">{now_mark}</div></div></div>'
+        )
+    bars = []
+    index = 0
+    while index < 48:
+        status = grid[index] if grid[index] in ("ok", "maybe", "off") else "ok"
+        end_i = index + 1
+        while end_i < 48:
+            nxt = grid[end_i] if grid[end_i] in ("ok", "maybe", "off") else "ok"
+            if nxt != status:
+                break
+            end_i += 1
+        left = index / 48 * 100
+        width = (end_i - index) / 48 * 100
+        bars.append(
+            f'<i class="brk-bar brk-plan-{status}" style="left:{left:.2f}%;width:{width:.2f}%"></i>'
+        )
+        index = end_i
+    return (
+        f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
+        f'<div class="brk-lane-wrap"><div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
     )
 
 
