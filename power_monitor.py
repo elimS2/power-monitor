@@ -1465,6 +1465,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
             f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
         )
     tracks.append(_plan_lane_html(payload, now_mark))
+    tracks.append(_boiler_lane_html(payload, now_mark))
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
         f'<div class="brk-plot">{"".join(tracks)}</div>'
@@ -1472,31 +1473,45 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         '<i class="brk-key brk-batt"></i> увімкнено, не було світла '
         '<i class="brk-key brk-off"></i> вимкнено '
         '<i class="brk-key brk-plan-ok"></i> графік: є світло '
-        '<i class="brk-key brk-plan-maybe"></i> можливе '
-        '<i class="brk-key brk-plan-off"></i> немає</div></div>'
+        '<i class="brk-key brk-plan-off"></i> немає '
+        '<i class="brk-key brk-boiler"></i> котельня</div></div>'
+    )
+
+
+def _clock_minutes(text: str) -> int | None:
+    if not isinstance(text, str) or ":" not in text:
+        return None
+    hour_text, minute_text = text.split(":", 1)
+    if not hour_text.isdigit() or not minute_text.isdigit():
+        return None
+    hour, minute = int(hour_text), int(minute_text)
+    if hour == 24 and minute == 0:
+        return 24 * 60
+    if 0 <= hour <= 23 and 0 <= minute <= 59:
+        return hour * 60 + minute
+    return None
+
+
+def _lane_html(title: str, bars: list[str], now_mark: str, empty: str) -> str:
+    return (
+        f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
+        f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
     )
 
 
 def _plan_lane_html(payload: dict, now_mark: str) -> str:
-    """Queue 5.1 for the same day, on the same hour scale as the breaker bars."""
+    """Queue 5.1. Maybe and off are both «немає»."""
     queue = payload.get("schedule_queue") or DTEK_QUEUE
     title = f"Графік {queue}"
     grid = payload.get("schedule")
     if not isinstance(grid, list) or len(grid) != 48:
-        return (
-            f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-            f'<div class="brk-lane-wrap"><div class="brk-empty">{title}: немає знімка</div>'
-            f'<div class="brk-lane">{now_mark}</div></div></div>'
-        )
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає знімка</div>')
     bars = []
     index = 0
     while index < 48:
-        status = grid[index] if grid[index] in ("ok", "maybe", "off") else "ok"
+        status = "ok" if grid[index] == "ok" else "off"
         end_i = index + 1
-        while end_i < 48:
-            nxt = grid[end_i] if grid[end_i] in ("ok", "maybe", "off") else "ok"
-            if nxt != status:
-                break
+        while end_i < 48 and ("ok" if grid[end_i] == "ok" else "off") == status:
             end_i += 1
         left = index / 48 * 100
         width = (end_i - index) / 48 * 100
@@ -1504,10 +1519,31 @@ def _plan_lane_html(payload: dict, now_mark: str) -> str:
             f'<i class="brk-bar brk-plan-{status}" style="left:{left:.2f}%;width:{width:.2f}%"></i>'
         )
         index = end_i
-    return (
-        f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-        f'<div class="brk-lane-wrap"><div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
-    )
+    return _lane_html(title, bars, now_mark, "")
+
+
+def _boiler_lane_html(payload: dict, now_mark: str) -> str:
+    """Generator hours from the boiler notice, on the same day scale."""
+    title = "Котельня"
+    intervals = payload.get("boiler")
+    if not isinstance(intervals, list) or not intervals:
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>')
+    bars = []
+    for pair in intervals:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            continue
+        start_m = _clock_minutes(str(pair[0]))
+        end_m = _clock_minutes(str(pair[1]))
+        if start_m is None or end_m is None or end_m <= start_m:
+            continue
+        left = start_m / 1440 * 100
+        width = min(100 - left, (end_m - start_m) / 1440 * 100)
+        if width <= 0:
+            continue
+        bars.append(f'<i class="brk-bar brk-boiler" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
+    if not bars:
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>')
+    return _lane_html(title, bars, now_mark, "")
 
 
 def _breaker_section_html() -> str:

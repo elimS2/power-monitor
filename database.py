@@ -2134,6 +2134,10 @@ def read_breaker_board(day: str, now: float) -> dict:
                WHERE target_date=? AND queue=? ORDER BY id DESC LIMIT 1""",
             (day, DTEK_QUEUE),
         ).fetchone()
+        boiler_row = db.execute(
+            "SELECT intervals FROM boiler_schedule WHERE target_date=? ORDER BY id DESC LIMIT 1",
+            (day,),
+        ).fetchone()
     found = {row["device"]: row for row in rows}
     devices = {}
     for name in ("svitlo", "itp"):
@@ -2162,6 +2166,11 @@ def read_breaker_board(day: str, now: float) -> dict:
         parsed = json.loads(sched["grid_json"])
         if isinstance(parsed, list) and len(parsed) == 48:
             schedule = parsed
+    boiler = None
+    if boiler_row and boiler_row["intervals"]:
+        parsed_boiler = json.loads(boiler_row["intervals"])
+        if isinstance(parsed_boiler, list):
+            boiler = parsed_boiler
     start, end = kyiv_day_bounds(day)
     window_end = now if day == today and start <= now <= end else end
     return {
@@ -2172,5 +2181,6 @@ def read_breaker_board(day: str, now: float) -> dict:
         "grid_down": [list(pair) for pair in grid_down_intervals(start, window_end)],
         "schedule_queue": DTEK_QUEUE,
         "schedule": schedule,
+        "boiler": boiler,
         "devices": devices,
     }

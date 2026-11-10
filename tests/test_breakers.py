@@ -493,6 +493,7 @@ class BreakerPageTests(unittest.TestCase):
         self.assertLess(html.index("brk-on"), html.index("brk-batt"))
         self.assertIn("ІТП: ще немає знімка", html)
         self.assertIn("Графік 5.1: немає знімка", html)
+        self.assertIn("Котельня: немає графіка", html)
         self.assertNotIn("<button", html.lower())
 
     def test_plan_lane_uses_the_queue_snapshot(self):
@@ -510,14 +511,21 @@ class BreakerPageTests(unittest.TestCase):
                    VALUES(?,?,?,?,?)""",
                 ("2026-11-09", json.dumps(grid), 1, "5.1", 0),
             )
+            db.execute(
+                """INSERT INTO boiler_schedule(target_date, intervals, source_text, parsed_at)
+                   VALUES(?,?,?,?)""",
+                ("2026-11-09", json.dumps([["17:00", "24:00"]]), "test", 1),
+            )
         payload = read_breaker_board("2026-11-09", _ts(2026, 11, 9, 20, 0))
         self.assertEqual(payload["schedule_queue"], "5.1")
         self.assertEqual(payload["schedule"][4], "maybe")
+        self.assertEqual(payload["boiler"], [["17:00", "24:00"]])
         html = power_monitor._breaker_bars_html(payload)
-        self.assertIn("brk-plan-maybe", html)
-        self.assertIn("brk-plan-off", html)
+        self.assertNotIn("brk-plan-maybe", html)
+        self.assertEqual(html.count("brk-bar brk-plan-off"), 2)
         self.assertIn("brk-plan-ok", html)
         self.assertIn("Графік 5.1", html)
+        self.assertIn('class="brk-bar brk-boiler" style="left:70.83%;width:29.17%"', html)
         self.assertNotIn("<form", html.lower())
 
     def test_missing_base_does_not_print_the_lifetime_total(self):
@@ -627,6 +635,9 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("не було світла", chunk)
         self.assertIn("brk-plan-ok", chunk)
         self.assertIn("Графік ", chunk)
+        self.assertIn("Котельня", chunk)
+        self.assertIn("brk-boiler", chunk)
+        self.assertNotIn("brk-plan-maybe", chunk)
         route = Path("api/dashboard.py").read_text(encoding="utf-8")
         self.assertEqual(route.count("/api/breakers"), 1)
         self.assertIn('@router.get("/api/breakers")', route)
