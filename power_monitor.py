@@ -1431,7 +1431,7 @@ def _breaker_section_html() -> str:
     return (
         '<details id="breaker_details" open data-ls-key="breaker_open" data-default-open="1">'
         '<summary><h2 style="display:inline">Автомати підвалу</h2></summary>'
-        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час після останньої зарядки, лише поки немає мережі. Коротке ввімкнення не збиває. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
+        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час, поки цей автомат увімкнений і немає мережі. Коротке ввімкнення мережі не збиває. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
         "</details>"

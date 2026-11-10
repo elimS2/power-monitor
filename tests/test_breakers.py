@@ -111,6 +111,16 @@ class BreakerStoreTests(unittest.TestCase):
         self.assertAlmostEqual(self._charge("svitlo")["accumulated_kwh"], 0.0, places=2)
         self.assertAlmostEqual(self._charge("svitlo")["accumulated_sec"], 0, delta=1)
 
+    def test_off_breaker_does_not_collect_outage_time(self):
+        start = _ts(2026, 11, 10, 2, 0)
+        later = _ts(2026, 11, 10, 3, 30)
+        self._grid("down", start - 60)
+        apply_breaker_status("svitlo", start, _payload(False, 100000, _blob(230, 0, 0)), "poll")
+        apply_breaker_status("svitlo", later, _payload(False, 100000, _blob(230, 0, 0)), "poll")
+        row = self._charge("svitlo")
+        self.assertAlmostEqual(row["accumulated_kwh"], 0.0, places=2)
+        self.assertAlmostEqual(row["accumulated_sec"], 0, delta=1)
+
     def test_grid_on_does_not_count_as_battery_draw(self):
         start = _ts(2026, 11, 10, 12, 0)
         later = _ts(2026, 11, 10, 12, 10)

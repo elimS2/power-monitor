@@ -211,6 +211,7 @@ def init_db():
                 accumulated_kwh   REAL NOT NULL,
                 accumulated_sec   REAL,
                 last_energy_kwh   REAL,
+                last_switch       INTEGER,
                 last_ts           REAL
             );
 
@@ -419,6 +420,10 @@ def init_db():
         _seed_tg_channels(db)
         try:
             db.execute("ALTER TABLE breaker_since_charge ADD COLUMN accumulated_sec REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            db.execute("ALTER TABLE breaker_since_charge ADD COLUMN last_switch INTEGER")
         except sqlite3.OperationalError:
             pass
     from tuya_breakers import backfill_breaker_since_charge
