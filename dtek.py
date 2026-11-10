@@ -19,6 +19,7 @@ from config import (
     ALERT_ACTIVE_URL,
     ALERT_BROVARY_LUID,
     DTEK_API_URL,
+    DTEK_POLL_SEC,
     DTEK_QUEUE,
     DTEK_REGION,
     UA_TZ,
@@ -422,7 +423,7 @@ async def fetch_dtek_schedule():
     global schedule_cache, _schedule_fetched_at
 
     now = time.time()
-    cache_stale = now - _schedule_fetched_at >= 1800
+    cache_stale = now - _schedule_fetched_at >= DTEK_POLL_SEC
     date_changed = False
     if schedule_cache and schedule_cache.get("today"):
         cached_date = schedule_cache["today"]["date"]

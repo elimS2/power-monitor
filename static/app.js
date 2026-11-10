@@ -352,6 +352,8 @@
       if (!visibleChanges.length) {
         html += '<div class="sb-note">Змін ще не було</div>';
       } else {
+        var changesOpen = localStorage.getItem('pm_sched_changes_open') === '1';
+        html += '<details class="sb-changes-details"' + (changesOpen ? ' open' : '') + '><summary>Зміни графіка (' + visibleChanges.length + ')</summary>';
         html += '<table class="sb-changes"><tr><th>Коли побачили</th><th>Група</th><th>Що сталося</th><th>Було</th><th>Стало</th></tr>';
         visibleChanges.forEach(function(row) {
           var was = slotClock(row.start_slot) + '–' + slotClock(row.end_slot) + ' ' + statusName(row.from_status);
@@ -362,9 +364,15 @@
           html += '<tr><td>' + fmtKyiv(row.fetched_at) + '</td><td>' + name + '</td><td>' +
             (KIND[row.kind] || row.kind) + '</td><td>' + was + '</td><td>' + became + '</td></tr>';
         });
-        html += '</table>';
+        html += '</table></details>';
       }
       schedBoard.innerHTML = html;
+      var changesDetails = schedBoard.querySelector('.sb-changes-details');
+      if (changesDetails) {
+        changesDetails.addEventListener('toggle', function() {
+          localStorage.setItem('pm_sched_changes_open', changesDetails.open ? '1' : '0');
+        });
+      }
       var prev = document.getElementById('sb-prev');
       var next = document.getElementById('sb-next');
       if (prev) prev.addEventListener('click', function() {

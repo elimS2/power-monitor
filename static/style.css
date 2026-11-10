@@ -210,6 +210,7 @@ details[open] summary::before { content: '▼ '; }
 .sb-bar-low { background: #60a5fa; }
 .sb-note, .sb-match, .sb-caption { font-size: 0.8rem; color: var(--muted); margin: 0.4rem 0; }
 .sb-banner { color: #fbbf24; font-size: 0.85rem; margin: 0.3rem 0; }
+.sb-changes-details > summary { font-size: 0.85rem; color: var(--muted); }
 .sb-changes { width: 100%; border-collapse: collapse; margin-top: 0.4rem; font-size: 0.8rem; }
 .sb-changes th, .sb-changes td { border-bottom: 1px solid var(--border); text-align: left; padding: 0.25rem 0.4rem; }
 .dashboard-section { position: relative; margin: 1.2rem 0 0.5rem; padding-left: 1.2rem; }

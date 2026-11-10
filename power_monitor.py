@@ -36,6 +36,7 @@ from config import (
     AVATAR_ON_START,
     DEYE_POLL_LOG,
     DELETE_PHOTO_MSG,
+    DTEK_POLL_SEC,
     DTEK_QUEUE,
     DB_PATH,
     DEYE_BATTERY_KWH,
@@ -526,7 +527,7 @@ async def bg_loop():
                 != datetime.now(UA_TZ).strftime("%Y-%m-%d")
             )
             schedule_tick += 1
-            if schedule_tick >= 60 or date_rolled:  # ~30min or midnight
+            if schedule_tick * 30 >= DTEK_POLL_SEC or date_rolled:
                 await dtek.fetch_dtek_schedule()
                 await dtek.fetch_weather()
                 schedule_tick = 0

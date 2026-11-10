@@ -115,7 +115,7 @@ There is no test package today. Phase 1 adds stdlib `unittest` only. Do not add 
 
 ## 4. Current behavior
 
-`fetch_dtek_schedule` (`dtek.py`) runs about every 30 minutes. It GETs `DTEK_API_URL`. A wrapper `{body: "<json string>"}` is unwrapped. The region is the object whose `cpu` equals `DTEK_REGION`.
+`fetch_dtek_schedule` (`dtek.py`) runs about every 15 minutes (`DTEK_POLL_SEC`). It GETs `DTEK_API_URL`. A wrapper `{body: "<json string>"}` is unwrapped. The region is the object whose `cpu` equals `DTEK_REGION`.
 
 Live payload observed 2026-11-08T22:22Z (User-Agent required for a raw urllib call; production `httpx` already updates the schedule, so do not change the client as part of this work):
 

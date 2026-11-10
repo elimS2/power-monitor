@@ -12,7 +12,7 @@ from pathlib import Path
 
 import database
 import dtek
-from config import DTEK_QUEUE, UA_TZ
+from config import DTEK_POLL_SEC, DTEK_QUEUE, UA_TZ
 from datetime import datetime
 from fastapi import HTTPException
 from schedule_board import (
@@ -419,6 +419,26 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         body = text[start:end]
         self.assertNotIn("schedule-board", body)
         self.assertNotIn("read_schedule_board", body)
+
+
+class ScheduleChangesFoldTests(unittest.TestCase):
+    def test_changes_table_starts_closed(self):
+        script = Path("static/app.js").read_text(encoding="utf-8")
+        start = script.index("visibleChanges")
+        chunk = script[start:script.index("schedBoard.innerHTML", start)]
+        self.assertIn("pm_sched_changes_open", chunk)
+        self.assertIn("<details class=\"sb-changes-details\"", chunk)
+        self.assertLess(chunk.index("<details"), chunk.index("<table class=\"sb-changes\">"))
+        self.assertNotIn("<details class=\"sb-changes-details\" open", chunk)
+
+
+class SchedulePollTests(unittest.TestCase):
+    def test_outage_schedule_is_polled_every_fifteen_minutes(self):
+        self.assertEqual(DTEK_POLL_SEC, 15 * 60)
+        fetch = Path("dtek.py").read_text(encoding="utf-8")
+        self.assertIn("_schedule_fetched_at >= DTEK_POLL_SEC", fetch)
+        loop = Path("power_monitor.py").read_text(encoding="utf-8")
+        self.assertIn("schedule_tick * 30 >= DTEK_POLL_SEC", loop)
 
 
 if __name__ == "__main__":

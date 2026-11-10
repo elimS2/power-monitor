@@ -93,6 +93,7 @@ UA_TZ = ZoneInfo("Europe/Kyiv")
 DTEK_API_URL = os.getenv("DTEK_API_URL", "https://dtek-api.svitlo-proxy.workers.dev/")
 DTEK_REGION = os.getenv("DTEK_REGION", "kiivska-oblast")
 DTEK_QUEUE = os.getenv("DTEK_QUEUE", "5.1")
+DTEK_POLL_SEC = 900
 
 # ─── Deye ───────────────────────────────────────────────────
 
