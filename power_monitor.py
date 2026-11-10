@@ -67,6 +67,7 @@ from tuya_breakers import (
     breaker_slot_start,
     carry_configured_breakers,
     active_breaker_timers,
+    breaker_timer_followup_due,
     poll_breakers_http,
     poll_is_enabled,
     run_deye_then_breakers,
@@ -89,6 +90,7 @@ from database import (
     init_db,
     kv_get,
     kv_set,
+    list_breaker_timers,
     tg_channel_label,
     tg_notify_chat_id,
     last_nonzero_grid_voltage,
@@ -455,6 +457,7 @@ async def bg_loop():
     deploy_tick = 0
     breaker_slot_mark = None
     breaker_timers_synced = False
+    breaker_followups_done = set()
     carried_day = None
     breaker_carried_day = None
     while True:
@@ -500,10 +503,19 @@ async def bg_loop():
                 if not breaker_timers_synced:
                     breaker_timers_synced = True
                     await sync_breaker_timers_http(breaker_cfg, _breaker_tokens, now)
-                if not breaker_clock_due(now, breaker_slot_mark, TUYA_POLL_INTERVAL_SEC):
+                clock = breaker_clock_due(now, breaker_slot_mark, TUYA_POLL_INTERVAL_SEC)
+                follow = [
+                    str(row["timer_id"])
+                    for row in list_breaker_timers()
+                    if str(row["timer_id"]) not in breaker_followups_done
+                    and breaker_timer_followup_due(row, now)
+                ]
+                if not clock and not follow:
                     return
                 await poll_breakers_http(breaker_cfg, _breaker_tokens, now)
-                breaker_slot_mark = breaker_slot_start(now, TUYA_POLL_INTERVAL_SEC)
+                if clock:
+                    breaker_slot_mark = breaker_slot_start(now, TUYA_POLL_INTERVAL_SEC)
+                breaker_followups_done.update(follow)
 
             await run_deye_then_breakers(_deye_step, _breaker_step)
             date_rolled = (

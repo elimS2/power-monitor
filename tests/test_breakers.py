@@ -28,6 +28,7 @@ from tuya_breakers import (
     active_breaker_timers,
     breaker_clock_due,
     breaker_slot_start,
+    breaker_timer_followup_due,
     breaker_timer_is_active,
     timer_rows,
     carry_configured_breakers,
@@ -561,6 +562,10 @@ class BreakerPollTests(unittest.TestCase):
         shown = active_breaker_timers(_ts(2026, 11, 10, 1, 5))
         self.assertEqual([row["timer_id"] for row in shown], ["912755531"])
         self.assertFalse(breaker_timer_is_active(shown[0], _ts(2026, 11, 10, 3, 0)))
+        fired = shown[0]
+        self.assertFalse(breaker_timer_followup_due(fired, _ts(2026, 11, 10, 2, 30)))
+        self.assertTrue(breaker_timer_followup_due(fired, _ts(2026, 11, 10, 2, 31)))
+        self.assertFalse(breaker_timer_followup_due(fired, _ts(2026, 11, 10, 2, 35)))
         from power_monitor import _breaker_timers_html
         html = _breaker_timers_html(_ts(2026, 11, 10, 1, 5))
         self.assertIn("02:30", html)

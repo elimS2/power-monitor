@@ -533,6 +533,32 @@ def _timer_row(item: dict) -> dict:
     }
 
 
+# The loop wakes about every 30s. One extra read lands once in this window after a timer.
+BREAKER_TIMER_FOLLOWUP_SEC = 60
+BREAKER_TIMER_FOLLOWUP_WINDOW_SEC = 90
+
+
+def _timer_fire_ts(row: dict) -> float | None:
+    """Clock time of a one-shot. A weekly loop has no single instant."""
+    if "1" in str(row.get("loops") or ""):
+        return None
+    fire_date = str(row.get("fire_date") or "")
+    fire_time = str(row.get("fire_time") or "")
+    if len(fire_date) != 8 or len(fire_time) != 5:
+        return None
+    local = datetime.strptime(fire_date + fire_time, "%Y%m%d%H:%M").replace(tzinfo=UA_TZ)
+    return local.timestamp()
+
+
+def breaker_timer_followup_due(row: dict, now: float) -> bool:
+    """True about a minute after the timer, while one loop wake can still catch it."""
+    fire = _timer_fire_ts(row)
+    if fire is None:
+        return False
+    age = now - fire
+    return BREAKER_TIMER_FOLLOWUP_SEC <= age <= BREAKER_TIMER_FOLLOWUP_SEC + BREAKER_TIMER_FOLLOWUP_WINDOW_SEC
+
+
 def breaker_timer_is_active(row: dict, now: float) -> bool:
     """A one-shot stays visible until its minute has passed. A weekly loop stays while enabled."""
     if not row.get("enable"):
