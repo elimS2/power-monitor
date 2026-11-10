@@ -81,6 +81,41 @@ class BreakerStoreTests(unittest.TestCase):
         database.DB_PATH = self._old_path
         self._tmpdir.cleanup()
 
+    def _charge(self, device: str):
+        with database._conn() as db:
+            row = db.execute(
+                "SELECT accumulated_kwh FROM breaker_since_charge WHERE device=?",
+                (device,),
+            ).fetchone()
+        return None if row is None else row["accumulated_kwh"]
+
+    def _grid(self, event: str, ts: float) -> None:
+        with database._conn() as db:
+            db.execute("INSERT INTO power_events(event, ts) VALUES(?, ?)", (event, ts))
+
+    def test_battery_draw_grows_only_while_the_grid_is_down(self):
+        start = _ts(2026, 11, 10, 2, 0)
+        later = _ts(2026, 11, 10, 3, 0)
+        self._grid("down", start - 60)
+        apply_breaker_status("svitlo", start, _payload(True, 100000, _blob(230, 1, 100)), "poll")
+        apply_breaker_status("svitlo", later, _payload(True, 100100, _blob(230, 1, 100)), "poll")
+        self.assertAlmostEqual(self._charge("svitlo"), 1.0, places=2)
+        kept = _ts(2026, 11, 10, 3, 10)
+        self._grid("up", later)
+        apply_breaker_status("svitlo", kept, _payload(True, 100120, _blob(230, 1, 100)), "poll")
+        self.assertAlmostEqual(self._charge("svitlo"), 1.0, places=2)
+        reset = later + 16 * 60
+        apply_breaker_status("svitlo", reset, _payload(True, 100140, _blob(230, 1, 100)), "poll")
+        self.assertAlmostEqual(self._charge("svitlo"), 0.0, places=2)
+
+    def test_grid_on_does_not_count_as_battery_draw(self):
+        start = _ts(2026, 11, 10, 12, 0)
+        later = _ts(2026, 11, 10, 12, 10)
+        self._grid("up", start)
+        apply_breaker_status("itp", start, _payload(True, 50000, _blob(230, 1, 100)), "poll")
+        apply_breaker_status("itp", later, _payload(True, 50100, _blob(230, 1, 100)), "poll")
+        self.assertAlmostEqual(self._charge("itp"), 0.0, places=2)
+
     def test_first_sample_opens_a_span_and_hides_lifetime_energy(self):
         apply_breaker_status(
             "svitlo", _ts(2026, 11, 9, 12, 0),
@@ -407,41 +442,6 @@ class BreakerPageTests(unittest.TestCase):
         self.assertNotIn("10000", html)
         self.assertNotIn("energy_kwh", json.dumps(payload))
 
-    def test_outage_energy_counts_only_the_dark_and_resets_after_fifteen_minutes(self):
-        import power_monitor
-        from database import read_breaker_board
-        from tuya_breakers import dark_intervals_since_reset, outage_energy_kwh
-
-        start = _ts(2026, 11, 10, 2, 30)
-        back = _ts(2026, 11, 10, 10, 0)
-        events = [{"event": "down", "ts": start}, {"event": "up", "ts": back}]
-        samples = [
-            {"ts": start, "energy_kwh": 10.0},
-            {"ts": back, "energy_kwh": 10.4},
-        ]
-        self.assertAlmostEqual(outage_energy_kwh(samples, dark_intervals_since_reset(events, back + 10 * 60)), 0.4)
-        self.assertEqual(dark_intervals_since_reset(events, back + 16 * 60), [])
-        again = back + 10 * 60
-        now = again + 30 * 60
-        events.append({"event": "down", "ts": again})
-        samples.extend([
-            {"ts": again, "energy_kwh": 10.5},
-            {"ts": now, "energy_kwh": 10.8},
-        ])
-        self.assertAlmostEqual(outage_energy_kwh(samples, dark_intervals_since_reset(events, now)), 0.7, places=5)
-
-        apply_breaker_status("svitlo", start, _payload(True, 1000, _blob(230, 1, 100)), "poll")
-        apply_breaker_status("svitlo", back, _payload(False, 1040, _blob(0, 0, 0)), "poll")
-        with database._conn() as db:
-            db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", ("down", start))
-            db.execute("INSERT INTO power_events(event, ts) VALUES(?,?)", ("up", back))
-        payload = read_breaker_board("2026-11-10", back + 10 * 60)
-        self.assertAlmostEqual(payload["devices"]["svitlo"]["outage_kwh"], 0.4, places=2)
-        html = power_monitor._breaker_lines_html(payload, back + 10 * 60)
-        self.assertIn("Без світла", html)
-        self.assertIn("0.40 кВт·год", html)
-        self.assertIsNone(read_breaker_board("2026-11-09", back + 10 * 60)["devices"]["svitlo"].get("outage_kwh"))
-
     def test_read_fills_today_end_without_writing(self):
         from database import read_breaker_board
 
@@ -610,6 +610,21 @@ class BreakerPollTests(unittest.TestCase):
         self.assertIn("разовий", html)
         self.assertIn("brk-when-pin", html)
         self.assertNotIn("<button", html)
+        from power_monitor import _breaker_lines_html
+        card = _breaker_lines_html({
+            "devices": {
+                "svitlo": {
+                    "ready": True, "switch": 0, "energy_today_kwh": 1.5,
+                    "since_charge_kwh": 0.4, "updated_at": _ts(2026, 11, 10, 3, 0),
+                    "phases": {}, "spans": [],
+                },
+                "itp": {"ready": False},
+            }
+        }, _ts(2026, 11, 10, 3, 0))
+        self.assertIn("З акумуляторів", card)
+        self.assertIn("0.40 кВт·год", card)
+        self.assertNotIn("без світла", card)
+        self.assertNotIn("<button", card)
         self.assertIn("Активних таймерів немає", _breaker_timers_html(_ts(2026, 11, 10, 3, 0)))
 
     def test_sign_uses_the_cloud_string(self):

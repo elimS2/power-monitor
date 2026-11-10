@@ -72,6 +72,8 @@ def apply_breaker_status(
             _apply_sample_to_day(
                 db, device, day, ts, switch, energy_raw, phases, fault,
             )
+            if energy_raw is not None:
+                update_since_charge(db, device, ts, energy_raw / 100)
 
 
 def decode_phase(value: Any) -> tuple[float, float, int] | None:
@@ -289,6 +291,131 @@ def _spans(raw: str | None) -> list[dict]:
 
 def _dump_spans(spans: list[dict]) -> str:
     return json.dumps(spans, separators=(",", ":"))
+
+
+# Grid must be back for longer than this before the battery draw goes back to zero.
+GRID_UP_RESET_SEC = 15 * 60
+
+
+def _grid_events(db) -> list[dict]:
+    return [
+        {"event": row["event"], "ts": float(row["ts"])}
+        for row in db.execute(
+            "SELECT event, ts FROM power_events WHERE event IN ('up', 'down') ORDER BY ts, id"
+        )
+    ]
+
+
+def _grid_state_at(events: list[dict], ts: float) -> str | None:
+    state = None
+    for event in events:
+        if event["ts"] > ts:
+            break
+        state = event["event"]
+    return state
+
+
+def _dark_seconds(events: list[dict], start: float, end: float) -> float:
+    if end <= start:
+        return 0.0
+    cuts = [start]
+    for event in events:
+        if start < event["ts"] < end:
+            cuts.append(event["ts"])
+    cuts.append(end)
+    dark = 0.0
+    for left, right in zip(cuts, cuts[1:]):
+        if _grid_state_at(events, left) == "down":
+            dark += right - left
+    return dark
+
+
+def _up_since(events: list[dict], ts: float) -> float | None:
+    if _grid_state_at(events, ts) != "up":
+        return None
+    started = None
+    for event in events:
+        if event["ts"] > ts:
+            break
+        started = event["ts"] if event["event"] == "up" else None
+    return started
+
+
+def _step_since_charge(acc: float, last_energy: float | None, last_ts: float | None, ts: float, energy: float, events: list[dict]) -> tuple[float, float, float]:
+    if last_energy is not None and last_ts is not None and ts > last_ts and energy >= last_energy:
+        span = ts - last_ts
+        dark = _dark_seconds(events, last_ts, ts)
+        if span > 0 and dark > 0:
+            acc += (energy - last_energy) * (dark / span)
+    up_since = _up_since(events, ts)
+    if up_since is not None and ts - up_since > GRID_UP_RESET_SEC:
+        acc = 0.0
+    return acc, energy, ts
+
+
+def update_since_charge(db, device: str, ts: float, energy_kwh: float) -> None:
+    """Add breaker energy only while the grid is down. Zero it after 15 minutes of grid."""
+    events = _grid_events(db)
+    row = db.execute(
+        "SELECT accumulated_kwh, last_energy_kwh, last_ts FROM breaker_since_charge WHERE device=?",
+        (device,),
+    ).fetchone()
+    if row is None or row["last_ts"] is None:
+        samples = [
+            (float(item["ts"]), float(item["energy_kwh"]))
+            for item in db.execute(
+                """SELECT ts, energy_kwh FROM breaker_sample
+                   WHERE device=? AND energy_kwh IS NOT NULL ORDER BY ts""",
+                (device,),
+            )
+        ]
+        acc, last_energy, last_ts = 0.0, None, None
+        for sample_ts, sample_energy in samples:
+            acc, last_energy, last_ts = _step_since_charge(
+                acc, last_energy, last_ts, sample_ts, sample_energy, events,
+            )
+    elif ts <= float(row["last_ts"]):
+        return
+    else:
+        acc, last_energy, last_ts = _step_since_charge(
+            float(row["accumulated_kwh"]),
+            None if row["last_energy_kwh"] is None else float(row["last_energy_kwh"]),
+            float(row["last_ts"]),
+            ts,
+            energy_kwh,
+            events,
+        )
+    db.execute(
+        """
+        INSERT INTO breaker_since_charge(device, accumulated_kwh, last_energy_kwh, last_ts)
+        VALUES(?,?,?,?)
+        ON CONFLICT(device) DO UPDATE SET
+            accumulated_kwh=excluded.accumulated_kwh,
+            last_energy_kwh=excluded.last_energy_kwh,
+            last_ts=excluded.last_ts
+        """,
+        (device, acc, last_energy, last_ts),
+    )
+
+
+def backfill_breaker_since_charge() -> None:
+    """Fill the battery-draw row from samples already stored. Skips a device that has one."""
+    with database._conn() as db:
+        for device in ("svitlo", "itp"):
+            exists = db.execute(
+                "SELECT 1 FROM breaker_since_charge WHERE device=?",
+                (device,),
+            ).fetchone()
+            if exists:
+                continue
+            last = db.execute(
+                """SELECT ts, energy_kwh FROM breaker_sample
+                   WHERE device=? AND energy_kwh IS NOT NULL ORDER BY ts DESC LIMIT 1""",
+                (device,),
+            ).fetchone()
+            if last is None:
+                continue
+            update_since_charge(db, device, float(last["ts"]), float(last["energy_kwh"]))
 
 
 def _phase_point(point: tuple[float, float, int] | None) -> dict:
@@ -572,84 +699,6 @@ def breaker_timer_is_active(row: dict, now: float) -> bool:
         return False
     local = datetime.strptime(fire_date + fire_time, "%Y%m%d%H:%M").replace(tzinfo=UA_TZ)
     return local.timestamp() + 60 > now
-
-
-OUTAGE_RESET_SEC = 900
-
-
-def dark_intervals_since_reset(events: list[dict], now: float, hold_sec: float = OUTAGE_RESET_SEC) -> list[tuple[float, float]]:
-    """Dark stretches since the last time the grid stayed on longer than hold_sec.
-
-    A shorter return does not reset the count and is not itself dark.
-    """
-    rows = [row for row in events if row.get("event") in ("down", "up")]
-    if not rows:
-        return []
-    if rows[-1]["event"] == "up" and now - float(rows[-1]["ts"]) > hold_sec:
-        return []
-    idx = len(rows) - 1
-    if rows[idx]["event"] == "up":
-        idx -= 1
-    episode_start = None
-    while idx >= 0:
-        if rows[idx]["event"] != "down":
-            idx -= 1
-            continue
-        episode_start = float(rows[idx]["ts"])
-        if idx == 0:
-            break
-        prev = rows[idx - 1]
-        if prev["event"] == "up" and episode_start - float(prev["ts"]) > hold_sec:
-            break
-        if prev["event"] == "up":
-            idx -= 2
-            continue
-        break
-    if episode_start is None:
-        return []
-    intervals: list[tuple[float, float]] = []
-    cursor = None
-    down = False
-    for row in rows:
-        ts = float(row["ts"])
-        if ts < episode_start:
-            continue
-        if row["event"] == "down" and not down:
-            cursor = ts
-            down = True
-        elif row["event"] == "up" and down and cursor is not None:
-            intervals.append((cursor, ts))
-            down = False
-    if down and cursor is not None and now > cursor:
-        intervals.append((cursor, now))
-    return intervals
-
-
-def _overlap_seconds(start: float, end: float, intervals: list[tuple[float, float]]) -> float:
-    total = 0.0
-    for left, right in intervals:
-        lo = max(start, left)
-        hi = min(end, right)
-        if hi > lo:
-            total += hi - lo
-    return total
-
-
-def outage_energy_kwh(samples: list[dict], intervals: list[tuple[float, float]]) -> float:
-    """Share of each meter step that falls inside a dark stretch."""
-    ordered = sorted(
-        (float(row["ts"]), float(row["energy_kwh"]))
-        for row in samples
-        if row.get("energy_kwh") is not None
-    )
-    total = 0.0
-    for (start, before), (end, after) in zip(ordered, ordered[1:]):
-        span = end - start
-        delta = after - before
-        if span <= 0 or delta <= 0 or not intervals:
-            continue
-        total += delta * _overlap_seconds(start, end, intervals) / span
-    return total
 
 
 def active_breaker_timers(now: float) -> list[dict]:
