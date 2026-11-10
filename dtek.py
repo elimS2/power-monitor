@@ -431,7 +431,7 @@ async def fetch_dtek_schedule():
         if cached_date != actual_today:
             date_changed = True
     if not cache_stale and not date_changed:
-        return
+        return False
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -440,14 +440,14 @@ async def fetch_dtek_schedule():
             raw = r.json()
     except Exception as e:
         log.warning("DTEK API fetch failed: %s", e)
-        return
+        return False
 
     if "body" in raw and isinstance(raw["body"], str):
         try:
             raw = json.loads(raw["body"])
         except json.JSONDecodeError:
             log.warning("DTEK API: failed to parse body")
-            return
+            return False
 
     region_data = None
     for reg in raw.get("regions", []):
@@ -456,7 +456,7 @@ async def fetch_dtek_schedule():
             break
     if not region_data:
         log.warning("DTEK: region %s not found", DTEK_REGION)
-        return
+        return False
 
     now_kyiv = datetime.now(UA_TZ)
     update = store_published_schedule(region_data, now_kyiv)
@@ -470,6 +470,12 @@ async def fetch_dtek_schedule():
         schedule_cache.update(update)
     _schedule_fetched_at = now
     log.info("DTEK schedule updated for %s queue %s", DTEK_REGION, DTEK_QUEUE)
+    try:
+        from light_schedule import align_light_breakers
+        await align_light_breakers()
+    except Exception as exc:
+        log.error("light-schedule: %s", exc.__class__.__name__)
+    return True
 
 
 async def fetch_weather():
