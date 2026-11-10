@@ -1038,6 +1038,29 @@
         else { el.style.display = ''; el.style.left = (frac * 100).toFixed(2) + '%'; }
       });
     }
+    function breakerOnPieces(span, downs) {
+      var cuts = [span.start, span.end];
+      downs.forEach(function(gap) {
+        if (gap[1] <= span.start || gap[0] >= span.end) return;
+        cuts.push(Math.max(span.start, gap[0]));
+        cuts.push(Math.min(span.end, gap[1]));
+      });
+      cuts.sort(function(a, b) { return a - b; });
+      var points = [];
+      cuts.forEach(function(t) {
+        if (!points.length || points[points.length - 1] !== t) points.push(t);
+      });
+      var pieces = [];
+      for (var i = 0; i < points.length - 1; i++) {
+        var left = points[i];
+        var right = points[i + 1];
+        if (right <= left) continue;
+        var mid = (left + right) / 2;
+        var onBattery = downs.some(function(gap) { return gap[0] <= mid && mid < gap[1]; });
+        pieces.push({ kind: onBattery ? 'brk-batt' : 'brk-on', start: left, end: right });
+      }
+      return pieces;
+    }
     function paintBreakers(data) {
       var startMs = (data.start || 0) * 1000;
       var spanMs = ((data.end || 0) - (data.start || 0)) * 1000 || 86400000;
@@ -1056,18 +1079,21 @@
         var empty = spans.length ? '' : '<div class="brk-empty">' + item[2] + ': ще немає знімка</div>';
         spans.forEach(function(span) {
           if (span.end == null) return;
-          var left = (span.start * 1000 - startMs) / spanMs * 100;
-          var width = (span.end * 1000 - span.start * 1000) / spanMs * 100;
-          left = Math.min(100, Math.max(0, left));
-          width = Math.min(100 - left, Math.max(0, width));
-          bars += '<i class="brk-bar ' + (span.switch ? 'brk-on' : 'brk-off') +
-            '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+          var pieces = span.switch ? breakerOnPieces(span, data.grid_down || []) : [{ kind: 'brk-off', start: span.start, end: span.end }];
+          pieces.forEach(function(piece) {
+            var left = (piece.start * 1000 - startMs) / spanMs * 100;
+            var width = ((piece.end - piece.start) * 1000) / spanMs * 100;
+            left = Math.min(100, Math.max(0, left));
+            width = Math.min(100 - left, Math.max(0, width));
+            if (width <= 0) return;
+            bars += '<i class="brk-bar ' + piece.kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+          });
         });
         html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
           '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
           '<i class="brk-now"></i></div></div></div>';
       });
-      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено <i class="brk-key brk-off"></i> вимкнено</div></div>';
+      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено</div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');

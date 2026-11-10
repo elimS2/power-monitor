@@ -598,6 +598,8 @@ class BreakerPageTests(unittest.TestCase):
         chunk = script[script.index("pm-breakers-board"):]
         self.assertNotIn("factOnSegments", chunk)
         self.assertNotIn("<button", chunk)
+        self.assertIn("brk-batt", chunk)
+        self.assertIn("не було світла", chunk)
         route = Path("api/dashboard.py").read_text(encoding="utf-8")
         self.assertEqual(route.count("/api/breakers"), 1)
         self.assertIn('@router.get("/api/breakers")', route)

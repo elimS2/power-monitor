@@ -2077,4 +2077,12 @@ def read_breaker_board(day: str, now: float) -> dict:
             "phases": phases,
         }
     start, end = kyiv_day_bounds(day)
-    return {"date": day, "today": day == today, "start": start, "end": end, "devices": devices}
+    window_end = now if day == today and start <= now <= end else end
+    return {
+        "date": day,
+        "today": day == today,
+        "start": start,
+        "end": end,
+        "grid_down": [list(pair) for pair in grid_down_intervals(start, window_end)],
+        "devices": devices,
+    }
