@@ -219,8 +219,17 @@ details[open] summary::before { content: '▼ '; }
 .brk-boiler { background: #fb923c; }
 .brk-key { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin: 0 0.2rem 0 0.45rem; vertical-align: middle; }
 .brk-lane .brk-now {
-  position: absolute; top: -2px; bottom: -2px; width: 1px; z-index: 3; pointer-events: none;
-  background: repeating-linear-gradient(to bottom, #e2e8f0 0 2px, transparent 2px 4px);
+  position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, #f8fafc 0 3px, transparent 3px 6px);
+  box-shadow: 0 0 5px 1px rgba(248,250,252,0.9);
+  animation: brk-now-blink 1.8s ease-in-out infinite;
+}
+@keyframes brk-now-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brk-lane .brk-now { animation: none; }
 }
 @media (max-width: 640px) {
   .brk-cards { grid-template-columns: 1fr; }
