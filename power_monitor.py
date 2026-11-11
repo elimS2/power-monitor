@@ -1404,6 +1404,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     start, end = kyiv_day_bounds(payload["date"])
     span_len = end - start or 1
     hours = "".join(f'<span data-brk-hour="{hour}">{hour:02d}</span>' for hour in range(24))
+    hours = f'<span class="brk-hours-pad"></span><div class="brk-hours-scale">{hours}</div>'
     grid_down = grid_down_intervals(start, end if not payload.get("today") else (now if now is not None else end))
     now_mark = ""
     if payload.get("today"):
@@ -1442,7 +1443,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
                     bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
         tracks.append(
             f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div>'
+            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div>'
             f'{_timer_pins_html(payload, name)}</div></div>'
         )
     tracks.append(_boiler_lane_html(payload, now_mark))
@@ -1546,10 +1547,18 @@ def _clock_minutes(text: str) -> int | None:
     return None
 
 
+def _hour_lines_html() -> str:
+    """One mark at each hour boundary, so a colored run shows where the hour starts and ends."""
+    return "".join(
+        f'<i class="brk-hour-line" style="left:{hour / 24 * 100:.4f}%"></i>'
+        for hour in range(1, 24)
+    )
+
+
 def _lane_html(title: str, bars: list[str], now_mark: str, empty: str) -> str:
     return (
         f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-        f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{now_mark}</div></div></div>'
+        f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div></div></div>'
     )
 
 

@@ -1102,10 +1102,17 @@
       });
       return pins;
     }
+    function breakerHourLines() {
+      var html = '';
+      for (var hour = 1; hour < 24; hour++) {
+        html += '<i class="brk-hour-line" style="left:' + (hour / 24 * 100).toFixed(4) + '%"></i>';
+      }
+      return html;
+    }
     function breakerLane(title, bars, empty) {
       return '<div class="brk-track"><span class="brk-track-name">' + title + '</span>' +
         '<div class="brk-lane-wrap">' + (empty || '') + '<div class="brk-lane">' + bars +
-        '<i class="brk-now"></i></div></div></div>';
+        breakerHourLines() + '<i class="brk-now"></i></div></div></div>';
     }
     function breakerPlanLane(data) {
       var queue = data.schedule_queue || '5.1';
@@ -1187,11 +1194,11 @@
       var pretty = data.date.split('-');
       var html = '<div class="brk-nav"><a href="#brk-prev" id="brk-prev">‹</a> <span id="brk-date">' +
         pretty[2] + '.' + pretty[1] + '.' + pretty[0] + '</span> <a href="#brk-next" id="brk-next">›</a></div>';
-      html += '<div class="brk-chart"><div class="brk-hours">';
+      html += '<div class="brk-chart"><div class="brk-hours"><span class="brk-hours-pad"></span><div class="brk-hours-scale">';
       for (var hour = 0; hour < 24; hour++) {
         html += '<span data-brk-hour="' + hour + '">' + (hour < 10 ? '0' : '') + hour + '</span>';
       }
-      html += '</div><div class="brk-plot">';
+      html += '</div></div><div class="brk-plot">';
       html += breakerPlanLane(data);
       html += breakerFactLane(data, startMs, spanMs);
       [['svitlo', 'Освітлення', 'Світло'], ['itp', 'Обігрів', 'ІТП']].forEach(function(item) {
@@ -1213,7 +1220,7 @@
         });
         html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
           '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
-          '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
+          breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
       });
       html += breakerBoilerLane(data);
       html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено <i class="brk-key brk-plan-ok"></i> графік: є світло <i class="brk-key brk-plan-off"></i> немає <i class="brk-key brk-fact-on"></i> факт: було <i class="brk-key brk-fact-off"></i> факт: не було <i class="brk-key brk-boiler"></i> котельня</div></div>';

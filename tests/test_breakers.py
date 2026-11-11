@@ -496,6 +496,8 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("ІТП: ще немає знімка", html)
         self.assertIn("Графік 5.1: немає знімка", html)
         self.assertIn("Котельня: немає графіка", html)
+        self.assertEqual(html.count("brk-hour-line"), 23 * 5)
+        self.assertIn('brk-hour-line" style="left:50.0000%"', html)
         self.assertNotIn("<button", html.lower())
 
     def test_plan_lane_uses_the_queue_snapshot(self):
@@ -656,6 +658,8 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("brk-boiler", chunk)
         self.assertIn("brk-pin-end", chunk)
         self.assertIn("brk-fact-on", chunk)
+        self.assertIn("brk-hour-line", chunk)
+        self.assertIn("brk-hours-scale", chunk)
         self.assertLess(chunk.index("html += breakerPlanLane"), chunk.index("html += breakerFactLane"))
         self.assertLess(chunk.index("html += breakerFactLane"), chunk.index("Освітлення"))
         self.assertNotIn("brk-plan-maybe", chunk)

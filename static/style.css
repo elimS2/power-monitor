@@ -185,6 +185,8 @@ details[open] summary::before { content: '▼ '; }
   padding: 0.15rem 0.55rem; font-size: 1rem;
 }
 .brk-hours { display: grid; grid-template-columns: repeat(24, 1fr); color: var(--muted); font-size: 0.62rem; margin-left: 5.2rem; }
+.brk-chart:not(.alert-day) > .brk-hours { grid-template-columns: 5.2rem 1fr; gap: 0.35rem; margin-left: 0; }
+.brk-hours-scale { display: grid; grid-template-columns: repeat(24, 1fr); }
 .brk-hours span { text-align: center; }
 .brk-hours .brk-hour-now { color: #e2e8f0; font-weight: 700; }
 .brk-plot { position: relative; display: grid; gap: 0.35rem; }
@@ -192,6 +194,11 @@ details[open] summary::before { content: '▼ '; }
 .brk-track-name { color: var(--muted); font-size: 0.72rem; }
 .brk-lane-wrap { position: relative; }
 .brk-lane { position: relative; height: 16px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+.brk-hour-line {
+  position: absolute; top: 0; bottom: 0; width: 1px; z-index: 2; pointer-events: none;
+  background: rgba(248,250,252,0.72);
+  box-shadow: -1px 0 0 rgba(15,23,42,0.55);
+}
 .brk-lane-wrap > .brk-when-pin { z-index: 4; }
 .brk-lane-wrap > .brk-pin-end { left: auto; right: 0; margin-left: 0; }
 .brk-lane-wrap > .brk-pin-start { left: 0; margin-left: 0; }
@@ -218,6 +225,8 @@ details[open] summary::before { content: '▼ '; }
 @media (max-width: 640px) {
   .brk-cards { grid-template-columns: 1fr; }
   .brk-hours { margin-left: 0; }
+  .brk-chart:not(.alert-day) > .brk-hours { grid-template-columns: 1fr; }
+  .brk-hours-pad { display: none; }
   .brk-track { grid-template-columns: 1fr; }
   .brk-track-name { margin-bottom: 0.15rem; }
 }
