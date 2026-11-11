@@ -2,6 +2,9 @@
 
 Heat timers are never read for changes and never deleted. A matching list logs
 one line. Each removal and each new timer logs its own line.
+
+Paused on 11.11.2026 until the on-delay rules are ready. While paused, a schedule
+fetch logs one line and does not read or change timers.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ from tuya_breakers import BreakerPollConfig
 log = logging.getLogger("power_monitor")
 
 LIGHT_LAG = timedelta(minutes=5)
+LIGHT_SCHEDULE_PAUSED = True
 
 
 def _dark(status: str) -> bool:
@@ -177,6 +181,9 @@ def _log_lines(lines: list[str]) -> None:
 
 async def align_light_breakers() -> None:
     """Read today's outage snapshot and make the lighting timers match it."""
+    if LIGHT_SCHEDULE_PAUSED:
+        log.info("light-schedule: automatic schedule is paused, leaving timers unchanged")
+        return
     if not TUYA_ACCESS_ID or not TUYA_ACCESS_SECRET or not TUYA_BREAKER_SVITLO:
         log.info("light-schedule: lighting breaker is not configured, leaving timers unchanged")
         return
