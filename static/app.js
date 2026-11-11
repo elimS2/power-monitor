@@ -1223,7 +1223,16 @@
           breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
       });
       html += breakerBoilerLane(data);
-      html += '</div><div class="brk-legend"><i class="brk-key brk-on"></i> увімкнено, було світло <i class="brk-key brk-batt"></i> увімкнено, не було світла <i class="brk-key brk-off"></i> вимкнено <i class="brk-key brk-plan-ok"></i> графік: є світло <i class="brk-key brk-plan-off"></i> немає <i class="brk-key brk-fact-on"></i> факт: було <i class="brk-key brk-fact-off"></i> факт: не було <i class="brk-key brk-boiler"></i> котельня</div></div>';
+      html += '</div><div class="brk-legend">' +
+        '<span class="brk-legend-item"><i class="brk-key brk-on"></i> увімкнено, було світло</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-batt"></i> увімкнено, не було світла</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-off"></i> вимкнено</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-plan-ok"></i> графік: є світло</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-plan-off"></i> немає</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> факт: було</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> факт: не було</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-key-now"></i> зараз</span></div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');
