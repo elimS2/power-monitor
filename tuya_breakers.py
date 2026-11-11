@@ -351,19 +351,16 @@ def _phase_watts(point) -> float | None:
 
 
 def breaker_shown_on(switch, phases) -> bool:
-    """Off when the bit is off, or when every reported phase is exactly 0 W."""
-    if not switch:
-        return False
-    if not isinstance(phases, dict):
-        return True
-    watts = []
-    for name in ("a", "b", "c"):
-        value = _phase_watts(phases.get(name))
-        if value is not None:
-            watts.append(value)
-    if not watts:
-        return True
-    return sum(watts) != 0
+    """Watts decide when a phase reports them. Any watt is on, exact zero is off. No watts, trust the bit."""
+    if isinstance(phases, dict):
+        watts = []
+        for name in ("a", "b", "c"):
+            value = _phase_watts(phases.get(name))
+            if value is not None:
+                watts.append(value)
+        if watts:
+            return sum(watts) != 0
+    return bool(switch)
 
 
 def _step_since_charge(

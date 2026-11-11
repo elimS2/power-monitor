@@ -115,7 +115,9 @@ class BreakerStoreTests(unittest.TestCase):
     def test_exact_zero_watts_is_off_even_when_the_bit_stays_on(self):
         self.assertFalse(breaker_shown_on(1, {"a": {"p": 0}, "b": {"p": 0}, "c": {"p": 0}}))
         self.assertTrue(breaker_shown_on(1, {"a": {"p": 1}, "b": {"p": 0}, "c": {"p": 0}}))
-        self.assertFalse(breaker_shown_on(0, {"a": {"p": 100}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertTrue(breaker_shown_on(0, {"a": {"p": 100}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertFalse(breaker_shown_on(0, {"a": {"p": 0}, "b": {"p": 0}, "c": {"p": 0}}))
+        self.assertFalse(breaker_shown_on(0, None))
         self.assertTrue(breaker_shown_on(1, None))
         from power_monitor import _breaker_lines_html
         html = _breaker_lines_html({
