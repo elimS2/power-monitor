@@ -2,10 +2,10 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 2 LOCAL — NOT DEPLOYED`
+- Status: `PHASE 3 PAUSED — PUBLIC KEY NOT READ`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
-- Next phase: 3, only after an explicit continue. Phase 2 is local and not deployed.
-- Last updated: 2026-11-13T19:45:27Z
+- Next phase: 3 step 1 still open. The live `public` label was not read. The route is not open.
+- Last updated: 2026-11-13T19:50:43Z
 
 ## Phase board
 
@@ -14,7 +14,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 | 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
 | 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
-| 3 Public block, then route, then poll | not started | GCP poller uses the stored host only. A silent 8899 skips the sample and does not clear the address. A new address is a human step, then the route gate again. |
+| 3 Public block, then route, then poll | paused at step 1 | 2026-11-13T19:50:43Z. Live debug SQL returned 403. Section not added. Route not opened. Poll stays off. |
 | 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
 
 ## Review
@@ -39,3 +39,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T19:26:00Z — Confirmation APPROVE. CRITICAL 0, HIGH 0. Status `REVIEWED / READY FOR LOCAL WORK`. No code.
 - 2026-11-13T19:40:56Z — Phase 1 local. No house poll. No deploy. 39 tests OK.
 - 2026-11-13T19:45:27Z — Phase 2 local. House sample does not move the apartment voltage bar or the lamp. No deploy. 41 tests OK.
+- 2026-11-13T19:50:43Z — Phase 3 step 1 paused. The local monitor key is not accepted by the live debug route. No section, no route, no poll. Route, if later approved, starts at the GCP poller and ends at one basement host via the shelter WireGuard peer.
