@@ -1,9 +1,9 @@
 # Multi-inverter Deye on the Power Monitor dashboard
 
-- Status: `PHASE 3 ROUTE CHECK — LOGGER NOT REACHABLE`
+- Status: `PHASE 3 ROUTE OPEN — POLL OFF`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T20:35:26Z
+- Last updated: 2026-11-13T20:49:06Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -329,7 +329,8 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T20:12:03Z — Step 1 read succeeded with the instance SSH key used in earlier chats. Label `public` is enabled, `role_id` 4, role name `Публічна`, not builtin. Resolved sections are an explicit list and do not contain `deye_details`. The same role is also on `artur`, `init_group`, `techahead_yaroslav`, and `vasyl`. Plan step 2 says stop and ask before writing that shared list. No section added, no role write, no route, no poll.
 - 2026-11-13T20:17:54Z — Operator: the house block is public and belongs on every key. Local code appends `deye_house_details` to every explicit section list and leaves `deye_details` off those lists. The house registry row is seeded with `poll_enabled=0`, host `192.168.0.104`, mac `74:e9:d8:39:22:8a`, battery 160. Empty block says there is no sample. 43 tests OK.
 - 2026-11-13T20:26:24Z — The empty house block was already on the server at `5fd1d3a`. Admin page load was 7.8s. `recent_deye_log` sorted the whole apartment history by row id after the inverter filter. Changed that sort to `ts`. Deployed `1f2f34c`. House `poll_enabled` stayed 0. Repeat loads: 0.09s and 0.10s. No route.
-- 2026-11-13T20:35:26Z — Route check from the GCP host. `ip route get 192.168.0.104` goes out `ens4` via `10.156.0.1`, not through WireGuard. TCP 8899 closed. The shelter peer is present and its handshake was about a minute old; ping of `10.99.0.6` got no reply. Its allowed networks are `10.99.0.6/32`, `192.168.1.0/24`, `10.67.10.0/24`, `10.67.20.0/24`, and `192.168.67.0/24`. `192.168.0.104` is not among them. No route was added. House poll stays 0. Stopped for an explicit yes before a one-host route.
+- 2026-11-13T20:35:26Z — Route check from the GCP host. `ip route get 192.168.0.104` goes out `ens4` via `10.156.0.1`, not through WireGuard. TCP 8899 closed. The shelter peer is present and its handshake was about a minute old; ping of `10.99.0.6` got no reply. Its allowed networks did not include `192.168.0.104`. No route was added yet. House poll stays 0.
+- 2026-11-13T20:49:06Z — Operator said yes to one host and no poll. GCP shelter peer AllowedIPs now includes `192.168.0.104/32`, and that host routes via `wg0`. The shelter accepts the cloud tunnel address `10.99.0.1/32` next to `10.99.0.2/32`. Firewall rule `gcp_logger` allows TCP 8899 from the vpn zone to that one address on the wan zone. From GCP, TCP 8899 is open. House `poll_enabled` was not changed.
 
 ### Open questions
 
@@ -376,7 +377,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 
 ## 11. Handoff for a new chat
 
-- Phase 3 empty block is deployed. House poll stays off. The 2026-11-13T20:35:26Z check from GCP could not open `192.168.0.104:8899`. Do not add the one-host route until the operator says yes. Do not copy the logger serial into git. Do not drop an SSH tunnel script in Temp.
+- Phase 3 empty block is deployed. The one-host route to `192.168.0.104:8899` was opened at 2026-11-13T20:49:06Z. House poll stays off until an explicit yes. Do not copy the logger serial into git. Do not drop an SSH tunnel script in Temp.
 - Active skin: A.
 - Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
 - Do not add `deye_details` to the key labeled `public`.
