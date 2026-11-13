@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import statistics
 import sqlite3
@@ -271,6 +272,30 @@ def init_db():
                 db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
             except sqlite3.OperationalError:
                 pass  # column exists
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS deye_inverter (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                serial        TEXT UNIQUE,
+                mac           TEXT,
+                title         TEXT NOT NULL,
+                host          TEXT NOT NULL DEFAULT '',
+                port          INTEGER NOT NULL,
+                battery_kwh   REAL NOT NULL DEFAULT 0,
+                poll_enabled  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        try:
+            db.execute("ALTER TABLE deye_log ADD COLUMN inverter_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        apartment_id = _ensure_apartment_inverter(db)
+        db.execute(
+            "UPDATE deye_log SET inverter_id=? WHERE inverter_id IS NULL",
+            (apartment_id,),
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_deye_log_inverter_ts ON deye_log(inverter_id, ts)"
+        )
         # API key permissions (label = API_KEYS value, e.g. admin, vasyl)
         db.execute("""
             CREATE TABLE IF NOT EXISTS api_key_config (
@@ -1255,6 +1280,54 @@ def read_alert_day(day: str, now: float) -> dict:
     }
 
 
+APARTMENT_INVERTER_TITLE = "Deye інвертор"
+
+
+def _poll_port_from_env(serial: str | None) -> int:
+    try:
+        port = int(os.getenv("DEYE_POLL_PORT", "0") or "0")
+    except ValueError:
+        port = 0
+    if port > 0:
+        return port
+    return 8899 if serial else 502
+
+
+def _ensure_apartment_inverter(db) -> int:
+    """Seed the apartment row once. Later boots keep the row that is already there."""
+    row = db.execute(
+        "SELECT id FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1",
+        (APARTMENT_INVERTER_TITLE,),
+    ).fetchone()
+    if row is not None:
+        return int(row["id"])
+    serial = os.getenv("DEYE_POLL_SERIAL", "").strip() or None
+    host = os.getenv("DEYE_POLL_IP", "").strip()
+    try:
+        battery = float(os.getenv("DEYE_BATTERY_KWH", "0") or "0")
+    except ValueError:
+        battery = 0.0
+    cur = db.execute(
+        """INSERT INTO deye_inverter(
+               serial, mac, title, host, port, battery_kwh, poll_enabled
+           ) VALUES(?,?,?,?,?,?,1)""",
+        (serial, None, APARTMENT_INVERTER_TITLE, host, _poll_port_from_env(serial), battery),
+    )
+    return int(cur.lastrowid)
+
+
+def apartment_inverter_id() -> int:
+    """Id of the seeded apartment inverter. Does not read deye_log."""
+    with _conn() as db:
+        row = db.execute(
+            "SELECT id FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1",
+            (APARTMENT_INVERTER_TITLE,),
+        ).fetchone()
+    if row is None:
+        raise ValueError("apartment inverter is not registered")
+    return int(row["id"])
+
+
 def save_deye_log(
     load_power_w: float | None = None,
     load_l1_w: float | None = None,
@@ -1275,10 +1348,19 @@ def save_deye_log(
     day_grid_export_kwh: float | None = None,
     total_grid_import_kwh: float | None = None,
     total_grid_export_kwh: float | None = None,
+    inverter_id: int | None = None,
 ):
+    if inverter_id is None:
+        raise ValueError("inverter_id is required")
     ts = time.time()
     ts_kyiv = datetime.fromtimestamp(ts, tz=UA_TZ).strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as db:
+        known = db.execute(
+            "SELECT id FROM deye_inverter WHERE id=?",
+            (inverter_id,),
+        ).fetchone()
+        if known is None:
+            raise ValueError("unknown inverter_id")
         db.execute(
             """INSERT INTO deye_log (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
@@ -1287,8 +1369,8 @@ def save_deye_log(
                 battery_soc, battery_power_w, battery_voltage,
                 day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                 day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
-                ts, ts_kyiv
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ts, ts_kyiv, inverter_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_power_w,
@@ -1296,7 +1378,7 @@ def save_deye_log(
                 battery_soc, battery_power_w, battery_voltage,
                 day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                 day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
-                ts, ts_kyiv,
+                ts, ts_kyiv, inverter_id,
             ),
         )
         _record_voltage_sample(db, ts, grid_v_l1, grid_v_l2, grid_v_l3)

@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Query, Request, HTTPException
 
 from api.deps import check_permission
-from database import save_deye_log
+from database import apartment_inverter_id, save_deye_log
 
 router = APIRouter(tags=["deye"])
 log = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ async def ep_deye_heartbeat(request: Request, key: str = Query("")):
             day_grid_export_kwh=data.get("day_grid_export_kwh"),
             total_grid_import_kwh=data.get("total_grid_import_kwh"),
             total_grid_export_kwh=data.get("total_grid_export_kwh"),
+            inverter_id=apartment_inverter_id(),
         )
         return {"ok": True}
     except HTTPException:

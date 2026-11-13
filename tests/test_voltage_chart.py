@@ -91,14 +91,15 @@ class VoltageBucketQueryTests(unittest.TestCase):
 
     def test_zero_samples_stay_out_of_the_average(self):
         start = _kyiv(2026, 11, 9, 0, 0)
+        apt = database.apartment_inverter_id()
         with database._conn() as db:
             db.execute(
-                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts) VALUES (?,?,?,?)",
-                (230.0, 0.0, 228.0, start + 10),
+                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id) VALUES (?,?,?,?,?)",
+                (230.0, 0.0, 228.0, start + 10, apt),
             )
             db.execute(
-                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts) VALUES (?,?,?,?)",
-                (0.0, 0.0, 0.0, start + 70),
+                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id) VALUES (?,?,?,?,?)",
+                (0.0, 0.0, 0.0, start + 70, apt),
             )
         rows = database.deye_voltage_buckets(start, start + 180, 60)
         self.assertEqual(len(rows), 2)

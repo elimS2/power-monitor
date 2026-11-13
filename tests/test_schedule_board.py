@@ -331,10 +331,29 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
 
         database._conn = wrapped
         try:
-            database.save_deye_log(grid_v_l1=250, grid_v_l2=230, grid_v_l3=230)
+            database.save_deye_log(
+                grid_v_l1=250,
+                grid_v_l2=230,
+                grid_v_l3=230,
+                inverter_id=database.apartment_inverter_id(),
+            )
         finally:
             database._conn = real
         self.assertTrue(any(sql.lstrip().upper().startswith("INSERT INTO DEYE_LOG") for sql in seen))
+
+    def test_save_deye_log_rejects_a_missing_or_unknown_inverter(self):
+        database.init_db()
+        with self.assertRaises(ValueError):
+            database.save_deye_log(grid_v_l1=230, grid_v_l2=230, grid_v_l3=230)
+        with self.assertRaises(ValueError):
+            database.save_deye_log(
+                grid_v_l1=230, grid_v_l2=230, grid_v_l3=230, inverter_id=99999,
+            )
+        with database._conn() as db:
+            nulls = db.execute(
+                "SELECT COUNT(*) AS c FROM deye_log WHERE inverter_id IS NULL"
+            ).fetchone()["c"]
+        self.assertEqual(nulls, 0)
 
     def test_board_read_does_not_scan_samples_or_events(self):
         database.init_db()

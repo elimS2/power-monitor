@@ -1,13 +1,11 @@
 # Multi-inverter Deye on the Power Monitor dashboard
 
-- Status: `PHASE 0 READ OK — PHASE 1 NOT STARTED`
-- Owner: Volodymyr
-- Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T19:15:55Z
-- Active skin: A (registry + `deye_log.inverter_id`)
+- Status: `PHASE 1 LOCAL — NOT DEPLOYED`
+- Last updated: 2026-11-13T19:40:56Z
+- Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
-- Review mutation proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, title `Multi-inverter plan review`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-13T18:36:29.547Z`, `mutation_kind=plan`.
+- Review mutation proof for this revision: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, title `Public basement Deye on the dashboard`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-13T19:19:10.204Z`, `mutation_kind=plan`.
 
 ## 1. Goal and non-goals
 
@@ -22,7 +20,8 @@ One registry of Deye inverters and one sample log. The apartment block and a new
 - Do not poll the building inverter until Phase 0 has a live host and Phase 3 has confirmed a route from the GCP poller. Do not invent that route in Phase 0.
 - Do not renumber the shelter router or the camera. A one-host route, if it is missing, is a separate human gate inside Phase 3, not a silent firewall edit.
 - Do not write API keys, router passwords, or the Solarman serial into this file, the PROGRESS file, or any committed doc. The serial stays in the server `.env`.
-- No deploy and no production migration in the planning session. No implementation until this review reaches `REVIEWED / READY FOR LOCAL WORK` and the operator says to continue.
+- Do not write a local tunnel script under the Windows Temp folder. On 2026-11-13T19:15:37Z AVG blocked `owrt-phase0-read.py` as `IDP.Generic` (detection `c43dd3375964`). The read had already returned. That file shape, an SSH direct-tcpip forward plus a password in the environment, is what the scanner treated as an intrusion tool. Later probes are a short command on the shelter router, or code that lives in this repo. If the scanner blocks again, stop and tell the operator. Do not rename the file to get past it.
+- No deploy and no production migration in this planning revision. Phase 1 does not start until this revision is reviewed and the operator says to continue.
 
 ## 2. Context harvest
 
@@ -140,7 +139,7 @@ There is no `.env` switch that selects the schema. `DEYE_POLL_*` and `DEYE_BATTE
 ## 5. Recommended architecture
 
 ```
-deye_inverter (id, serial UNIQUE, title, host, port, battery_kwh, poll_enabled)
+deye_inverter (id, serial UNIQUE, mac, title, host, port, battery_kwh, poll_enabled)
         |
         +-- deye_log.inverter_id   samples
                 |
@@ -165,9 +164,9 @@ Section gate: new id `deye_house_details` in `ALL_SECTIONS` and `SECTION_LABELS`
 
 The public key is the DB/env key whose label is `public` (`_get_public_dashboard_url`). Phase 3 reads `api_key_config_get("public")` (the resolved list, not the raw column) and adds `deye_house_details` on the role or on the key, as that function actually resolves it. It does not add `deye_details`.
 
-Discovery of the house host is not a schema change. From the basement OpenWrt, list neighbors on the LAN that contained `.100`–`.104` (`192.168.0.0/24` at the time of the scan). Diff against those five. Confirm the new address answers `read_deye`. Serial comes from the logger sticker or the Solarman handshake and is stored in the registry on the server, not in git.
+The house row stores the logger MAC. `host` is the last address a person confirmed. The GCP poller reads that host and keeps a sample only after a successful Solarman read. It does not see basement ARP and it does not SSH to the shelter router. If TCP 8899 is silent, it skips the sample and leaves `host` unchanged. A new address is a separate human step from a machine that can already SSH to `192.168.67.1`: read `ip neigh`, take `74:e9:d8:39:22:8a` only when the state is REACHABLE or DELAY, check TCP 8899, write `host`, then repeat the route gate for that IP. Until that gate passes, house `poll_enabled` stays 0. No tunnel script in Temp. Breaker commands stay on the Tuya cloud device id in the server env. Their MACs are recorded here so a moved address can still be recognized. Those ids are not copied into git.
 
-GCP does not poll that address until Phase 3 shows a working path. Documented AllowedIPs do not include `192.168.0.0/24`.
+Apartment `Test-NetConnection` to `192.168.0.104:8899` on 2026-11-13T19:14:28Z returned `TcpTestSucceeded=False`. The successful read went through the shelter router. GCP still has no documented route to `192.168.0.0/24`.
 
 ## 6. Phases
 
@@ -212,13 +211,31 @@ Candidate: `192.168.0.104`. OUI `74:e9:d8` is Shanghai High-Flying Electronics, 
 
 Operator the same evening: `.105` is the third Akuvox, the freight / fire elevator with the street entrance. Three elevators, three Akuvox. That host is not an inverter. TCP 8899 on it stayed closed.
 
-Breaker DHCP addresses are not how those modules are switched. The cloud calls in dialog `cbc74fb3` and the poller in `tuya_breakers.py` use the device id from the server env. A new DHCP address does not retarget the command. The ids stay out of git.
+Breaker DHCP addresses are not how those modules are switched. The cloud calls in dialog `cbc74fb3` and the poller in `tuya_breakers.py` use the device id from the server env. A new DHCP address does not retarget the command. The ids stay out of git. The MAC does. When an address moves, match the MAC in the table below and update the last-seen address. Do not treat the old IP as the device.
+
+### Basement LAN identity (last seen 2026-11-13T19:06:51Z)
+
+MAC is the identity. The address is only where that MAC answered that evening.
+
+| MAC | Last address | What it is |
+|---|---|---|
+| `e8:48:b8:ea:1e:35` | `192.168.0.1` | Basement TP-Link gateway. Same MAC as the November scan |
+| `14:cc:20:b5:69:97` | none proven | Seen only as a link-local neighbor on `eth1`. Not paired with `192.168.0.109`. The OpenWrt WAN address that evening was `192.168.0.109`; its MAC was not read. The desk-era canvas MAC `14:cc:20:b5:69:94` is a different octet and is not used as the WAN identity. |
+| `0c:11:05:33:f5:08` | `192.168.0.100` | Akuvox |
+| `0c:11:05:33:f5:e0` | `192.168.0.101` | Akuvox |
+| `0c:11:05:33:f5:34` | `192.168.0.105` | Akuvox, freight / fire elevator, street entrance. Operator 2026-11-13. Not an inverter |
+| `50:78:7d:ee:b4:a8` | `192.168.0.102` | Espressif. Same MAC and address as November. Not a breaker and not the logger |
+| `00:33:7a:0a:93:f9` | `192.168.0.103` | Tuya breaker. This MAC was on `.104` in November |
+| `00:33:7a:0a:50:f7` | `192.168.0.108` | Tuya breaker. This MAC was on `.103` in November |
+| `74:e9:d8:39:22:8a` | `192.168.0.104` | Building Deye logger, High-Flying. TCP 8899. Read at 19:15:55Z: SOC 98%, load 9525 W |
+
+Which Tuya MAC is the light and which is the heating breaker is not in this file. The cloud device id in the server env is what the poller uses. Do not invent that pairing from the MAC alone.
 
 ### Phase 1 — Schema, backfill, and apartment writers
 
 - Goal: registry and nullable `deye_log.inverter_id`. Old rows tagged as the apartment inverter. Poller and heartbeat write that id. No second poll. Readers may stay unfiltered in this phase because every new row is still the apartment inverter.
 - Touch: `database.py` init. `save_deye_log` and both callers (`_poll_deye`, `api/deye.py`). `tests/test_voltage_chart.py` and `tests/test_schedule_board.py`. Keep their rows as the apartment id.
-- Steps: create `deye_inverter`. Insert the apartment row from env: serial `DEYE_POLL_SERIAL`, title "Deye інвертор", host `DEYE_POLL_IP`, port from `DEYE_POLL_PORT` (same fallback as `_poll_deye`), `battery_kwh` from `DEYE_BATTERY_KWH`. Do not copy those values into the commit. `ALTER TABLE deye_log ADD COLUMN inverter_id INTEGER`. Backfill to the apartment id. Index `(inverter_id, ts)`. Leave the column nullable. SQLite `ADD COLUMN` cannot grow a NOT NULL constraint cleanly, and `_conn` does not enable foreign keys. `save_deye_log` requires an `inverter_id` argument and rejects an id that is not in `deye_inverter`. The existence check reads `deye_inverter` only. A `SELECT` from `deye_log` inside `save_deye_log` fails `test_save_deye_log_does_not_select_the_sample_log`. Change that test's call to pass the apartment id. Set the same id on both inserts in `tests/test_voltage_chart.py`. Readers never treat a NULL `inverter_id` as the apartment id.
+- Steps: create `deye_inverter` with `mac TEXT`. Insert the apartment row from env: serial `DEYE_POLL_SERIAL`, title "Deye інвертор", host `DEYE_POLL_IP`, port from `DEYE_POLL_PORT` (same fallback as `_poll_deye`), `battery_kwh` from `DEYE_BATTERY_KWH`, `mac` null until that logger is seen on a LAN we can scan. Do not copy those values into the commit. `ALTER TABLE deye_log ADD COLUMN inverter_id INTEGER`. Backfill to the apartment id. Index `(inverter_id, ts)`. Leave the column nullable. SQLite `ADD COLUMN` cannot grow a NOT NULL constraint cleanly, and `_conn` does not enable foreign keys. `save_deye_log` requires an `inverter_id` argument and rejects an id that is not in `deye_inverter`. The existence check reads `deye_inverter` only. A `SELECT` from `deye_log` inside `save_deye_log` fails `test_save_deye_log_does_not_select_the_sample_log`. Change that test's call to pass the apartment id. Set the same id on both inserts in `tests/test_voltage_chart.py`. Readers never treat a NULL `inverter_id` as the apartment id.
 - Verify: row count unchanged. `SELECT COUNT(*) FROM deye_log WHERE inverter_id IS NULL` is 0 after backfill. A new poll row and a heartbeat row both carry the apartment id. Apartment dashboard still shows the same latest SOC.
 - Negative: `save_deye_log` without an id, or with an unknown id, raises. The test does not depend on `PRAGMA foreign_keys`. The schedule-board spy still sees no `from deye_log` inside `save_deye_log`.
 - Rollback: stop writing the column's meaning; keep the column. Poller writes only the apartment id. Do not drop the column on the live DB in the same step.
@@ -242,10 +259,10 @@ Breaker DHCP addresses are not how those modules are switched. The cloud calls i
   1. Call `api_key_config_get("public")`. Stop if there is no row, `enabled` is false, or the resolved `sections` is null, empty, or contains `deye_details`. That key is fail-open or already sees the apartment inverter. Do not add `deye_house_details` to `ALL_SECTIONS` until step 2 has a single write target. Do not paste the key into git. Do not read the raw `sections` column when `role_id` is set: `api_key_config_get` replaces it with the role, and `api_key_config_set_permissions` stores NULL in the column whenever `role_id` is set.
   2. If `role_id` is set, list every label that uses that role. If any label other than `public` uses it, stop and ask. If only `public` uses it, append `deye_house_details` to that role's section list with a direct `UPDATE roles SET sections=?`. Do not call `role_update`: it returns False for `is_builtin=1`, and "Без Deye" is builtin. The voltage rewrite at `database.py` ~353 is the existing pattern for writing a builtin list. Do not set the role's sections to NULL, do not clear `is_builtin`, and do not clear `role_id` (that also drops endpoints and makes `allowed_footer_parts` return every footer part). If `role_id` is null, append to the key's own JSON and pass the existing `endpoints` through `api_key_config_set_permissions`. Do not append `deye_details`. Do not reuse the "Без Deye" rewrite at `database.py` ~353. On a brand-new DB the seed for "Без Deye" may include `deye_house_details` and must still exclude `deye_details`. Production is step 1, not that seed.
   3. Add `deye_house_details` to `ALL_SECTIONS`, `SECTION_LABELS`, and `DASHBOARD_SECTION_ORDER` only after step 2.
-  4. Register the house row with `poll_enabled=0`, title "Deye інвертор будинку", host/port/serial from Phase 0, `battery_kwh` from the confirmed pack size. The builder takes `battery_kwh` from the row. Do not use `DEYE_BATTERY_KWH` for the house block. The house voltage subsection is the small meter from section 5, not `_build_voltage_panel`.
+  4. Register the house row with `poll_enabled=0`, title "Deye інвертор будинку", host `192.168.0.104`, mac `74:e9:d8:39:22:8a`, port 8899, serial from the server env (not from this file), `battery_kwh` from the confirmed pack size. The builder takes `battery_kwh` from the row. Do not use `DEYE_BATTERY_KWH` for the house block. The house voltage subsection is the small meter from section 5, not `_build_voltage_panel`.
   5. Every id in the section 3 inventory uses the `deye_house_` prefix. `static/app.js` writes `pm_deye_house` into `#pm-deye-house` the same way it writes `pm_deye` into `#pm-deye`. The fragment includes `pm_deye_house` only when `deye_house_details` is allowed.
-  6. Route gate, before `poll_enabled=1`: from the GCP host, check whether the Phase 0 address is reachable through the existing WireGuard (documented path is only `192.168.88.0/24`). If it is not, stop and ask. A one-host route via the shelter peer is allowed only after an explicit yes. Do not renumber the router. Do not change the camera. Do not guess `192.168.67.40`.
-  7. After that yes, set `poll_enabled=1`. The tick runs from registry rows, not from a non-empty `DEYE_POLL_IP`. Pass an explicit socket timeout into the Solarman client. Run the house read as its own task so `run_deye_then_breakers` does not await it before the breaker step. A house failure does not skip the apartment poll and does not skip breakers.
+  6. Route gate, before `poll_enabled=1`: from the GCP host, check whether the current house address is reachable through the existing WireGuard (documented path is only `192.168.88.0/24`). The apartment PC already failed a direct TCP check to `192.168.0.104:8899` on 2026-11-13T19:14:28Z. If GCP cannot reach it either, stop and ask. A one-host route via the shelter peer is allowed only after an explicit yes. Do not renumber the router. Do not change the camera. Do not guess `192.168.67.40`.
+  7. After that yes, set `poll_enabled=1` for this confirmed address only. The tick runs from registry rows, not from a non-empty `DEYE_POLL_IP`. Pass an explicit socket timeout into the Solarman client. Run the house read as its own task so `run_deye_then_breakers` does not await it before the breaker step. The poller uses the stored `host` and accepts a sample only after a successful Solarman read. It does not check the MAC and it does not SSH to `192.168.67.1`. If TCP 8899 is silent, skip the sample and leave `host` unchanged. Reachability of `10.99.0.6` from GCP was not measured on 2026-11-13. The failed ping that evening was from the apartment. The route gate in step 6 is the measurement, and it runs on the server. Changing `host` later is the human step in section 5, then step 6 again, and `poll_enabled` stays 0 until that gate passes. Do not drop a tunnel script in Temp. A house failure does not skip the apartment poll and does not skip breakers.
 - Verify: public key HTML contains "Deye інвертор будинку" and does not contain the apartment SOC. `GET /api/dashboard-fragments` for that key does not contain apartment SOC, and does contain the house fragment only after the section is allowed. With poll disabled, the house block says there is no sample. Admin HTML still contains "Deye інвертор" with the apartment numbers, and both blocks can be collapsed independently (distinct ids). After poll is enabled, the house block's live fragment updates, and the apartment lamp does not follow the basement.
 - Negative: the fragment JSON, not only the HTML, lacks apartment `load_power_w` and SOC. A house sample does not write `schedule_day.voltage_json`. The two lamp asserts from Phase 2 still hold.
 - Rollback: remove `deye_house_details` from the same role or key list that step 2 wrote, and set `poll_enabled=0`. Leave the column. Do not clear `role_id`.
@@ -301,11 +318,13 @@ Breaker DHCP addresses are not how those modules are switched. The cloud calls i
 - 2026-11-13T18:42:00Z — Lead review, prompt #5, round 1, before the independent critic. Supersedes the Phase 0 line that scanned from `192.168.67.1`. That prefix is the desk-era canvas LAN, not the breaker LAN. Supersedes "SQLite foreign key rejects a bad id": `foreign_keys` is off; the guard is in `save_deye_log`. Adds the lamp, `detection.py`, the heartbeat writer, the single aggregate cache, `DEYE_BATTERY_KWH`, duplicate DOM ids, the fail-open section list, and the GCP route gate. Those were holes a faithful implementation of the first draft would have shipped.
 - 2026-11-13T18:47:00Z — Critic round 1, model `grok-4.7-xhigh-fast`, agent `425ac57b-0f2d-4eeb-b5f0-5a76e62c19a7`, verdict `CHANGES REQUIRED`, CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2. Both HIGH findings accepted after a disk check. `GET /api/dashboard-fragments` returns `pm_deye` with no section filter, and `static/app.js` paints `#pm-deye`. A `role_id` makes a write to `api_key_config.sections` a no-op because `api_key_config_get` substitutes the role. MEDIUM and LOW from that round are folded into Phases 1–3: NULL is not the apartment id, the schedule-board spy must not see `from deye_log`, the lamp asserts match `PHASES_ONLY=0`, the poll tick is not gated on `DEYE_POLL_IP`, the house read is not awaited before breakers, the house meter does not call `_build_voltage_panel`, the full id inventory is prefixed, and `deye_monthly_load_kwh` / `deye_yearly_load_kwh` are scoped or deleted. Supersedes the Phase 3 sentence that appended the section onto the raw key column, and the risk line that said `read_deye` was already bounded.
 - 2026-11-13T18:51:12Z — After the first confirmation APPROVE, lead added one sentence. `role_update` returns False when `is_builtin` is 1 (`database.py` ~694). "Без Deye" is builtin, so a sole-user append is a direct `UPDATE roles`, the same path as the voltage rewrite. `role_update` is not the write. Final confirmation, same critic, verdict `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status set to `REVIEWED / READY FOR LOCAL WORK`. Implementation still waits for an explicit continue.
-- 2026-11-13T19:15:55Z — Sticker serial on `192.168.0.104` returned grid 228.0/227.7/226.3 V, SOC 98%, load 9525 W. Serial not stored here. Operator: `.105` is the third Akuvox (freight elevator, street entrance). Breaker on/off in dialog `cbc74fb3` follows the cloud device id, not the DHCP address. Phase 1 still waiting.
+- 2026-11-13T19:19:09Z — Prompt #6 revision. MAC is the stable identity; the address is last-seen. Registry gains `mac`. If the house host stops answering 8899, resolve `74:e9:d8:39:22:8a` from the shelter neighbor table instead of trusting DHCP. Apartment direct TCP to `192.168.0.104:8899` failed at 19:14:28Z. AVG blocked `owrt-phase0-read.py` as `IDP.Generic` (`c43dd3375964`); that file shape is retired. Temp copies removed. Previous review approval stays history for the earlier text. This revision is `DRAFT READY FOR REVIEW`. Phase 1 still has not started.
+- 2026-11-13T19:22:58Z — Lead review of the MAC revision, prompt #5, before the critic. Supersedes the row that paired `14:cc:20:b5:69:97` with `192.168.0.109`: that MAC was only a link-local neighbor.
+- 2026-11-13T19:40:56Z — Phase 1 local. `deye_inverter` seeded with the apartment row from env. `deye_log.inverter_id` added and backfilled. Poller and `POST /api/deye-heartbeat` write that id. No house poll, no deploy. `tests.test_schedule_board` and `tests.test_voltage_chart`: 39 tests OK. Unknown `inverter_id` raises. `save_deye_log` does not SELECT `deye_log`.
 
 ### Open questions
 
-- Which physical Deye is "the building one"? `192.168.0.104` answered the sticker serial at 2026-11-13T19:15:55Z with SOC 98% and load 9525 W. That is the phase 0 host. Battery figure 160 kWh stays in the registry only when Phase 1 runs.
+- Which physical Deye is "the building one"? `192.168.0.104` answered the sticker serial at 2026-11-13T19:15:55Z with SOC 98% and load 9525 W. That is the phase 0 host. Battery figure 160 kWh is written on the house registry row in Phase 3 step 4, after the pack size is confirmed. Phase 1 inserts only the apartment row.
 - Public "Напруга мережі" (`voltage_details`): leave it on the apartment trace. House voltage lives only inside the new block. Change this only if the operator says the public voltage widget should follow the basement.
 
 ### Self-review round 1 (2026-11-13T16:50:00Z) — historical
@@ -328,7 +347,7 @@ Breaker DHCP addresses are not how those modules are switched. The cloud calls i
 - Verdict then: `CHANGES REQUIRED`. CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2.
 - Lead accepted both HIGH findings and the MEDIUM/LOW fixes.
 - Final confirmation, same critic: `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Includes the builtin-role `UPDATE` sentence.
-- Status is `REVIEWED / READY FOR LOCAL WORK`. Local work still waits for an explicit continue.
+- Status is `REVIEWED / READY FOR LOCAL WORK` after confirmation of the MAC revision. That sentence described the plan before Phase 1. Phase 1 later landed locally at 2026-11-13T19:40:56Z and is not deployed.
 
 ## 10. Progress log
 
@@ -337,11 +356,14 @@ Breaker DHCP addresses are not how those modules are switched. The cloud calls i
 - 2026-11-13T18:42:00Z — Prompt #5 lead review. Plan and PROGRESS rewritten to match the working tree. No code, no deploy, no commit.
 - 2026-11-13T18:47:00Z — Critic round 1 fixes applied to this file.
 - 2026-11-13T18:51:12Z — Final confirmation APPROVE. Status `REVIEWED / READY FOR LOCAL WORK`. No code.
-- 2026-11-13T19:15:55Z — Logger read succeeded. Load and SOC recorded above. Serial not written. Phase 1 not started.
+- 2026-11-13T19:15:55Z — Logger read succeeded. Load and SOC recorded above. Serial not written.
+- 2026-11-13T19:19:09Z — Prompt #6 revision. MAC table added. AVG false positive recorded.
+- 2026-11-13T19:26:00Z — MAC revision confirmed. Status `REVIEWED / READY FOR LOCAL WORK`.
+- 2026-11-13T19:40:56Z — Phase 1 code is local. Next is Phase 2 only after an explicit continue. Do not deploy this commit by itself unless the operator asks: writers already pass the apartment id, and no house row exists, but the public block is not in this step.
 
 ## 11. Handoff for a new chat
 
-- Phase 0 host is `192.168.0.104`. One read returned SOC 98% and load 9525 W. Do not write schema until the operator says to start Phase 1. Do not copy the logger serial into git.
+- Phase 1 is local and not deployed. Start Phase 2 only after an explicit continue. Do not enable a second poll. Do not copy the logger serial into git.
 - Active skin: A.
 - Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
 - Do not add `deye_details` to the key labeled `public`.

@@ -109,6 +109,7 @@ from database import (
     backfill_schedule_actuals,
     carry_open_outage,
     save_deye_log,
+    apartment_inverter_id,
     save_heartbeat,
     save_tg_log,
     schedule_history_for_date,
@@ -418,6 +419,7 @@ async def _poll_deye():
                 day_grid_export_kwh=data.get("day_grid_export_kwh"),
                 total_grid_import_kwh=data.get("total_grid_import_kwh"),
                 total_grid_export_kwh=data.get("total_grid_export_kwh"),
+                inverter_id=apartment_inverter_id(),
             )
             load = data.get("load_power_w", "?")
             soc = data.get("battery_soc", "?")

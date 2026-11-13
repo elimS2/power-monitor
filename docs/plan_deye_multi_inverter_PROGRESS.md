@@ -2,19 +2,19 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 0 READ OK — PHASE 1 NOT STARTED`
-- Active skin: A (registry + `deye_log.inverter_id`)
-- Next phase: 1, after an explicit continue. Host `192.168.0.104` already answered.
-- Last updated: 2026-11-13T19:15:55Z
+- Status: `PHASE 1 LOCAL — NOT DEPLOYED`
+- Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
+- Next phase: 2, only after an explicit continue. Phase 1 is local and not deployed.
+- Last updated: 2026-11-13T19:40:56Z
 
 ## Phase board
 
 | Phase | State | Note |
 |---|---|---|
-| 0 Find basement host | read ok | 2026-11-13T19:15:55Z. `192.168.0.104` grid 228.0/227.7/226.3 V, SOC 98%, load 9525 W. Serial not stored. `.105` is the third Akuvox. |
-| 1 Schema, backfill, apartment writers | not started | Nullable `inverter_id`. Poller and `POST /api/deye-heartbeat` both write the apartment id. No second poll. |
+| 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
+| 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | not started | Lamp, `detection.py`, voltage JSON, the aggregate cache, and `/api/dashboard-fragments` stay apartment-only unless the key may see `deye_details`. |
-| 3 Public block, then route, then poll | not started | `poll_enabled` stays 0 until `api_key_config_get("public")` has an explicit list, the role-or-key write has one target, and GCP can reach the host. House poll is its own task. |
+| 3 Public block, then route, then poll | not started | GCP poller uses the stored host only. A silent 8899 skips the sample and does not clear the address. A new address is a human step, then the route gate again. |
 | 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
 
 ## Review
@@ -33,3 +33,8 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T18:51:12Z — Final confirmation APPROVE. Status `REVIEWED / READY FOR LOCAL WORK`. No code. Next phase is still 0, and it waits for an explicit continue.
 - 2026-11-13T19:06:51Z — Prompt #2 continue. Read-only scan. Candidate `192.168.0.104`. Tuya MACs moved to `.103` and `.108`. New Akuvox-family host `.105` has no port 8899. Serial not read. Phase 1 not started.
 - 2026-11-13T19:15:55Z — Sticker serial answered. SOC 98%, load 9525 W, grid about 227 V. Operator named `.105` as the freight-elevator Akuvox. Breaker commands use the cloud device id. Phase 1 still not started.
+- 2026-11-13T19:19:09Z — Plan revision. MAC table is the device list. AVG `IDP.Generic` on `owrt-phase0-read.py` (`c43dd3375964`); those Temp scripts were deleted. Status `DRAFT READY FOR REVIEW`. No code, no commit.
+- 2026-11-13T19:22:58Z — Lead review. OpenWrt MAC is not tied to `.109`. Stale logger IP is not reused. Critic not run yet.
+- 2026-11-13T19:25:00Z — Critic HIGH accepted. GCP does not look up MAC and does not erase `host`. Confirmation pending.
+- 2026-11-13T19:26:00Z — Confirmation APPROVE. CRITICAL 0, HIGH 0. Status `REVIEWED / READY FOR LOCAL WORK`. No code.
+- 2026-11-13T19:40:56Z — Phase 1 local. No house poll. No deploy. 39 tests OK.
