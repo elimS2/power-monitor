@@ -2,16 +2,16 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 0 CANDIDATE — WAITING FOR CONFIRMATION`
+- Status: `PHASE 0 READ OK — PHASE 1 NOT STARTED`
 - Active skin: A (registry + `deye_log.inverter_id`)
-- Next phase: 0, operator gate. Candidate `192.168.0.104`. Do not start Phase 1.
-- Last updated: 2026-11-13T19:06:51Z
+- Next phase: 1, after an explicit continue. Host `192.168.0.104` already answered.
+- Last updated: 2026-11-13T19:15:55Z
 
 ## Phase board
 
 | Phase | State | Note |
 |---|---|---|
-| 0 Find basement host | candidate, waiting | 2026-11-13T19:06:51Z scan. OpenWrt WAN `192.168.0.109`. Candidate `192.168.0.104` High-Flying, TCP 8899 open. `read_deye` not run: no serial. |
+| 0 Find basement host | read ok | 2026-11-13T19:15:55Z. `192.168.0.104` grid 228.0/227.7/226.3 V, SOC 98%, load 9525 W. Serial not stored. `.105` is the third Akuvox. |
 | 1 Schema, backfill, apartment writers | not started | Nullable `inverter_id`. Poller and `POST /api/deye-heartbeat` both write the apartment id. No second poll. |
 | 2 Scope apartment reads | not started | Lamp, `detection.py`, voltage JSON, the aggregate cache, and `/api/dashboard-fragments` stay apartment-only unless the key may see `deye_details`. |
 | 3 Public block, then route, then poll | not started | `poll_enabled` stays 0 until `api_key_config_get("public")` has an explicit list, the role-or-key write has one target, and GCP can reach the host. House poll is its own task. |
@@ -32,3 +32,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T18:47:00Z — Critic round 1 fixes applied. No code. Implementation still blocked.
 - 2026-11-13T18:51:12Z — Final confirmation APPROVE. Status `REVIEWED / READY FOR LOCAL WORK`. No code. Next phase is still 0, and it waits for an explicit continue.
 - 2026-11-13T19:06:51Z — Prompt #2 continue. Read-only scan. Candidate `192.168.0.104`. Tuya MACs moved to `.103` and `.108`. New Akuvox-family host `.105` has no port 8899. Serial not read. Phase 1 not started.
+- 2026-11-13T19:15:55Z — Sticker serial answered. SOC 98%, load 9525 W, grid about 227 V. Operator named `.105` as the freight-elevator Akuvox. Breaker commands use the cloud device id. Phase 1 still not started.

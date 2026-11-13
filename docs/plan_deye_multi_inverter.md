@@ -1,9 +1,9 @@
 # Multi-inverter Deye on the Power Monitor dashboard
 
-- Status: `PHASE 0 CANDIDATE — WAITING FOR CONFIRMATION`
+- Status: `PHASE 0 READ OK — PHASE 1 NOT STARTED`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T19:06:51Z
+- Last updated: 2026-11-13T19:15:55Z
 - Active skin: A (registry + `deye_log.inverter_id`)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -208,9 +208,11 @@ Reachable hosts on `192.168.0.0/24` after one ping sweep, compared with the five
 
 Candidate: `192.168.0.104`. OUI `74:e9:d8` is Shanghai High-Flying Electronics, the module family used in Wi-Fi sticks. From the router, TCP 8899 and TCP 80 on that host accepted a connection. TCP 502 did not. The same 8899 check failed on `.102`, `.103`, `.105`, `.108`, and the gateway.
 
-`read_deye` was not run. It returns immediately without a Solarman serial, and this scan did not read one. The serial stays off this file. Phase 0 is not closed until the operator confirms the machine and one read returns load and SOC.
+`read_deye` at 2026-11-13T19:15:55Z, through the shelter router, serial from the logger sticker the operator photographed. Result only: grid **228.0 / 227.7 / 226.3 V**, SOC **98%**, load **9525 W**. The serial and the sticker password are not in this file. The numbers match a live building inverter, not an idle apartment sample. Phase 0 host is `192.168.0.104`. Phase 1 does not start until the operator says to continue.
 
-Do not set `poll_enabled`. Do not start Phase 1 on this candidate alone.
+Operator the same evening: `.105` is the third Akuvox, the freight / fire elevator with the street entrance. Three elevators, three Akuvox. That host is not an inverter. TCP 8899 on it stayed closed.
+
+Breaker DHCP addresses are not how those modules are switched. The cloud calls in dialog `cbc74fb3` and the poller in `tuya_breakers.py` use the device id from the server env. A new DHCP address does not retarget the command. The ids stay out of git.
 
 ### Phase 1 — Schema, backfill, and apartment writers
 
@@ -299,11 +301,11 @@ Do not set `poll_enabled`. Do not start Phase 1 on this candidate alone.
 - 2026-11-13T18:42:00Z — Lead review, prompt #5, round 1, before the independent critic. Supersedes the Phase 0 line that scanned from `192.168.67.1`. That prefix is the desk-era canvas LAN, not the breaker LAN. Supersedes "SQLite foreign key rejects a bad id": `foreign_keys` is off; the guard is in `save_deye_log`. Adds the lamp, `detection.py`, the heartbeat writer, the single aggregate cache, `DEYE_BATTERY_KWH`, duplicate DOM ids, the fail-open section list, and the GCP route gate. Those were holes a faithful implementation of the first draft would have shipped.
 - 2026-11-13T18:47:00Z — Critic round 1, model `grok-4.7-xhigh-fast`, agent `425ac57b-0f2d-4eeb-b5f0-5a76e62c19a7`, verdict `CHANGES REQUIRED`, CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2. Both HIGH findings accepted after a disk check. `GET /api/dashboard-fragments` returns `pm_deye` with no section filter, and `static/app.js` paints `#pm-deye`. A `role_id` makes a write to `api_key_config.sections` a no-op because `api_key_config_get` substitutes the role. MEDIUM and LOW from that round are folded into Phases 1–3: NULL is not the apartment id, the schedule-board spy must not see `from deye_log`, the lamp asserts match `PHASES_ONLY=0`, the poll tick is not gated on `DEYE_POLL_IP`, the house read is not awaited before breakers, the house meter does not call `_build_voltage_panel`, the full id inventory is prefixed, and `deye_monthly_load_kwh` / `deye_yearly_load_kwh` are scoped or deleted. Supersedes the Phase 3 sentence that appended the section onto the raw key column, and the risk line that said `read_deye` was already bounded.
 - 2026-11-13T18:51:12Z — After the first confirmation APPROVE, lead added one sentence. `role_update` returns False when `is_builtin` is 1 (`database.py` ~694). "Без Deye" is builtin, so a sole-user append is a direct `UPDATE roles`, the same path as the voltage rewrite. `role_update` is not the write. Final confirmation, same critic, verdict `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status set to `REVIEWED / READY FOR LOCAL WORK`. Implementation still waits for an explicit continue.
-- 2026-11-13T19:06:51Z — Operator said continue (prompt #2). Phase 0 scan from OpenWrt `192.168.67.1`. WAN is now `192.168.0.109`, was `192.168.0.108`. Candidate `192.168.0.104` / `74:e9:d8:39:22:8a` (High-Flying), TCP 8899 open. The two Tuya MACs swapped addresses (`.103` and `.108`). A third Akuvox-family host appeared at `.105` and does not speak 8899. `read_deye` not run: no serial. Phase 0 stays open until the operator confirms this host. No schema, no route, no firewall edit.
+- 2026-11-13T19:15:55Z — Sticker serial on `192.168.0.104` returned grid 228.0/227.7/226.3 V, SOC 98%, load 9525 W. Serial not stored here. Operator: `.105` is the third Akuvox (freight elevator, street entrance). Breaker on/off in dialog `cbc74fb3` follows the cloud device id, not the DHCP address. Phase 1 still waiting.
 
 ### Open questions
 
-- Which physical Deye is "the building one"? Working candidate since 2026-11-13T19:06:51Z: `192.168.0.104`, High-Flying MAC, TCP 8899. Default remains the 50 kW head in `house/hv-battery.md`, but only after the operator confirms this host. If it is some other machine, Phase 3 does not enable poll.
+- Which physical Deye is "the building one"? `192.168.0.104` answered the sticker serial at 2026-11-13T19:15:55Z with SOC 98% and load 9525 W. That is the phase 0 host. Battery figure 160 kWh stays in the registry only when Phase 1 runs.
 - Public "Напруга мережі" (`voltage_details`): leave it on the apartment trace. House voltage lives only inside the new block. Change this only if the operator says the public voltage widget should follow the basement.
 
 ### Self-review round 1 (2026-11-13T16:50:00Z) — historical
@@ -335,11 +337,11 @@ Do not set `poll_enabled`. Do not start Phase 1 on this candidate alone.
 - 2026-11-13T18:42:00Z — Prompt #5 lead review. Plan and PROGRESS rewritten to match the working tree. No code, no deploy, no commit.
 - 2026-11-13T18:47:00Z — Critic round 1 fixes applied to this file.
 - 2026-11-13T18:51:12Z — Final confirmation APPROVE. Status `REVIEWED / READY FOR LOCAL WORK`. No code.
-- 2026-11-13T19:06:51Z — Phase 0 candidate recorded. Waiting for the operator. No code.
+- 2026-11-13T19:15:55Z — Logger read succeeded. Load and SOC recorded above. Serial not written. Phase 1 not started.
 
 ## 11. Handoff for a new chat
 
-- Phase 0 is open. Candidate host is `192.168.0.104` on the basement LAN. Do not write schema until the operator confirms it and one `read_deye` returns load and SOC.
+- Phase 0 host is `192.168.0.104`. One read returned SOC 98% and load 9525 W. Do not write schema until the operator says to start Phase 1. Do not copy the logger serial into git.
 - Active skin: A.
 - Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
 - Do not add `deye_details` to the key labeled `public`.
