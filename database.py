@@ -2247,6 +2247,7 @@ def read_breaker_board(day: str, now: float) -> dict:
         "schedule_queue": DTEK_QUEUE,
         "schedule": schedule,
         "boiler": boiler,
+        "alerts": read_alert_day(day, now)["segments"],
         "timers": timers,
         "devices": devices,
     }

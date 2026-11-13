@@ -1154,6 +1154,25 @@
       if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>');
       return breakerLane(title, bars, '');
     }
+    function breakerAlertLane(data, startMs, spanMs) {
+      var title = 'Тривога';
+      var segments = data.alerts || [];
+      if (!segments.length) {
+        return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>');
+      }
+      var bars = '';
+      segments.forEach(function(segment) {
+        var left = (segment.start * 1000 - startMs) / spanMs * 100;
+        var width = ((segment.end - segment.start) * 1000) / spanMs * 100;
+        left = Math.min(100, Math.max(0, left));
+        width = Math.min(100 - left, Math.max(0, width));
+        if (width <= 0) return;
+        var kind = segment.level === 'yellow' ? 'brk-alert-yellow' : (segment.level === 'red' ? 'brk-alert-red' : 'brk-alert-off');
+        bars += '<i class="brk-bar ' + kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
+      });
+      if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>');
+      return breakerLane(title, bars, '');
+    }
     function breakerFactLane(data, startMs, spanMs) {
       var title = 'Факт';
       var start = data.start || 0;
@@ -1223,6 +1242,7 @@
           breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
       });
       html += breakerBoilerLane(data);
+      html += breakerAlertLane(data, startMs, spanMs);
       html += '</div><div class="brk-legend">' +
         '<span class="brk-legend-item"><i class="brk-key brk-on"></i> увімкнено, було світло</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-batt"></i> увімкнено, не було світла</span> ' +
@@ -1232,6 +1252,9 @@
         '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> факт: було</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> факт: не було</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-red"></i> червона</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-key-now"></i> зараз</span></div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);

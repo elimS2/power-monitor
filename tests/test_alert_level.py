@@ -111,6 +111,24 @@ class AlertDayTests(unittest.TestCase):
         self.assertIn("brk-alert-yellow", script)
         self.assertIn("/api/alerts-day", script)
 
+    def test_breaker_chart_puts_the_alert_lane_under_the_boiler(self):
+        import power_monitor
+
+        self._add("alert_yellow", self._at(10))
+        self._add("alert_red", self._at(12))
+        self._add("alert_off", self._at(13))
+        payload = database.read_breaker_board("2026-11-10", self._at(15))
+        levels = [segment["level"] for segment in payload["alerts"]]
+        self.assertEqual(levels, ["off", "yellow", "red", "off"])
+        html = power_monitor._breaker_bars_html(payload, self._at(15))
+        self.assertLess(html.index(">Котельня<"), html.index(">Тривога<"))
+        self.assertIn("brk-alert-yellow", html)
+        self.assertIn("brk-alert-red", html)
+        self.assertIn("brk-alert-off", html)
+        script = Path("static/app.js").read_text(encoding="utf-8")
+        chunk = script[script.index("pm-breakers-board"):]
+        self.assertLess(chunk.index("html += breakerBoilerLane"), chunk.index("html += breakerAlertLane"))
+
 
 if __name__ == "__main__":
     unittest.main()

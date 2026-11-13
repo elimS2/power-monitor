@@ -498,7 +498,7 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("ІТП: ще немає знімка", html)
         self.assertIn("Графік 5.1: немає знімка", html)
         self.assertIn("Котельня: немає графіка", html)
-        self.assertEqual(html.count("brk-hour-line"), 23 * 5)
+        self.assertEqual(html.count("brk-hour-line"), 23 * 6)
         self.assertIn('brk-hour-line" style="left:50.0000%"', html)
         self.assertIn("brk-key-now", html)
         self.assertIn("зараз</span>", html)

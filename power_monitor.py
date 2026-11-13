@@ -1447,6 +1447,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
             f'{_timer_pins_html(payload, name)}</div></div>'
         )
     tracks.append(_boiler_lane_html(payload, now_mark))
+    tracks.append(_alert_lane_html(payload, now_mark))
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
         f'<div class="brk-plot">{"".join(tracks)}</div>'
@@ -1459,6 +1460,9 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> факт: було</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> факт: не було</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> '
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> '
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> '
+        '<span class="brk-legend-item"><i class="brk-key brk-alert-red"></i> червона</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-key-now"></i> зараз</span>'
         '</div></div>'
     )
@@ -1609,6 +1613,43 @@ def _boiler_lane_html(payload: dict, now_mark: str) -> str:
         bars.append(f'<i class="brk-bar brk-boiler" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
     if not bars:
         return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>')
+    return _lane_html(title, bars, now_mark, "")
+
+
+def _alert_lane_html(payload: dict, now_mark: str) -> str:
+    """Brovary alert on the same day scale. Clear time is green, up to this minute."""
+    title = "Тривога"
+    segments = payload.get("alerts")
+    if not isinstance(segments, list) or not segments:
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>')
+    start = float(payload.get("start") or 0)
+    end = float(payload.get("end") or start)
+    span = end - start or 1
+    bars = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        try:
+            seg_start = float(segment.get("start"))
+            seg_end = float(segment.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if seg_end <= seg_start:
+            continue
+        level = segment.get("level")
+        if level == "yellow":
+            kind = "brk-alert-yellow"
+        elif level == "red":
+            kind = "brk-alert-red"
+        else:
+            kind = "brk-alert-off"
+        left = min(100, max(0, (seg_start - start) / span * 100))
+        width = min(100 - left, max(0, (seg_end - seg_start) / span * 100))
+        if width <= 0:
+            continue
+        bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
+    if not bars:
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>')
     return _lane_html(title, bars, now_mark, "")
 
 
