@@ -751,9 +751,8 @@
     document.querySelectorAll('.vchart.is-full').forEach(function(other) {
       if (other !== chart) {
         other.classList.remove('is-full', 'is-turned');
-        var dots = other.querySelector('.vchart-dots');
-        if (dots) dots.remove();
-        other.querySelectorAll('.vchart-side').forEach(function(button) { button.remove(); });
+        var extra = other.querySelector('.vchart-carousel');
+        if (extra) extra.remove();
       }
     });
     chart.classList.toggle('is-full', !!on);
@@ -783,21 +782,28 @@
   }
 
   function vchartPaintDots(chart) {
-    var old = chart.querySelector('.vchart-dots');
-    if (!chart.classList.contains('is-full')) {
-      if (old) old.remove();
-      chart.querySelectorAll('.vchart-side').forEach(function(button) { button.remove(); });
-      return;
-    }
+    chart.querySelectorAll('.vchart-carousel, .vchart-side, .vchart-dots').forEach(function(node) {
+      node.remove();
+    });
+    if (!chart.classList.contains('is-full')) return;
     var list = vchartSiblings(chart);
-    if (!old) {
-      old = document.createElement('div');
-      old.className = 'vchart-dots';
-      var legend = chart.querySelector('.vchart-legend');
-      if (legend) chart.insertBefore(old, legend);
-      else chart.appendChild(old);
+    var bar = document.createElement('div');
+    bar.className = 'vchart-carousel';
+    function side(dir, label, glyph) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'vchart-side ' + (dir < 0 ? 'prev' : 'next');
+      button.setAttribute('aria-label', label);
+      button.textContent = glyph;
+      button.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        vchartShowSibling(chart, dir);
+      });
+      return button;
     }
-    old.innerHTML = '';
+    var dots = document.createElement('div');
+    dots.className = 'vchart-dots';
     list.forEach(function(item, index) {
       var button = document.createElement('button');
       button.type = 'button';
@@ -808,23 +814,12 @@
         ev.stopPropagation();
         vchartShowSibling(chart, index - list.indexOf(chart));
       });
-      old.appendChild(button);
+      dots.appendChild(button);
     });
-    if (!chart.querySelector('.vchart-side')) {
-      [['prev', '‹', 'Попередній графік', -1], ['next', '›', 'Наступний графік', 1]].forEach(function(spec) {
-        var side = document.createElement('button');
-        side.type = 'button';
-        side.className = 'vchart-side ' + spec[0];
-        side.setAttribute('aria-label', spec[2]);
-        side.textContent = spec[1];
-        side.addEventListener('click', function(ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          vchartShowSibling(chart, spec[3]);
-        });
-        chart.appendChild(side);
-      });
-    }
+    bar.appendChild(side(-1, 'Попередній графік', '‹'));
+    bar.appendChild(dots);
+    bar.appendChild(side(1, 'Наступний графік', '›'));
+    chart.appendChild(bar);
   }
 
   function vchartShowSibling(chart, dir) {

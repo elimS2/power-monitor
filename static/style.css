@@ -521,7 +521,7 @@ details[open] summary::before { content: '▼ '; }
   height: 100%;
   max-height: 100%;
   margin: 0;
-  padding: 0.7rem 0.55rem 0.65rem;
+  padding: 0.2rem 0.55rem 2.55rem;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -553,9 +553,24 @@ body.pm-vchart-lock { overflow: hidden; }
   transform: rotate(90deg) translateY(-100%);
   transform-origin: top left;
 }
+.vchart-carousel {
+  position: absolute;
+  left: 0.55rem;
+  right: 0.55rem;
+  bottom: 0.35rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 32px;
+  pointer-events: none;
+}
+.vchart-carousel .vchart-dots,
+.vchart-carousel .vchart-side { pointer-events: auto; }
 .vchart-dots {
   display: flex; justify-content: center; align-items: center; gap: 0.45rem;
-  flex: none; padding: 0.35rem 0 0.1rem;
+  flex: 1; padding: 0;
 }
 .vchart-dot {
   width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0;
@@ -563,21 +578,18 @@ body.pm-vchart-lock { overflow: hidden; }
 }
 .vchart-dot.is-on { background: #e2e8f0; }
 .vchart-side {
-  position: absolute;
-  top: 46%;
-  z-index: 5;
-  width: 46px;
-  height: 84px;
+  position: static;
+  flex: none;
+  width: 56px;
+  height: 30px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
   color: #f8fafc;
-  font-size: 2rem;
+  font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
 }
-.vchart-side.prev { left: 2.15rem; }
-.vchart-side.next { right: 0.4rem; }
-.vchart-side:active { background: rgba(51, 65, 85, 0.92); }
+.vchart-side:active { background: #334155; }
