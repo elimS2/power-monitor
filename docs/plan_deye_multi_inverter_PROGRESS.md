@@ -2,10 +2,10 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 3 ROUTE OPEN — POLL OFF`
+- Status: `PHASE 3 POLL ON`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
-- Next phase: turn on the house poll, only after an explicit yes. TCP 8899 from GCP to `192.168.0.104` was open at 2026-11-13T20:49:06Z.
-- Last updated: 2026-11-13T20:49:06Z
+- Next phase: 4, the shelter location sentence, only after an explicit yes. The house poll is live.
+- Last updated: 2026-11-13T20:56:34Z
 
 ## Phase board
 
@@ -14,7 +14,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 | 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
 | 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
-| 3 Public block, then route, then poll | route open, poll off | 2026-11-13T20:49:06Z. One host `192.168.0.104:8899` through the shelter. TCP open from GCP. Poll stays 0. |
+| 3 Public block, then route, then poll | poll on | 2026-11-13T20:56:34Z. First house sample 3776 W, SOC 98%. Apartment stayed 3255 W, SOC 93%. Public page 0.10s, no apartment block. |
 | 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
 
 ## Review
@@ -46,3 +46,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T20:26:24Z — Empty block was already live. Admin open was 7.8s because the newest-sample query sorted the whole history. Deployed `1f2f34c`. Repeat open 0.10s. House poll 0. No route.
 - 2026-11-13T20:35:26Z — GCP cannot open the basement logger. Packet leaves `ens4`. Shelter tunnel handshake is fresh. `192.168.0.104` is not in that peer's allowed networks. Stopped before adding a route.
 - 2026-11-13T20:49:06Z — Operator said yes to the one host and no poll. TCP 8899 from GCP is open through the shelter. House poll stays 0.
+- 2026-11-13T20:56:34Z — House poll on. First sample 3776 W, SOC 98%. Apartment sample stayed separate. Public page shows the house block only.
