@@ -204,7 +204,8 @@ class BatteryBoardTests(unittest.TestCase):
             grid_v=(230, 230, 230),
         )
         self.assertIn("з 153.6 кВт·год", html)
-        self.assertIn(soc_color(98), html)
+        self.assertIn("width:98.0%", html)
+        self.assertIn("background-size:102.04% 100%", html)
         self.assertNotEqual(soc_color(75), soc_color(98))
         self.assertGreater(int(soc_color(10)[1:3], 16), int(soc_color(98)[1:3], 16))
 

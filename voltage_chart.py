@@ -629,10 +629,12 @@ def _cap_caption(cap: float) -> str:
 def _b_meter(label: str, digits: str, unit: str, state: str, band: str, bar_pct: float | None = None) -> str:
     bar = ""
     if bar_pct is not None:
-        color = soc_color(bar_pct)
+        width = max(0.0, min(100.0, bar_pct))
+        # The gradient is the full 0–100 scale. The span only reveals the part up to this percent.
+        size = 10000.0 / width if width > 0.05 else 100.0
         bar = (
             f'<div class="bbar" aria-hidden="true">'
-            f'<span style="width:{max(0.0, min(100.0, bar_pct)):.1f}%;background:{color}"></span>'
+            f'<span style="width:{width:.1f}%;background-size:{size:.2f}% 100%"></span>'
             f"</div>"
         )
     unit_html = f'<span class="vmeter-unit">{unit}</span>' if unit else ""
