@@ -129,5 +129,60 @@ class LoadChartTests(unittest.TestCase):
         self.assertIn("світла не було", html)
 
 
+class SocChartTests(unittest.TestCase):
+    def test_charge_line_and_light_strip(self):
+        from voltage_chart import build_soc_chart
+        now = _kyiv(2026, 11, 9, 1, 4)
+        buckets = [
+            {"bucket": now - 1800, "l1": None, "l2": None, "l3": None, "dead": 4, "n": 4, "soc": 40.0},
+            {"bucket": now - 120, "l1": 230.0, "l2": 230.0, "l3": 230.0, "dead": 0, "n": 1, "soc": 90.0},
+            {"bucket": now - 60, "l1": 230.0, "l2": 230.0, "l3": 230.0, "dead": 0, "n": 1, "soc": 88.0},
+        ]
+        html = build_soc_chart(
+            now=now, buckets=buckets, today=None, tomorrow=None, queue="5.1",
+        )
+        self.assertIn('stroke="#a78bfa"', html)
+        self.assertIn("Остання доба, заряд", html)
+        self.assertIn("за 10 хв 88–90 %", html)
+        self.assertIn("черга 5.1", html)
+        self.assertIn('data-ymin="0"', html)
+        self.assertIn('data-ymax="100"', html)
+        self.assertIn('fill="#22c55e"', html)
+        self.assertIn('fill="#fb923c"', html)
+        self.assertIn("світло було", html)
+        self.assertIn("світла не було", html)
+        self.assertIn(">заряд<", html)
+
+
+class SocBucketQueryTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def test_charge_average_stays_with_the_minute(self):
+        start = _kyiv(2026, 11, 9, 0, 0)
+        apt = database.apartment_inverter_id()
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, battery_soc, ts, inverter_id)
+                   VALUES (?,?,?,?,?,?)""",
+                (230.0, 230.0, 230.0, 80.0, start + 10, apt),
+            )
+            db.execute(
+                """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, battery_soc, ts, inverter_id)
+                   VALUES (?,?,?,?,?,?)""",
+                (231.0, 230.0, 229.0, 60.0, start + 40, apt),
+            )
+        rows = database.deye_voltage_buckets(start, start + 180, 60)
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["soc"], 70.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,9 @@ FUTURE_SEC = 6 * 3600
 BUCKET_SEC = 60
 
 LOAD_COLOR = "#38bdf8"
+SOC_COLOR = "#a78bfa"
+SOC_MIN = 0.0
+SOC_MAX = 100.0
 _PLOT_W = 600.0
 _PLOT_H = 168.0
 _STRIP_H = 10.0
@@ -356,6 +359,161 @@ def _load_span(buckets: list[dict], now: float) -> str:
 def _load_legend() -> str:
     items = (
         (LOAD_COLOR, "line", "споживання"),
+        ("#7c4a32", "box", "без світла за графіком"),
+        ("#4b5563", "box", "можливе за графіком"),
+        ("#22c55e", "bar", "світло було"),
+        ("#fb923c", "bar", "світла не було"),
+    )
+    html = []
+    for color, kind, label in items:
+        if kind == "line":
+            mark = f'<span class="vchart-mark vchart-line" style="background:{color}"></span>'
+        else:
+            mark = f'<span class="vchart-mark vchart-box" style="background:{color}"></span>'
+        html.append(f'<span class="vchart-key">{mark}{label}</span>')
+    return '<div class="vchart-legend">' + "".join(html) + "</div>"
+
+
+def build_soc_chart(
+    *,
+    now: float,
+    buckets: list[dict],
+    today: dict | None,
+    tomorrow: dict | None,
+    queue: str,
+    history_sec: int = HISTORY_SEC,
+    future_sec: int = FUTURE_SEC,
+    shift_days: int = 0,
+    prev_enabled: bool = True,
+) -> str:
+    """Same day window as the voltage chart. The line is battery charge. The strip is light."""
+    shift_days = max(0, int(shift_days))
+    if shift_days == 0:
+        t0 = now - history_sec
+        t1 = now + future_sec
+        live = True
+    else:
+        t0, t1, live = chart_window(now, shift_days)
+    schedule_from = now if live else t1
+
+    def x_of(ts: float) -> float:
+        return (ts - t0) / (t1 - t0) * _PLOT_W
+
+    def y_of(value: float) -> float:
+        clamped = min(SOC_MAX, max(SOC_MIN, value))
+        return (SOC_MAX - clamped) / (SOC_MAX - SOC_MIN) * _PLOT_H
+
+    meta = (
+        f' data-t0="{t0:.0f}" data-t1="{t1:.0f}" data-ymin="{SOC_MIN:.0f}" data-ymax="{SOC_MAX:.0f}"'
+        f' data-w="{_PLOT_W:.0f}" data-ploth="{_PLOT_H:.0f}" data-striph="{_STRIP_H:.0f}"'
+    )
+    plot: list[str] = [
+        f'<svg class="vchart-main" viewBox="0 0 {_PLOT_W:.0f} {_PLOT_H:.0f}" preserveAspectRatio="none"{meta} role="img" '
+        f'aria-label="Заряд батареї за добу і графік черги {queue}">'
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_PLOT_H:.0f}" fill="#0c121c"/>'
+    ]
+    strip: list[str] = [
+        f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" preserveAspectRatio="none" aria-hidden="true">'
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_STRIP_H:.0f}" fill="#0c121c"/>'
+    ]
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "off"):
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#7c4a32", 0.95))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#7c4a32", 0.95))
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "maybe"):
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#4b5563", 0.8))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#4b5563", 0.8))
+    plot.extend(_phase_paths(buckets, "soc", SOC_COLOR, x_of, y_of))
+    show_now = t0 <= now <= t1
+    if show_now:
+        now_x = x_of(now)
+        plot.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_PLOT_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>'
+        )
+        strip.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_STRIP_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+        )
+    else:
+        now_x = 0.0
+    for start, end, kind in _fact_spans(buckets, now):
+        color = "#22c55e" if kind == "on" else "#fb923c"
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, color, 1))
+    plot.append("</svg>")
+    strip.append("</svg>")
+
+    y_labels = []
+    tick = 0
+    while tick <= SOC_MAX + 0.01:
+        top = y_of(float(tick)) / _PLOT_H * 100
+        y_labels.append(f'<span style="top:{top:.2f}%">{int(tick)}</span>')
+        tick += 25
+    x_labels = []
+    for ts, label in _time_ticks(t0, t1):
+        left = x_of(ts) / _PLOT_W * 100
+        if left < -1 or left > 101:
+            continue
+        x_labels.append(f'<span style="left:{left:.2f}%">{label}</span>')
+    now_html = ""
+    if show_now:
+        now_pct = max(0.0, min(100.0, now_x / _PLOT_W * 100))
+        now_html = f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
+    span = _soc_span(buckets, now) if live else ""
+    span_html = f'<span class="vchart-span">{span}</span>' if span else ""
+    title = "Остання доба, заряд" if live else _day_title(t0)
+    prev_attr = "" if prev_enabled else " disabled"
+    next_attr = " disabled" if live else ""
+    return (
+        f'<div class="vchart vchart-soc" data-shift="{shift_days}">'
+        '<div class="vchart-head">'
+        f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
+        '<div class="vchart-head-side">'
+        f"{span_html}"
+        '<button type="button" class="vchart-reset" hidden>Скинути</button>'
+        '<button type="button" class="vchart-full" aria-label="На весь екран">'
+        '<svg class="vchart-full-enter" viewBox="0 0 16 16" aria-hidden="true">'
+        '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+        '<svg class="vchart-full-exit" viewBox="0 0 16 16" aria-hidden="true" hidden>'
+        '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg></button>'
+        "</div></div>"
+        '<div class="vchart-nav">'
+        f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
+        f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
+        f'<button type="button" class="vchart-day vchart-next" data-dir="1" aria-label="Наступна доба"{next_attr}>›</button>'
+        "</div>"
+        '<div class="vchart-frame">'
+        f'<div class="vchart-yaxis">{"".join(y_labels)}</div>'
+        '<div class="vchart-plot">'
+        + "".join(plot)
+        + now_html
+        + '<div class="vchart-tip" hidden></div>'
+        "</div>"
+        + "".join(strip)
+        + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
+        "</div>"
+        + _soc_legend()
+        + "</div>"
+    )
+
+
+def _soc_span(buckets: list[dict], now: float) -> str:
+    values = []
+    for row in buckets:
+        if now - 600 <= float(row["bucket"]) <= now and row.get("soc") is not None:
+            values.append(float(row["soc"]))
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    if abs(hi - lo) < 0.5:
+        return f"за 10 хв {hi:.0f} %"
+    return f"за 10 хв {lo:.0f}–{hi:.0f} %"
+
+
+def _soc_legend() -> str:
+    items = (
+        (SOC_COLOR, "line", "заряд"),
         ("#7c4a32", "box", "без світла за графіком"),
         ("#4b5563", "box", "можливе за графіком"),
         ("#22c55e", "bar", "світло було"),

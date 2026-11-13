@@ -123,6 +123,7 @@ from voltage_chart import (
     FUTURE_SEC,
     HISTORY_SEC,
     build_load_chart,
+    build_soc_chart,
     build_voltage_chart,
     clamp_chart_shift,
     chart_window,
@@ -770,7 +771,7 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) ->
         shift_days=shift,
         prev_enabled=prev_day_available(shift, now, oldest),
     )
-    return build_voltage_chart(**chart) + build_load_chart(**chart)
+    return build_voltage_chart(**chart) + build_load_chart(**chart) + build_soc_chart(**chart)
 
 
 def _alert_events_rows() -> str:

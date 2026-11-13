@@ -643,7 +643,7 @@
     var xAxis = host.querySelector('.vchart-xaxis');
     var nowEl = host.querySelector('.vchart-now');
     var yStep = 20;
-    var ySteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+    var ySteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000];
     var yTarget = (z.y1 - z.y0) / 4;
     for (var i = 0; i < ySteps.length; i++) if (ySteps[i] >= yTarget) { yStep = ySteps[i]; break; }
     if (yAxis) {
@@ -809,7 +809,10 @@
           timeZone: 'Europe/Kyiv', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
         });
         tip.hidden = false;
-        tip.textContent = when + ' · ' + Math.round(vTip) + ' В';
+        var unit = ' В';
+        if (hover.classList.contains('vchart-load')) unit = ' Вт';
+        else if (hover.classList.contains('vchart-soc')) unit = ' %';
+        tip.textContent = when + ' · ' + Math.round(vTip) + unit;
         var bounds = main.getBoundingClientRect();
         var left = e.clientX - bounds.left + 12;
         if (left > bounds.width - 120) left = e.clientX - bounds.left - 120;
