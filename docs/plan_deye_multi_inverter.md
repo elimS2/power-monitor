@@ -3,7 +3,7 @@
 - Status: `PHASE 3 PAUSED — PUBLIC KEY NOT READ`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T19:50:43Z
+- Last updated: 2026-11-13T20:01:34Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -325,6 +325,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T19:40:56Z — Phase 1 local. Apartment registry row, backfill, both writers pass that id. 39 tests OK. No house poll. No deploy.
 - 2026-11-13T19:45:27Z — Phase 2 local. Reads, the outage lamp, voltage JSON, and aggregates are scoped by inverter id. A house sample does not change the apartment voltage bar or `has_grid_voltage_now`. The live fragment omits `pm_deye` when the key cannot see `deye_details`. The overwritten dashboard assembly was removed. 41 tests OK. No house poll. No deploy.
 - 2026-11-13T19:50:43Z — Phase 3 step 1 stopped. `GET /api/debug-sql` with the key stored in the local monitor env returned `{"detail":"forbidden"}`. The resolved section list of the label `public` was not read. `deye_house_details` was not added to `ALL_SECTIONS`. No role write, no house row, no route, no poll. The operator asked where a later route would start: from the GCP poller, through the existing WireGuard, via the shelter peer `10.99.0.6`, to one host `192.168.0.104:8899`. The apartment LAN `192.168.88.0/24` does not contain that host. A direct TCP check from the apartment PC already failed at 2026-11-13T19:14:28Z. That one-host route still needs an explicit yes after a reachability check from GCP. It was not opened.
+- 2026-11-13T20:01:34Z — Operator said continue. Step 1 tried again. SSH `elims2@35.246.222.183` returned `Permission denied (publickey)`. No host entry for that address in the local SSH config. The gcloud account on this PC does not list that VM. The public section list is still unread. Section, house row, route, and poll stay off. The hop list shown in chat (cloud `10.99.0.1` → shelter `10.99.0.6` → `192.168.0.104:8899`) is the intended path, not a traceroute, and it was not installed.
 
 ### Open questions
 
@@ -366,6 +367,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T19:40:56Z — Phase 1 code is local. Next is Phase 2 only after an explicit continue. Do not deploy this commit by itself unless the operator asks: writers already pass the apartment id, and no house row exists, but the public block is not in this step.
 - 2026-11-13T19:45:27Z — Phase 2 code is local. House sample stays out of the apartment lamp and voltage bar. No deploy.
 - 2026-11-13T19:50:43Z — Phase 3 paused at the public-key read. Live debug SQL returned 403. No section, no route, no poll.
+- 2026-11-13T20:01:34Z — Continue retried the read. SSH publickey denied. This PC's cloud account does not see the VM. Still no section and no route.
 
 ## 11. Handoff for a new chat
 
