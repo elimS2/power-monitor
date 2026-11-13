@@ -402,6 +402,12 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         )
         self.assertNotIn("pm_deye", kept)
         self.assertEqual(kept["pm_deye_house"], "Немає заміру")
+        private_voltage = hide_private_deye_fragment(
+            {"pm_voltage": "230", "pm_voltage_house": "228"},
+            ["voltage_house_details"],
+        )
+        self.assertNotIn("pm_voltage", private_voltage)
+        self.assertEqual(private_voltage["pm_voltage_house"], "228")
 
     def test_house_block_is_on_every_explicit_list_and_stays_unpolled(self):
         database.init_db()
@@ -434,6 +440,31 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
             database.HOUSE_INVERTER_TITLE,
             [row["title"] for row in database.enabled_inverter_targets()],
         )
+
+    def test_public_voltage_list_moves_to_the_house_chart(self):
+        database.init_db()
+        with database._conn() as db:
+            db.execute(
+                "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,0,?)",
+                ("public-like", json.dumps(["voltage_details", "sched_details"]), 0),
+            )
+            db.execute(
+                "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,0,?)",
+                ("both", json.dumps(["voltage_details", "deye_details"]), 0),
+            )
+        database.init_db()
+        with database._conn() as db:
+            public_like = json.loads(db.execute(
+                "SELECT sections FROM roles WHERE name='public-like'"
+            ).fetchone()["sections"])
+            both = json.loads(db.execute(
+                "SELECT sections FROM roles WHERE name='both'"
+            ).fetchone()["sections"])
+        self.assertIn("voltage_house_details", public_like)
+        self.assertNotIn("voltage_details", public_like)
+        self.assertIn("voltage_house_details", both)
+        self.assertIn("voltage_details", both)
+        self.assertIn("deye_details", both)
 
     def test_house_block_says_there_is_no_sample(self):
         from power_monitor import house_deye_inner_html

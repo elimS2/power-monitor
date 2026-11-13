@@ -368,7 +368,7 @@ def init_db():
         if db.execute("SELECT COUNT(*) FROM roles").fetchone()[0] == 0:
             for name, sections in [
                 ("Усі", None),
-                ("Без Deye", json.dumps([s for s in ALL_SECTIONS if s != "deye_details"])),
+                ("Без Deye", json.dumps([s for s in ALL_SECTIONS if s not in ("deye_details", "voltage_details")])),
                 ("Базове", json.dumps(["sched_details", "boiler_details", "ev_details", "links_details", "alert_ev_details"])),
             ]:
                 db.execute(
@@ -378,8 +378,8 @@ def init_db():
         # Migration: add voltage_details to "Без Deye" role if missing
         for row in db.execute("SELECT id, sections FROM roles WHERE name='Без Deye' AND is_builtin=1").fetchall():
             sec = json.loads(row["sections"]) if row["sections"] else []
-            if "voltage_details" not in sec:
-                updated = [s for s in ALL_SECTIONS if s != "deye_details"]
+            if "voltage_details" not in sec and "voltage_house_details" not in sec:
+                updated = [s for s in ALL_SECTIONS if s not in ("deye_details", "voltage_details")]
                 db.execute("UPDATE roles SET sections=? WHERE id=?", (json.dumps(updated), row["id"]))
         # Migration: participation map is visible to every key that already has an explicit section list.
         def _append_collections(raw: str | None) -> str | None:
@@ -455,6 +455,45 @@ def init_db():
             "SELECT label, sections FROM api_key_config WHERE sections IS NOT NULL AND role_id IS NULL"
         ).fetchall():
             updated = _append_house_section(row["sections"])
+            if updated:
+                db.execute(
+                    "UPDATE api_key_config SET sections=? WHERE label=?",
+                    (updated, row["label"]),
+                )
+
+        def _split_voltage(raw: str | None) -> str | None:
+            if not raw:
+                return None
+            try:
+                sec = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(sec, list):
+                return None
+            changed = False
+            had_voltage = "voltage_details" in sec
+            has_deye = "deye_details" in sec
+            if had_voltage and not has_deye:
+                sec.remove("voltage_details")
+                changed = True
+            if had_voltage and "voltage_house_details" not in sec:
+                sec.append("voltage_house_details")
+                changed = True
+            if has_deye and "voltage_details" not in sec:
+                sec.append("voltage_details")
+                changed = True
+            if not changed:
+                return None
+            return json.dumps(sec)
+
+        for row in db.execute("SELECT id, sections FROM roles WHERE sections IS NOT NULL").fetchall():
+            updated = _split_voltage(row["sections"])
+            if updated:
+                db.execute("UPDATE roles SET sections=? WHERE id=?", (updated, row["id"]))
+        for row in db.execute(
+            "SELECT label, sections FROM api_key_config WHERE sections IS NOT NULL AND role_id IS NULL"
+        ).fetchall():
+            updated = _split_voltage(row["sections"])
             if updated:
                 db.execute(
                     "UPDATE api_key_config SET sections=? WHERE label=?",
@@ -662,7 +701,7 @@ def tg_test_chat_id() -> str:
 # Sections: sched_details, boiler_details, ev_details, links_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
-    "alert_ev_details", "tg_details", "voltage_details",
+    "alert_ev_details", "tg_details", "voltage_details", "voltage_house_details",
     "deye_details", "deye_house_details", "breaker_details", "hb_details", "legend_details", "avatars_details",
     "collections_details",
 ]
@@ -683,7 +722,8 @@ SECTION_LABELS = {
     "links_details": "Посилання",
     "alert_ev_details": "Тривоги",
     "tg_details": "Історія Telegram",
-    "voltage_details": "Напруга мережі",
+    "voltage_details": "Напруга мережі в квартирі",
+    "voltage_house_details": "Напруга мережі будинку",
     "deye_details": "Deye інвертор",
     "deye_house_details": "Deye інвертор будинку",
     "breaker_details": "Автомати підвалу",

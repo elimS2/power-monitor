@@ -186,9 +186,9 @@ VOLTAGE_STATUS = {
 # ─── Dashboard ────────────────────────────────────────────────
 
 DASHBOARD_SECTION_ORDER = [
-    "breaker_details", "voltage_details", "sched_details", "collections_details",
+    "breaker_details", "voltage_house_details", "sched_details", "collections_details",
     "boiler_details", "ev_details", "links_details",
-    "alert_ev_details", "tg_details", "deye_details", "deye_house_details",
+    "alert_ev_details", "tg_details", "deye_details", "voltage_details", "deye_house_details",
     "hb_details", "legend_details", "avatars_details",
 ]
 

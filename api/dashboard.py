@@ -87,8 +87,11 @@ def hide_private_deye_fragment(frags: dict, allowed: list[str]) -> dict:
     """Drop inverter fragments this key is not allowed to see."""
     if "deye_details" not in allowed:
         frags.pop("pm_deye", None)
+        frags.pop("pm_voltage", None)
     if "deye_house_details" not in allowed:
         frags.pop("pm_deye_house", None)
+    if "voltage_house_details" not in allowed:
+        frags.pop("pm_voltage_house", None)
     return frags
 
 

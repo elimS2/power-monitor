@@ -96,8 +96,8 @@
   // Drag-drop section reorder
   var ORDER_KEY = 'pm_section_order';
   var ORDER_REV_KEY = 'pm_section_order_rev';
-  var ORDER_REV = '2026-11-10-top4';
-  var ORDER_PREFIX = ['breaker_details', 'voltage_details', 'sched_details', 'collections_details'];
+  var ORDER_REV = '2026-11-13-house-voltage';
+  var ORDER_PREFIX = ['breaker_details', 'voltage_house_details', 'sched_details', 'collections_details'];
   var container = document.getElementById('dashboard-sections');
   if (container) {
     var order = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
@@ -634,10 +634,14 @@
     }).format(date);
   }
 
-  function vchartLayout(meta, z) {
-    var yAxis = document.querySelector('#pm-voltage .vchart-yaxis');
-    var xAxis = document.querySelector('#pm-voltage .vchart-xaxis');
-    var nowEl = document.querySelector('#pm-voltage .vchart-now');
+  function vchartBox(node) {
+    return node && node.closest ? node.closest('.vchart-host') : null;
+  }
+
+  function vchartLayout(host, meta, z) {
+    var yAxis = host.querySelector('.vchart-yaxis');
+    var xAxis = host.querySelector('.vchart-xaxis');
+    var nowEl = host.querySelector('.vchart-now');
     var yStep = 20;
     var ySteps = [1, 2, 5, 10, 20];
     var yTarget = (z.y1 - z.y0) / 4;
@@ -679,51 +683,57 @@
     }
   }
 
-  function vchartApply() {
-    var main = document.querySelector('#pm-voltage .vchart-main');
-    var strip = document.querySelector('#pm-voltage .vchart-strip');
+  function vchartApply(one) {
+    var hosts = one ? [one] : Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
+    hosts.forEach(function(host) {
+    var main = host.querySelector('.vchart-main');
+    var strip = host.querySelector('.vchart-strip');
     if (!main || !strip) return;
     var meta = vchartMeta(main);
-    if (vZoom) {
-      vZoom.y0 = meta.y0;
-      vZoom.y1 = meta.y1;
+    var zoom = host._vZoom || null;
+    if (zoom) {
+      zoom.y0 = meta.y0;
+      zoom.y1 = meta.y1;
     }
-    var z = vZoom ? vchartClamp(vZoom, meta) : vchartFull(meta);
-    if (vZoom && vchartIsFull(z, meta)) vZoom = null;
-    if (!vZoom) z = vchartFull(meta);
-    else vZoom = z;
+    var z = zoom ? vchartClamp(zoom, meta) : vchartFull(meta);
+    if (zoom && vchartIsFull(z, meta)) zoom = null;
+    if (!zoom) z = vchartFull(meta);
+    else zoom = z;
+    host._vZoom = zoom;
     var x = (z.t0 - meta.t0) / (meta.t1 - meta.t0) * meta.w;
     var w = (z.t1 - z.t0) / (meta.t1 - meta.t0) * meta.w;
     var y = (meta.y1 - z.y1) / (meta.y1 - meta.y0) * meta.plotH;
     var h = (z.y1 - z.y0) / (meta.y1 - meta.y0) * meta.plotH;
     main.setAttribute('viewBox', x.toFixed(2) + ' ' + y.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2));
     strip.setAttribute('viewBox', x.toFixed(2) + ' 0 ' + w.toFixed(2) + ' ' + meta.stripH);
-    vchartLayout(meta, z);
-    var btn = document.querySelector('#pm-voltage .vchart-reset');
-    if (btn) btn.hidden = !vZoom;
-    vchartSyncFullscreen();
+    vchartLayout(host, meta, z);
+    var btn = host.querySelector('.vchart-reset');
+    if (btn) btn.hidden = !zoom;
+    vchartSyncFullscreen(host);
+    });
   }
 
-  function vchartInFullscreen() {
-    var host = document.getElementById('pm-voltage');
+  function vchartInFullscreen(host) {
     return !!(host && document.fullscreenElement === host);
   }
 
-  function vchartSyncFullscreen() {
-    var btn = document.querySelector('#pm-voltage .vchart-full');
+  function vchartSyncFullscreen(one) {
+    var hosts = one ? [one] : Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
+    hosts.forEach(function(host) {
+    var btn = host.querySelector('.vchart-full');
     if (!btn) return;
-    var on = vchartInFullscreen();
+    var on = vchartInFullscreen(host);
     btn.setAttribute('aria-label', on ? 'Згорнути' : 'На весь екран');
     var enter = btn.querySelector('.vchart-full-enter');
     var exit = btn.querySelector('.vchart-full-exit');
     if (enter) enter.hidden = on;
     if (exit) exit.hidden = !on;
+    });
   }
 
-  function vchartToggleFullscreen() {
-    var host = document.getElementById('pm-voltage');
+  function vchartToggleFullscreen(host) {
     if (!host) return;
-    if (vchartInFullscreen()) {
+    if (vchartInFullscreen(host)) {
       if (document.exitFullscreen) document.exitFullscreen();
     } else if (host.requestFullscreen) {
       host.requestFullscreen();
@@ -733,14 +743,16 @@
   document.addEventListener('fullscreenchange', vchartSyncFullscreen);
 
   document.addEventListener('wheel', function(e) {
-    var host = e.target.closest && e.target.closest('#pm-voltage .vchart-plot, #pm-voltage .vchart-strip');
-    if (!host) return;
-    var main = document.querySelector('#pm-voltage .vchart-main');
+    var box = vchartBox(e.target);
+    var host = e.target.closest && e.target.closest('.vchart-plot, .vchart-strip');
+    if (!box || !host || !box.contains(host)) return;
+    var main = box.querySelector('.vchart-main');
     var svg = e.target.closest('.vchart-main, .vchart-strip');
     if (!main || !svg) return;
     e.preventDefault();
     var meta = vchartMeta(main);
-    var z = vZoom || vchartFull(meta);
+    var zoom = box._vZoom || null;
+    var z = zoom || vchartFull(meta);
     var pt = vchartPoint(svg, e.clientX, e.clientY);
     if (!pt) return;
     var dy = e.deltaY;
@@ -757,21 +769,22 @@
       y1: meta.y1
     };
     next = vchartClamp(next, meta);
-    vZoom = vchartIsFull(next, meta) ? null : next;
-    vchartApply();
+    box._vZoom = vchartIsFull(next, meta) ? null : next;
+    vchartApply(box);
   }, { passive: false });
 
   document.addEventListener('pointerdown', function(e) {
     if (e.button !== 0) return;
-    var plot = e.target.closest && e.target.closest('#pm-voltage .vchart-plot');
+    var plot = e.target.closest && e.target.closest('.vchart-host .vchart-plot');
     if (!plot || (e.target.closest && e.target.closest('.vchart-reset'))) return;
     var main = plot.querySelector('.vchart-main');
     if (!main) return;
+    var dragHost = vchartBox(plot);
     var meta = vchartMeta(main);
     vDrag = {
       id: e.pointerId,
       plot: plot,
-      z: vZoom || vchartFull(meta),
+      z: (dragHost && dragHost._vZoom) || vchartFull(meta),
       x: e.clientX,
       y: e.clientY
     };
@@ -780,9 +793,10 @@
   });
 
   document.addEventListener('pointermove', function(e) {
-    var main = document.querySelector('#pm-voltage .vchart-main');
-    var tip = document.querySelector('#pm-voltage .vchart-tip');
-    if (main && tip && e.target.closest && e.target.closest('#pm-voltage .vchart-main')) {
+    var box = vDrag && vDrag.plot ? vchartBox(vDrag.plot) : vchartBox(e.target);
+    var main = box ? box.querySelector('.vchart-main') : null;
+    var tip = box ? box.querySelector('.vchart-tip') : null;
+    if (main && tip && e.target.closest && e.target.closest('.vchart-main') && box.contains(e.target)) {
       var metaTip = vchartMeta(main);
       var pt = vchartPoint(main, e.clientX, e.clientY);
       if (pt && pt.x >= 0 && pt.x <= metaTip.w && pt.y >= 0 && pt.y <= metaTip.plotH) {
@@ -793,13 +807,13 @@
         });
         tip.hidden = false;
         tip.textContent = when + ' · ' + Math.round(vTip) + ' В';
-        var box = main.getBoundingClientRect();
-        var left = e.clientX - box.left + 12;
-        if (left > box.width - 120) left = e.clientX - box.left - 120;
+        var bounds = main.getBoundingClientRect();
+        var left = e.clientX - bounds.left + 12;
+        if (left > bounds.width - 120) left = e.clientX - bounds.left - 120;
         tip.style.left = left + 'px';
-        tip.style.top = (e.clientY - box.top + 12) + 'px';
+        tip.style.top = (e.clientY - bounds.top + 12) + 'px';
       }
-    } else if (tip && !(e.target.closest && e.target.closest('#pm-voltage .vchart-plot'))) {
+    } else if (tip && !(e.target.closest && e.target.closest('.vchart-plot'))) {
       tip.hidden = true;
     }
     if (!vDrag || e.pointerId !== vDrag.id || !main) return;
@@ -810,8 +824,12 @@
     var dt = (e.clientX - vDrag.x) / rect.width * (z0.t1 - z0.t0);
     var next = { t0: z0.t0 - dt, t1: z0.t1 - dt, y0: meta.y0, y1: meta.y1 };
     vZoom = vchartClamp(next, meta);
-    if (vchartIsFull(vZoom, meta)) vZoom = null;
-    vchartApply();
+    if (box) box._vZoom = vZoom;
+    if (vchartIsFull(vZoom, meta)) {
+      vZoom = null;
+      if (box) box._vZoom = null;
+    }
+    vchartApply(box);
   });
 
   function vchartEndDrag(e) {
@@ -823,39 +841,44 @@
   document.addEventListener('pointercancel', vchartEndDrag);
 
   document.addEventListener('dblclick', function(e) {
-    if (!(e.target.closest && e.target.closest('#pm-voltage .vchart-plot, #pm-voltage .vchart-strip'))) return;
+    if (!(e.target.closest && e.target.closest('.vchart-host .vchart-plot, .vchart-host .vchart-strip'))) return;
+    var box = vchartBox(e.target);
+    if (box) box._vZoom = null;
     vZoom = null;
-    vchartApply();
+    vchartApply(box);
   });
 
   document.addEventListener('click', function(e) {
-    if (e.target.closest && e.target.closest('#pm-voltage .vchart-reset')) {
+    var box = vchartBox(e.target);
+    if (e.target.closest && e.target.closest('.vchart-reset')) {
+      if (box) box._vZoom = null;
       vZoom = null;
-      vchartApply();
+      vchartApply(box);
       return;
     }
-    if (e.target.closest && e.target.closest('#pm-voltage .vchart-full')) {
-      vchartToggleFullscreen();
+    if (e.target.closest && e.target.closest('.vchart-full')) {
+      vchartToggleFullscreen(box);
       return;
     }
-    var helpBtn = e.target.closest && e.target.closest('#pm-voltage .vchart-help');
-    var pop = document.querySelector('#pm-voltage .vchart-help-pop');
+    var helpBtn = e.target.closest && e.target.closest('.vchart-help');
+    var pop = box ? box.querySelector('.vchart-help-pop') : null;
     if (helpBtn && pop) {
       var open = pop.hidden;
       pop.hidden = !open;
       helpBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
       return;
     }
-    if (pop && !pop.hidden && !(e.target.closest && e.target.closest('#pm-voltage .vchart-help-pop'))) {
+    if (pop && !pop.hidden && !(e.target.closest && e.target.closest('.vchart-help-pop'))) {
       pop.hidden = true;
-      var help = document.querySelector('#pm-voltage .vchart-help');
+      var help = box ? box.querySelector('.vchart-help') : null;
       if (help) help.setAttribute('aria-expanded', 'false');
     }
-    var dayBtn = e.target.closest && e.target.closest('#pm-voltage .vchart-day');
+    var dayBtn = e.target.closest && e.target.closest('.vchart-day');
     if (!dayBtn || dayBtn.disabled) return;
     var dir = +dayBtn.getAttribute('data-dir');
     if (!dir) return;
     vShift = Math.max(0, vShift - dir);
+    document.querySelectorAll('.vchart-host').forEach(function(host) { host._vZoom = null; });
     vZoom = null;
     try { sessionStorage.setItem('pm_vchart_shift', String(vShift)); } catch (err) {}
     vchartReload();
@@ -863,11 +886,11 @@
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
-    var pop = document.querySelector('#pm-voltage .vchart-help-pop');
-    if (!pop || pop.hidden) return;
+    var pop = document.querySelector('.vchart-host .vchart-help-pop:not([hidden])');
+    if (!pop) return;
     e.preventDefault();
     pop.hidden = true;
-    var help = document.querySelector('#pm-voltage .vchart-help');
+    var help = pop.parentNode ? pop.parentNode.querySelector('.vchart-help') : null;
     if (help) help.setAttribute('aria-expanded', 'false');
   });
 
@@ -922,21 +945,23 @@
         if (d.pm_hb_tbody !== undefined) { el = document.getElementById('pm-hb-tbody'); if (el) el.innerHTML = d.pm_hb_tbody; }
         if (d.pm_tg_tbody !== undefined) { el = document.getElementById('pm-tg-tbody'); if (el) el.innerHTML = d.pm_tg_tbody; }
         if (d.pm_alert_ev_tbody !== undefined) { el = document.getElementById('pm-alert-events-tbody'); if (el) el.innerHTML = d.pm_alert_ev_tbody; }
-        if (d.pm_voltage !== undefined) {
-          el = document.getElementById('pm-voltage');
+        [['pm_voltage', 'pm-voltage'], ['pm_voltage_house', 'pm-voltage-house']].forEach(function(pair) {
+        if (d[pair[0]] !== undefined) {
+          el = document.getElementById(pair[1]);
           if (el) {
-            el.innerHTML = d.pm_voltage;
+            el.innerHTML = d[pair[0]];
             var chart = el.querySelector('.vchart');
-            if (chart) {
+            if (chart && pair[1] === 'pm-voltage') {
               var shown = +chart.getAttribute('data-shift');
               if (isFinite(shown) && shown !== vShift) {
                 vShift = shown;
                 try { sessionStorage.setItem('pm_vchart_shift', String(vShift)); } catch (err) {}
               }
             }
-            vchartApply();
+            vchartApply(el);
           }
         }
+        });
         if (d.pm_ver !== undefined) {
           el = document.getElementById('pm-ver-content');
           if (el) el.innerHTML = d.pm_ver;

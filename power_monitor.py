@@ -109,6 +109,7 @@ from database import (
     save_deye_log,
     apartment_inverter_id,
     enabled_inverter_targets,
+    house_inverter_record,
     save_heartbeat,
     save_tg_log,
     schedule_history_for_date,
@@ -696,7 +697,7 @@ def _fmt_panel_volts(value: float | None) -> str:
     return f"{float(value):05.1f}"
 
 
-def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0) -> str:
+def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0, inverter_id: int | None = None) -> str:
     """Three-phase panel meter: L1 yellow, L2 green, L3 red, 7-segment windows."""
     phases: list[tuple[str, float | None]] = [("L1", None), ("L2", None), ("L3", None)]
     age_html = "немає даних"
@@ -743,13 +744,13 @@ def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0) -> str:
         + "</div>"
         + f'<div class="vboard-age">{age_html}</div>'
         + "</div>"
-        + _voltage_chart_html(chart_shift)
+        + _voltage_chart_html(chart_shift, inverter_id)
     )
 
 
-def _voltage_chart_html(chart_shift: int = 0) -> str:
+def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) -> str:
     now = time.time()
-    oldest = deye_first_voltage_ts()
+    oldest = deye_first_voltage_ts(inverter_id)
     shift = clamp_chart_shift(chart_shift, now, oldest)
     t0, t1, live = chart_window(now, shift)
     if live:
@@ -758,7 +759,7 @@ def _voltage_chart_html(chart_shift: int = 0) -> str:
     cache = dtek.schedule_cache or {}
     return build_voltage_chart(
         now=now,
-        buckets=deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC),
+        buckets=deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC, inverter_id),
         today=cache.get("today"),
         tomorrow=cache.get("tomorrow"),
         queue=DTEK_QUEUE,
@@ -1013,7 +1014,12 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
                 f'<div style="font-size:0.85rem;margin-top:0.3rem">Імпорт = взято з мережі (заряд АКБ + споживання). Експорт = віддано в мережу.</div></details>'
             )
 
-    voltage_html = _build_voltage_panel(deye_log, chart_shift)
+    voltage_html = _build_voltage_panel(deye_log, chart_shift, apartment_inverter_id())
+    house_rec = house_inverter_record()
+    house_rows = recent_deye_log(30, house_rec["id"]) if house_rec else []
+    house_voltage_html = _build_voltage_panel(
+        house_rows, chart_shift, house_rec["id"] if house_rec else None,
+    )
 
     alert_html = dtek.alert_banner_html(dtek.alert_cache)
 
@@ -1047,6 +1053,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
         "pm_deye_house": house_deye_inner_html(),
         "pm_breakers": _breaker_live_html(),
         "pm_voltage": voltage_html,
+        "pm_voltage_house": house_voltage_html,
         "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_count()} в онлайні',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
@@ -2098,7 +2105,12 @@ async def dashboard(key: str = Query("")):
             )
 
     # ─── Voltage (L1/L2/L3) standalone block ───
-    voltage_html = _build_voltage_panel(deye_log)
+    voltage_html = _build_voltage_panel(deye_log, 0, apartment_inverter_id())
+    house_rec = house_inverter_record()
+    house_rows = recent_deye_log(30, house_rec["id"]) if house_rec else []
+    house_voltage_html = _build_voltage_panel(
+        house_rows, 0, house_rec["id"] if house_rec else None,
+    )
 
     # ─── Alert events ───
     alert_ev_rows = _alert_events_rows()
@@ -2195,7 +2207,7 @@ async def dashboard(key: str = Query("")):
 
 <div id="dashboard-sections">
 {_wrap_dashboard_section("breaker_details", _breaker_section_html(), allowed)}
-{_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі</h2></summary><div id="pm-voltage">{voltage_html}</div></details>', allowed) if "voltage_details" in allowed else ""}
+{_wrap_dashboard_section("voltage_house_details", f'<details id="voltage_house_details" open data-ls-key="voltage_house_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі будинку</h2></summary><div id="pm-voltage-house" class="vchart-host">{house_voltage_html}</div></details>', allowed) if "voltage_house_details" in allowed else ""}
 {_wrap_dashboard_section("sched_details", schedule_html, allowed) if schedule_html else ""}
 {_wrap_dashboard_section("collections_details", '<details id="collections_details" open data-ls-key="collections_open" data-default-open="1"><summary><h2 style="display:inline">Участь у зборах</h2></summary><div id="pm-collections"></div></details>', allowed)}
 {_wrap_dashboard_section("boiler_details", boiler_html, allowed) if boiler_html else ""}
@@ -2203,6 +2215,7 @@ async def dashboard(key: str = Query("")):
 {f'<div class="dashboard-section" data-section-id="links_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="links_details" open data-ls-key="links_open" data-default-open="1"><summary><h2 style="display:inline">Посилання</h2></summary><table><tr><th>Опис</th><th>Посилання</th></tr><tr><td>Банка на воду (АКБ)</td><td><a href="https://send.monobank.ua/jar/4St1oZaDFH" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/4St1oZaDFH</a></td></tr><tr><td>Банка на паливо 6 і 6А</td><td><a href="https://send.monobank.ua/jar/7g6rEEejGE" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/7g6rEEejGE</a></td></tr><tr><td>Збір буд6 (вода, тепло, ДБЖ)</td><td><a href="https://send.monobank.ua/jar/faoUpWcMx" target="_blank" style="color:#6ee7b7">send.monobank.ua/jar/faoUpWcMx</a></td></tr><tr><td>Перевірити оплату зборів</td><td><a href="https://docs.google.com/spreadsheets/d/1q4fEVocWvtaG2-A8x4eFiZkdFAzFRaRTm7NECLcoYTs/edit?gid=2001051359#gid=2001051359" target="_blank" style="color:#6ee7b7">Таблиця зборів по квартирах</a></td></tr><tr><td>Форма на перепуски СКД ліфти</td><td><a href="https://docs.google.com/forms/d/e/1FAIpQLSfE2HdL7oAB88FbcQmCbDW2Du-sF3mhc2RrQE6wTjB_MDEzkg/viewform" target="_blank" style="color:#6ee7b7">Перепуски СКД ліфти Чорновола 6</a></td></tr><tr><td>Інструкція з брелоків СКД</td><td><a href="/skd/brelok-chornovola6.pdf?key={key}" target="_blank" style="color:#6ee7b7">Брелоки СКД, Чорновола 6 (PDF)</a></td></tr><tr><td>Оселя Сервіс (ЖУС)</td><td><a href="https://www.oselya.com.ua/brovary/contact" target="_blank" style="color:#6ee7b7">oselya.com.ua/brovary/contact</a></td></tr></table></details></div>' if "links_details" in allowed else ""}
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><div id="pm-alert-day"></div><details id="alert_ev_table" data-ls-key="alert_ev_table_open" data-default-open="0"><summary style="font-size:0.85rem;color:var(--muted)">Список</summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
+{_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі в квартирі</h2></summary><div id="pm-voltage" class="vchart-host">{voltage_html}</div></details>', allowed) if "deye_details" in allowed else ""}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
 {_wrap_dashboard_section("deye_house_details", '<details id="deye_house_details" data-ls-key="deye_house_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор будинку</h2></summary><div id="pm-deye-house">' + house_deye_inner_html() + '</div></details>', allowed)}
 {(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
