@@ -1216,14 +1216,48 @@
       if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>');
       return breakerLane(title, bars, '');
     }
+    function socColor(percent) {
+      var stops = [[0, [127, 29, 29]], [25, [220, 38, 38]], [50, [234, 88, 12]], [75, [250, 204, 21]], [90, [132, 204, 22]], [100, [34, 197, 94]]];
+      var level = Math.max(0, Math.min(100, +percent || 0));
+      for (var i = 1; i < stops.length; i++) {
+        if (level > stops[i][0]) continue;
+        var span = stops[i][0] - stops[i - 1][0] || 1;
+        var mix = (level - stops[i - 1][0]) / span;
+        var rgb = stops[i - 1][1].map(function(channel, index) {
+          return Math.round(channel + (stops[i][1][index] - channel) * mix);
+        });
+        return '#' + rgb.map(function(channel) {
+          var hex = channel.toString(16);
+          return hex.length < 2 ? '0' + hex : hex;
+        }).join('');
+      }
+      return '#22c55e';
+    }
+    function breakerChargeLane(data, startMs, spanMs) {
+      var title = 'Заряд';
+      var segments = data.charge || [];
+      if (!segments.length) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>');
+      var bars = '';
+      segments.forEach(function(segment) {
+        var left = (segment.start * 1000 - startMs) / spanMs * 100;
+        var width = ((segment.end - segment.start) * 1000) / spanMs * 100;
+        left = Math.min(100, Math.max(0, left));
+        width = Math.min(100 - left, Math.max(0, width));
+        if (width <= 0) return;
+        bars += '<i class="brk-bar brk-charge" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) +
+          '%;background:' + socColor(segment.soc) + '"></i>';
+      });
+      if (!bars) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>');
+      return breakerLane(title, bars, '');
+    }
     function breakerFactLane(data, startMs, spanMs) {
-      var title = 'Факт';
+      var title = 'Фактично';
       var start = data.start || 0;
       var end = data.end || start;
       var horizon = end;
       if (data.today) horizon = Math.min(end, Date.now() / 1000);
       else if (Date.now() / 1000 < start) horizon = start;
-      if (horizon <= start) return breakerLane(title, '', '<div class="brk-empty">Факт: ще немає</div>');
+      if (horizon <= start) return breakerLane(title, '', '<div class="brk-empty">Фактично: ще немає</div>');
       var downs = data.grid_down || [];
       var cuts = [start, horizon];
       downs.forEach(function(gap) {
@@ -1263,6 +1297,7 @@
       html += '</div></div><div class="brk-plot">';
       html += breakerPlanLane(data);
       html += breakerFactLane(data, startMs, spanMs);
+      html += breakerChargeLane(data, startMs, spanMs);
       [['svitlo', 'Освітлення', 'Світло'], ['itp', 'Обігрів', 'ІТП']].forEach(function(item) {
         var device = data.devices[item[0]] || { ready: false };
         var spans = device.ready ? (device.spans || []) : [];
@@ -1292,8 +1327,8 @@
         '<span class="brk-legend-item"><i class="brk-key brk-off"></i> вимкнено</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-plan-ok"></i> графік: є світло</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-plan-off"></i> немає</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> факт: було</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> факт: не було</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> фактично: було</span> ' +
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> фактично: не було</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> ' +
         '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> ' +

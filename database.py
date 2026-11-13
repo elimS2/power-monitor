@@ -1354,7 +1354,7 @@ HOUSE_INVERTER_TITLE = "Deye інвертор будинку"
 HOUSE_INVERTER_HOST = "192.168.0.104"
 HOUSE_INVERTER_MAC = "74:e9:d8:39:22:8a"
 HOUSE_INVERTER_PORT = 8899
-HOUSE_INVERTER_BATTERY_KWH = 160.0
+HOUSE_INVERTER_BATTERY_KWH = 153.6
 
 
 def _poll_port_from_env(serial: str | None) -> int:
@@ -1405,10 +1405,16 @@ def apartment_inverter_id() -> int:
 def _ensure_house_inverter(db) -> int:
     """Seed the building row once, with polling off. Later boots keep that row."""
     row = db.execute(
-        "SELECT id FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1",
+        "SELECT id, battery_kwh FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1",
         (HOUSE_INVERTER_TITLE,),
     ).fetchone()
     if row is not None:
+        # 14.11.2026: ten modules of 15.360 kWh, not the earlier round 160.
+        if abs(float(row["battery_kwh"] or 0) - 160.0) < 0.05:
+            db.execute(
+                "UPDATE deye_inverter SET battery_kwh=? WHERE id=?",
+                (HOUSE_INVERTER_BATTERY_KWH, int(row["id"])),
+            )
         return int(row["id"])
     serial = os.getenv("DEYE_HOUSE_SERIAL", "").strip() or None
     cur = db.execute(
@@ -2470,6 +2476,28 @@ def grid_down_intervals(start: float, end: float) -> list[tuple[float, float]]:
     return out
 
 
+def house_charge_segments(start: float, end: float) -> list[dict]:
+    """House battery percent across one day. Gaps stay empty. Same percent merges."""
+    record = house_inverter_record()
+    if record is None or end <= start:
+        return []
+    buckets = deye_voltage_buckets(start, end, 60, record["id"])
+    segments: list[dict] = []
+    for row in buckets:
+        if row.get("soc") is None:
+            continue
+        ts = float(row["bucket"])
+        if ts < start or ts >= end:
+            continue
+        level = int(round(max(0.0, min(100.0, float(row["soc"])))))
+        piece_end = min(end, ts + 60.0)
+        if segments and segments[-1]["soc"] == level and ts - float(segments[-1]["end"]) < 90:
+            segments[-1]["end"] = piece_end
+        else:
+            segments.append({"start": ts, "end": piece_end, "soc": level})
+    return segments
+
+
 def read_breaker_board(day: str, now: float) -> dict:
     """One stored day for both breakers. Reads breaker_day only and does not write."""
     try:
@@ -2551,6 +2579,7 @@ def read_breaker_board(day: str, now: float) -> dict:
         "schedule": schedule,
         "boiler": boiler,
         "alerts": read_alert_day(day, now)["segments"],
+        "charge": house_charge_segments(start, window_end),
         "timers": timers,
         "devices": devices,
     }

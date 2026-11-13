@@ -125,6 +125,7 @@ from voltage_chart import (
     FUTURE_SEC,
     HISTORY_SEC,
     build_battery_board,
+    soc_color,
     build_load_chart,
     build_soc_chart,
     build_voltage_chart,
@@ -1543,6 +1544,7 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
     tracks = []
     tracks.append(_plan_lane_html(payload, now_mark))
     tracks.append(_fact_lane_html(payload, now_mark, start, end, now))
+    tracks.append(_charge_lane_html(payload, now_mark, start, end))
     for name, title, _subtitle, _kind in _BREAKER_FACES:
         short = "ІТП" if name == "itp" else "Світло"
         device = payload["devices"][name]
@@ -1585,8 +1587,8 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
         '<span class="brk-legend-item"><i class="brk-key brk-off"></i> вимкнено</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-plan-ok"></i> графік: є світло</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-plan-off"></i> немає</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> факт: було</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> факт: не було</span> '
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> фактично: було</span> '
+        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> фактично: не було</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> '
         '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> '
@@ -1609,11 +1611,11 @@ def _fact_horizon(payload: dict, start: float, end: float, now: float | None) ->
 
 def _fact_lane_html(payload: dict, now_mark: str, start: float, end: float, now: float | None) -> str:
     """Actual grid presence up to this minute. The future of the day stays empty."""
-    title = "Факт"
+    title = "Фактично"
     horizon = _fact_horizon(payload, start, end, now)
     span = end - start or 1
     if horizon <= start:
-        return _lane_html(title, [], now_mark, '<div class="brk-empty">Факт: ще немає</div>')
+        return _lane_html(title, [], now_mark, '<div class="brk-empty">Фактично: ще немає</div>')
     downs = []
     for pair in payload.get("grid_down") or []:
         if isinstance(pair, (list, tuple)) and len(pair) == 2:
@@ -1636,6 +1638,30 @@ def _fact_lane_html(payload: dict, now_mark: str, start: float, end: float, now:
         width = (right - left) / span * 100
         bars.append(f'<i class="brk-bar {kind}" style="left:{left_pct:.2f}%;width:{width:.2f}%"></i>')
     return _lane_html(title, bars, now_mark, "")
+
+
+def _charge_lane_html(payload: dict, now_mark: str, start: float, end: float) -> str:
+    """House battery percent. Each stretch uses the meter color of that percent."""
+    title = "Заряд"
+    span = end - start or 1
+    bars = []
+    for segment in payload.get("charge") or []:
+        if not isinstance(segment, dict):
+            continue
+        piece_start = float(segment.get("start") or 0)
+        piece_end = float(segment.get("end") or 0)
+        if piece_end <= start or piece_start >= end or piece_end <= piece_start:
+            continue
+        left = max(start, piece_start)
+        right = min(end, piece_end)
+        left_pct = (left - start) / span * 100
+        width = (right - left) / span * 100
+        color = soc_color(float(segment.get("soc") or 0))
+        bars.append(
+            f'<i class="brk-bar brk-charge" style="left:{left_pct:.2f}%;width:{width:.2f}%;background:{color}"></i>'
+        )
+    empty = "" if bars else '<div class="brk-empty">Заряд: ще немає</div>'
+    return _lane_html(title, bars, now_mark, empty)
 
 
 def _timer_pins_html(payload: dict, device: str) -> str:

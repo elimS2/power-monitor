@@ -543,8 +543,9 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("brk-when-off brk-pin-end", marked)
         heat = marked.split("Обігрів", 1)[1].split("Котельня", 1)[0]
         light = marked.split("Освітлення", 1)[1].split("Обігрів", 1)[0]
-        self.assertLess(marked.index("Графік 5.1"), marked.index(">Факт<"))
-        self.assertLess(marked.index(">Факт<"), marked.index(">Освітлення<"))
+        self.assertLess(marked.index("Графік 5.1"), marked.index(">Фактично<"))
+        self.assertLess(marked.index(">Фактично<"), marked.index(">Заряд<"))
+        self.assertLess(marked.index(">Заряд<"), marked.index(">Освітлення<"))
         self.assertLess(marked.index(">Освітлення<"), marked.index(">Обігрів<"))
         self.assertLess(marked.index(">Обігрів<"), marked.index(">Котельня<"))
         self.assertIn("brk-pin-end", heat)

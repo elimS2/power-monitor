@@ -434,7 +434,7 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         self.assertNotIn("deye_details", bare)
         self.assertEqual(house["host"], "192.168.0.104")
         self.assertEqual(house["mac"], "74:e9:d8:39:22:8a")
-        self.assertEqual(house["battery_kwh"], 160)
+        self.assertEqual(house["battery_kwh"], 153.6)
         self.assertEqual(house["poll_enabled"], 0)
         self.assertNotIn(
             database.HOUSE_INVERTER_TITLE,

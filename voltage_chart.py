@@ -535,6 +535,35 @@ def _soc_legend() -> str:
     return '<div class="vchart-legend">' + "".join(html) + "</div>"
 
 
+# Shared with the basement charge lane. Green only near a full pack, so 75% and 98% differ.
+SOC_STOPS = (
+    (0.0, (127, 29, 29)),
+    (25.0, (220, 38, 38)),
+    (50.0, (234, 88, 12)),
+    (75.0, (250, 204, 21)),
+    (90.0, (132, 204, 22)),
+    (100.0, (34, 197, 94)),
+)
+
+
+def soc_color(percent: float) -> str:
+    """Color of one charge percent on the meter scale."""
+    level = max(0.0, min(100.0, float(percent)))
+    for index in range(1, len(SOC_STOPS)):
+        left_pct, left_rgb = SOC_STOPS[index - 1]
+        right_pct, right_rgb = SOC_STOPS[index]
+        if level > right_pct:
+            continue
+        span = right_pct - left_pct or 1.0
+        mix = (level - left_pct) / span
+        rgb = tuple(
+            round(left_rgb[channel] + (right_rgb[channel] - left_rgb[channel]) * mix)
+            for channel in range(3)
+        )
+        return "#{:02x}{:02x}{:02x}".format(*rgb)
+    return "#22c55e"
+
+
 _GRID_ON_V = 50.0
 _CHARGE_W = 100.0
 _LOAD_IDLE_W = 50.0
@@ -588,17 +617,30 @@ def _power_words(watts: float) -> str:
     return f"{digits} {unit}".strip()
 
 
-def _b_meter(label: str, digits: str, ghost: str, unit: str, state: str, band: str, bar_pct: float | None = None) -> str:
+def _cap_caption(cap: float) -> str:
+    rounded = round(float(cap), 1)
+    if abs(rounded - round(rounded)) < 0.05:
+        text = str(int(round(rounded)))
+    else:
+        text = f"{rounded:.1f}"
+    return f"з {text} кВт·год"
+
+
+def _b_meter(label: str, digits: str, unit: str, state: str, band: str, bar_pct: float | None = None) -> str:
     bar = ""
     if bar_pct is not None:
-        bar = f'<div class="bbar" aria-hidden="true"><span style="width:{max(0.0, min(100.0, bar_pct)):.1f}%"></span></div>'
+        color = soc_color(bar_pct)
+        bar = (
+            f'<div class="bbar" aria-hidden="true">'
+            f'<span style="width:{max(0.0, min(100.0, bar_pct)):.1f}%;background:{color}"></span>'
+            f"</div>"
+        )
     unit_html = f'<span class="vmeter-unit">{unit}</span>' if unit else ""
     return (
         f'<div class="vmeter vmeter-{band}">'
         f'<div class="vmeter-phase">{label}</div>'
         '<div class="vmeter-window">'
         '<div class="vmeter-readout">'
-        f'<span class="vmeter-ghost" aria-hidden="true">{ghost}</span>'
         f'<span class="vmeter-digits">{digits}</span>'
         f"</div>{unit_html}</div>"
         f"{bar}"
@@ -625,7 +667,7 @@ def build_battery_board(
     cap = max(0.0, float(cap_kwh or 0))
 
     if soc is None:
-        soc_meter = _b_meter("ЗАРЯД", "---", "888", "%", "немає", "none", 0)
+        soc_meter = _b_meter("ЗАРЯД", "---", "%", "немає", "none", 0)
     else:
         pct = max(0.0, min(100.0, float(soc)))
         if pct < 15:
@@ -634,21 +676,21 @@ def build_battery_board(
             band, word = "low", "низький"
         else:
             band, word = "ok", "норма"
-        soc_meter = _b_meter("ЗАРЯД", f"{pct:.0f}", "888", "%", word, band, pct)
+        soc_meter = _b_meter("ЗАРЯД", f"{pct:.0f}", "%", word, band, pct)
 
     if soc is None or cap <= 0:
-        energy = _b_meter("ЗАПАС", "---", "888.8", "кВт·год", "немає ємності", "none")
+        energy = _b_meter("ЗАПАС", "---", "кВт·год", "немає ємності", "none")
         left = 0.0
         room = 0.0
     else:
         left = cap * max(0.0, min(100.0, float(soc))) / 100.0
         room = cap - left
-        energy = _b_meter("ЗАПАС", f"{left:.1f}", "888.8", "кВт·год", f"з {cap:.0f}", "ok")
+        energy = _b_meter("ЗАПАС", f"{left:.1f}", "кВт·год", _cap_caption(cap), "ok")
 
-    now_digits, now_ghost, now_unit, now_band = _power_parts(load_w)
-    avg_digits, avg_ghost, avg_unit, avg_band = _power_parts(load_avg_w if have_avg else None)
-    load_meter = _b_meter("ЗАРАЗ", now_digits, now_ghost, now_unit, "споживання", now_band)
-    avg_meter = _b_meter("10 ХВ", avg_digits, avg_ghost, avg_unit, "середнє", avg_band)
+    now_digits, _now_ghost, now_unit, now_band = _power_parts(load_w)
+    avg_digits, _avg_ghost, avg_unit, avg_band = _power_parts(load_avg_w if have_avg else None)
+    load_meter = _b_meter("ЗАРАЗ", now_digits, now_unit, "споживання", now_band)
+    avg_meter = _b_meter("10 ХВ", avg_digits, avg_unit, "середнє", avg_band)
 
     notes: list[str] = []
     charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0

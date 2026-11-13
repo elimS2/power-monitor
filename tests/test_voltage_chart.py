@@ -191,9 +191,22 @@ class BatteryBoardTests(unittest.TestCase):
             grid_v=(228, 227, 226),
         )
         self.assertIn("Мережа є", html)
-        self.assertIn("з 160", html)
+        self.assertIn("з 160 кВт·год", html)
         self.assertNotIn("Без світла", html)
         self.assertNotIn("До повної", html)
+        self.assertNotIn("vmeter-ghost", html)
+
+    def test_pack_caption_keeps_the_tenth_and_colors_split_high_charge(self):
+        from voltage_chart import build_battery_board, soc_color
+        html = build_battery_board(
+            soc=98, cap_kwh=153.6, load_w=4000, load_avg_w=4000,
+            bat_w=1000, bat_avg_w=1000, avg_samples=4,
+            grid_v=(230, 230, 230),
+        )
+        self.assertIn("з 153.6 кВт·год", html)
+        self.assertIn(soc_color(98), html)
+        self.assertNotEqual(soc_color(75), soc_color(98))
+        self.assertGreater(int(soc_color(10)[1:3], 16), int(soc_color(98)[1:3], 16))
 
     def test_chart_fold_is_open_and_remembers_its_key(self):
         html = build_voltage_chart(

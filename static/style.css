@@ -381,10 +381,7 @@ details[open] summary::before { content: '▼ '; }
   height: 6px; margin: 0 0.4rem 0.32rem; border-radius: 99px;
   background: #0b1220; box-shadow: inset 0 1px 2px rgba(0,0,0,0.45); overflow: hidden;
 }
-.bbar span {
-  display: block; height: 100%;
-  background: linear-gradient(90deg, #7f1d1d 0%, #b45309 28%, #4ade80 70%);
-}
+.bbar span { display: block; height: 100%; background: #4ade80; }
 .bboard .vmeter-state { letter-spacing: 0.04em; text-transform: none; }
 .bboard-note { margin: 0.55rem 0.2rem 0; text-align: center; color: #e2e8f0; font-size: 0.84rem; }
 .bboard-note + .bboard-note { margin-top: 0.15rem; color: #cbd5e1; }
@@ -410,10 +407,16 @@ details[open] summary::before { content: '▼ '; }
   padding: 0.7rem 0.45rem 0.55rem;
 }
 .vchart-head {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 0.35rem 0.6rem;
+  display: flex; justify-content: flex-start; align-items: baseline; gap: 0.35rem 0.6rem;
   flex-wrap: wrap;
   padding: 0 0.35rem 0.25rem; font-size: 0.86rem;
+  width: 100%; box-sizing: border-box; text-align: left;
 }
+.vchart > summary.vchart-head {
+  display: flex; justify-content: flex-start; width: 100%; text-align: left;
+}
+.vchart > summary.vchart-head > div:first-child { text-align: left; margin-right: auto; }
+.vchart > summary.vchart-head .vchart-head-side { margin-left: auto; }
 .vchart-queue, .vchart-span { color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
 .vchart-queue { margin-left: 0.35rem; }
 .vchart-head-side { display: flex; align-items: center; gap: 0.5rem; }
