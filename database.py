@@ -433,6 +433,34 @@ def init_db():
                     "UPDATE api_key_config SET sections=? WHERE label=?",
                     (updated, row["label"]),
                 )
+        # The house inverter block is public. Every explicit list gains it.
+        # A NULL list already means every section. deye_details is not added.
+        def _append_house_section(raw: str | None) -> str | None:
+            if not raw:
+                return None
+            try:
+                sec = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(sec, list) or "deye_house_details" in sec:
+                return None
+            sec.append("deye_house_details")
+            return json.dumps(sec)
+
+        for row in db.execute("SELECT id, sections FROM roles WHERE sections IS NOT NULL").fetchall():
+            updated = _append_house_section(row["sections"])
+            if updated:
+                db.execute("UPDATE roles SET sections=? WHERE id=?", (updated, row["id"]))
+        for row in db.execute(
+            "SELECT label, sections FROM api_key_config WHERE sections IS NOT NULL AND role_id IS NULL"
+        ).fetchall():
+            updated = _append_house_section(row["sections"])
+            if updated:
+                db.execute(
+                    "UPDATE api_key_config SET sections=? WHERE label=?",
+                    (updated, row["label"]),
+                )
+        _ensure_house_inverter(db)
         # Migration: add footer_parts to roles
         try:
             db.execute("ALTER TABLE roles ADD COLUMN footer_parts TEXT")
@@ -635,7 +663,7 @@ def tg_test_chat_id() -> str:
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
     "alert_ev_details", "tg_details", "voltage_details",
-    "deye_details", "breaker_details", "hb_details", "legend_details", "avatars_details",
+    "deye_details", "deye_house_details", "breaker_details", "hb_details", "legend_details", "avatars_details",
     "collections_details",
 ]
 
@@ -657,6 +685,7 @@ SECTION_LABELS = {
     "tg_details": "Історія Telegram",
     "voltage_details": "Напруга мережі",
     "deye_details": "Deye інвертор",
+    "deye_house_details": "Deye інвертор будинку",
     "breaker_details": "Автомати підвалу",
     "hb_details": "Роутер / Heartbeats",
     "legend_details": "Легенда повідомлень",
@@ -1281,6 +1310,11 @@ def read_alert_day(day: str, now: float) -> dict:
 
 
 APARTMENT_INVERTER_TITLE = "Deye інвертор"
+HOUSE_INVERTER_TITLE = "Deye інвертор будинку"
+HOUSE_INVERTER_HOST = "192.168.0.104"
+HOUSE_INVERTER_MAC = "74:e9:d8:39:22:8a"
+HOUSE_INVERTER_PORT = 8899
+HOUSE_INVERTER_BATTERY_KWH = 160.0
 
 
 def _poll_port_from_env(serial: str | None) -> int:
@@ -1326,6 +1360,48 @@ def apartment_inverter_id() -> int:
     if row is None:
         raise ValueError("apartment inverter is not registered")
     return int(row["id"])
+
+
+def _ensure_house_inverter(db) -> int:
+    """Seed the building row once, with polling off. Later boots keep that row."""
+    row = db.execute(
+        "SELECT id FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1",
+        (HOUSE_INVERTER_TITLE,),
+    ).fetchone()
+    if row is not None:
+        return int(row["id"])
+    serial = os.getenv("DEYE_HOUSE_SERIAL", "").strip() or None
+    cur = db.execute(
+        """INSERT INTO deye_inverter(
+               serial, mac, title, host, port, battery_kwh, poll_enabled
+           ) VALUES(?,?,?,?,?,?,0)""",
+        (
+            serial,
+            HOUSE_INVERTER_MAC,
+            HOUSE_INVERTER_TITLE,
+            HOUSE_INVERTER_HOST,
+            HOUSE_INVERTER_PORT,
+            HOUSE_INVERTER_BATTERY_KWH,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def house_inverter_record() -> dict | None:
+    """Building registry row. None before init. Does not read deye_log."""
+    with _conn() as db:
+        row = db.execute(
+            """SELECT id, battery_kwh, poll_enabled
+               FROM deye_inverter WHERE title=? ORDER BY id LIMIT 1""",
+            (HOUSE_INVERTER_TITLE,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "battery_kwh": float(row["battery_kwh"]),
+        "poll_enabled": int(row["poll_enabled"]),
+    }
 
 
 def save_deye_log(

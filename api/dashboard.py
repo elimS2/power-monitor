@@ -82,9 +82,11 @@ def ep_schedule_board(key: str = Query(""), date: str = Query("")):
 
 
 def hide_private_deye_fragment(frags: dict, allowed: list[str]) -> dict:
-    """Drop the apartment inverter fragment when this key cannot see that section."""
+    """Drop inverter fragments this key is not allowed to see."""
     if "deye_details" not in allowed:
         frags.pop("pm_deye", None)
+    if "deye_house_details" not in allowed:
+        frags.pop("pm_deye_house", None)
     return frags
 
 

@@ -1,9 +1,9 @@
 # Multi-inverter Deye on the Power Monitor dashboard
 
-- Status: `PHASE 3 PAUSED — PUBLIC KEY NOT READ`
+- Status: `PHASE 3 LOCAL — EMPTY HOUSE BLOCK, NOT DEPLOYED`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T20:01:34Z
+- Last updated: 2026-11-13T20:17:54Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -326,6 +326,8 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T19:45:27Z — Phase 2 local. Reads, the outage lamp, voltage JSON, and aggregates are scoped by inverter id. A house sample does not change the apartment voltage bar or `has_grid_voltage_now`. The live fragment omits `pm_deye` when the key cannot see `deye_details`. The overwritten dashboard assembly was removed. 41 tests OK. No house poll. No deploy.
 - 2026-11-13T19:50:43Z — Phase 3 step 1 stopped. `GET /api/debug-sql` with the key stored in the local monitor env returned `{"detail":"forbidden"}`. The resolved section list of the label `public` was not read. `deye_house_details` was not added to `ALL_SECTIONS`. No role write, no house row, no route, no poll. The operator asked where a later route would start: from the GCP poller, through the existing WireGuard, via the shelter peer `10.99.0.6`, to one host `192.168.0.104:8899`. The apartment LAN `192.168.88.0/24` does not contain that host. A direct TCP check from the apartment PC already failed at 2026-11-13T19:14:28Z. That one-host route still needs an explicit yes after a reachability check from GCP. It was not opened.
 - 2026-11-13T20:01:34Z — Operator said continue. Step 1 tried again. SSH `elims2@35.246.222.183` returned `Permission denied (publickey)`. No host entry for that address in the local SSH config. The gcloud account on this PC does not list that VM. The public section list is still unread. Section, house row, route, and poll stay off. The hop list shown in chat (cloud `10.99.0.1` → shelter `10.99.0.6` → `192.168.0.104:8899`) is the intended path, not a traceroute, and it was not installed.
+- 2026-11-13T20:12:03Z — Step 1 read succeeded with the instance SSH key used in earlier chats. Label `public` is enabled, `role_id` 4, role name `Публічна`, not builtin. Resolved sections are an explicit list and do not contain `deye_details`. The same role is also on `artur`, `init_group`, `techahead_yaroslav`, and `vasyl`. Plan step 2 says stop and ask before writing that shared list. No section added, no role write, no route, no poll.
+- 2026-11-13T20:17:54Z — Operator: the house block is public and belongs on every key. Local code appends `deye_house_details` to every explicit section list and leaves `deye_details` off those lists. The house registry row is seeded with `poll_enabled=0`, host `192.168.0.104`, mac `74:e9:d8:39:22:8a`, battery 160. Empty block says there is no sample. 43 tests OK. No route. No deploy. The live role lists change only when this process starts on the server.
 
 ### Open questions
 
@@ -368,10 +370,11 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T19:45:27Z — Phase 2 code is local. House sample stays out of the apartment lamp and voltage bar. No deploy.
 - 2026-11-13T19:50:43Z — Phase 3 paused at the public-key read. Live debug SQL returned 403. No section, no route, no poll.
 - 2026-11-13T20:01:34Z — Continue retried the read. SSH publickey denied. This PC's cloud account does not see the VM. Still no section and no route.
+- 2026-11-13T20:17:54Z — Empty house block is local. Every explicit section list gains `deye_house_details` on startup. `deye_details` is not added. Poll stays off. Route stays closed. Not deployed.
 
 ## 11. Handoff for a new chat
 
-- Phase 3 is paused at step 1. The live label `public` was not read (debug SQL 403 at 2026-11-13T19:50:43Z). Do not add `deye_house_details` to `ALL_SECTIONS` until that read shows an explicit list without `deye_details` and a single write target. Do not open the shelter route until GCP reachability is checked and the operator says yes to the one host. Do not enable the house poll before that route. Do not copy the logger serial into git. Do not drop an SSH tunnel script in Temp.
+- Phase 3 empty block is local and not deployed. The live role lists change when this code starts on the server. Do not open the shelter route until GCP reachability is checked and the operator says yes to the one host. Do not enable the house poll before that route. Do not copy the logger serial into git. Do not drop an SSH tunnel script in Temp.
 - Active skin: A.
 - Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
 - Do not add `deye_details` to the key labeled `public`.

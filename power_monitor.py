@@ -1015,12 +1015,61 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
+        "pm_deye_house": house_deye_inner_html(),
         "pm_breakers": _breaker_live_html(),
         "pm_voltage": voltage_html,
         "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_count()} в онлайні',
         "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
         "favicon": icon,
     }
+
+
+def house_deye_inner_html() -> str:
+    """Building inverter meter. Does not draw the apartment voltage chart."""
+    from database import house_inverter_record, recent_deye_log
+
+    record = house_inverter_record()
+    rows = recent_deye_log(30, record["id"]) if record else []
+    if not rows:
+        return '<div class="mk">Немає заміру</div>'
+    last = rows[0]
+    load_w = last.get("load_power_w")
+    soc = last.get("battery_soc")
+    volts = []
+    for name, value in (("L1", last.get("grid_v_l1")), ("L2", last.get("grid_v_l2")), ("L3", last.get("grid_v_l3"))):
+        if value is not None:
+            volts.append(f"{name}={value:.1f}")
+    load_s = f"{int(load_w)} Вт" if load_w is not None else "—"
+    soc_s = f"{int(soc)}%" if soc is not None else "—"
+    volt_s = " ".join(volts) if volts else "—"
+    cap = record["battery_kwh"] if record else 0
+    cap_s = f"{cap:.0f} кВт·год" if cap else "—"
+    history = ""
+    for row in rows:
+        history += (
+            f'<tr><td>{_ts_fmt_full(row["ts"])}</td>'
+            f'<td>{int(row["load_power_w"]) if row.get("load_power_w") is not None else "—"}</td>'
+            f'<td>{int(row["battery_soc"]) if row.get("battery_soc") is not None else "—"}</td>'
+            f'<td>{row["grid_v_l1"] if row.get("grid_v_l1") is not None else "—"}</td>'
+            f'<td>{row["grid_v_l2"] if row.get("grid_v_l2") is not None else "—"}</td>'
+            f'<td>{row["grid_v_l3"] if row.get("grid_v_l3") is not None else "—"}</td></tr>'
+        )
+    return (
+        f'<div class="mk up">Споживання: {load_s} · АКБ: {soc_s} · {volt_s} В</div>'
+        f'<details id="deye_house_battery_details" data-ls-key="deye_house_battery_open" data-default-open="1">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Ємність {cap_s}</summary></details>'
+        f'<details id="deye_house_grid_details" data-ls-key="deye_house_grid_open" data-default-open="1">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Напруга {volt_s} В</summary></details>'
+        f'<details id="deye_house_cumulative_details" data-ls-key="deye_house_cumulative_open" data-default-open="0">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Кумулятивні метрики</summary>'
+        f'<div style="font-size:0.85rem;color:var(--muted)">Немає окремого лічильника в цьому блоці</div></details>'
+        f'<details id="deye_house_daily_details" data-ls-key="deye_house_daily_open" data-default-open="0">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary>'
+        f'<div style="font-size:0.85rem;color:var(--muted)">Немає заміру за добу</div></details>'
+        f'<details id="deye_house_table_details" open data-ls-key="deye_house_table_open" data-default-open="1">'
+        f'<summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary>'
+        f'<table><tr><th>Час</th><th>Спожив. (Вт)</th><th>АКБ %</th><th>L1</th><th>L2</th><th>L3</th></tr>{history}</table></details>'
+    )
 
 
 def _build_deye_cumulative_table(last: dict | None) -> str:
@@ -2126,6 +2175,7 @@ async def dashboard(key: str = Query("")):
 {(f'<div class="dashboard-section" data-section-id="alert_ev_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="alert_ev_details" data-ls-key="alert_ev_open" data-default-open="0"><summary><h2 style="display:inline">Тривоги</h2></summary><div id="pm-alert-day"></div><details id="alert_ev_table" data-ls-key="alert_ev_table_open" data-default-open="0"><summary style="font-size:0.85rem;color:var(--muted)">Список</summary><table><tr><th>Час</th><th>Подія</th><th>Тривалість</th></tr><tbody id="pm-alert-events-tbody">{alert_ev_rows}</tbody></table></details></details></div>' if "alert_ev_details" in allowed else "")}
 {(f'<div class="dashboard-section" data-section-id="tg_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="tg_details" data-ls-key="tg_open" data-default-open="0"><summary><h2 style="display:inline">Історія повідомлень Telegram</h2></summary><table><tr><th>Час</th><th>HTTP</th><th>Канал</th><th>Текст</th></tr><tbody id="pm-tg-tbody">{tg_rows}</tbody></table></details></div>' if "tg_details" in allowed else "")}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
+{_wrap_dashboard_section("deye_house_details", '<details id="deye_house_details" data-ls-key="deye_house_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор будинку</h2></summary><div id="pm-deye-house">' + house_deye_inner_html() + '</div></details>', allowed)}
 {(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
 {_wrap_dashboard_section("legend_details", legend_html, allowed) if "legend_details" in allowed else ""}
 {_wrap_dashboard_section("avatars_details", '<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0"><summary><h2 style="display:inline">Аватарки каналу</h2></summary><table><tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr><tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr><tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr><tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr><tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr><tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr><tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr><tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr><tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr></table></details>', allowed) if "avatars_details" in allowed else ""}

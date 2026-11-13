@@ -396,6 +396,49 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         self.assertNotIn("pm_deye", hidden)
         shown = hide_private_deye_fragment({"pm_deye": "АКБ: 40%"}, ["deye_details"])
         self.assertEqual(shown["pm_deye"], "АКБ: 40%")
+        kept = hide_private_deye_fragment(
+            {"pm_deye": "АКБ: 11%", "pm_deye_house": "Немає заміру"},
+            ["deye_house_details"],
+        )
+        self.assertNotIn("pm_deye", kept)
+        self.assertEqual(kept["pm_deye_house"], "Немає заміру")
+
+    def test_house_block_is_on_every_explicit_list_and_stays_unpolled(self):
+        database.init_db()
+        with database._conn() as db:
+            db.execute(
+                "INSERT INTO roles(name, sections, is_builtin, created_at) VALUES(?,?,0,?)",
+                ("limited", json.dumps(["sched_details"]), 0),
+            )
+        database.init_db()
+        with database._conn() as db:
+            limited = json.loads(db.execute(
+                "SELECT sections FROM roles WHERE name='limited'"
+            ).fetchone()["sections"])
+            bare = json.loads(db.execute(
+                "SELECT sections FROM roles WHERE name='Без Deye'"
+            ).fetchone()["sections"])
+            house = db.execute(
+                "SELECT host, mac, battery_kwh, poll_enabled FROM deye_inverter WHERE title=?",
+                (database.HOUSE_INVERTER_TITLE,),
+            ).fetchone()
+        self.assertIn("deye_house_details", limited)
+        self.assertNotIn("deye_details", limited)
+        self.assertIn("deye_house_details", bare)
+        self.assertNotIn("deye_details", bare)
+        self.assertEqual(house["host"], "192.168.0.104")
+        self.assertEqual(house["mac"], "74:e9:d8:39:22:8a")
+        self.assertEqual(house["battery_kwh"], 160)
+        self.assertEqual(house["poll_enabled"], 0)
+
+    def test_house_block_says_there_is_no_sample(self):
+        from power_monitor import house_deye_inner_html
+        database.init_db()
+        database.save_deye_log(battery_soc=11, load_power_w=10, inverter_id=database.apartment_inverter_id())
+        html = house_deye_inner_html()
+        self.assertIn("Немає заміру", html)
+        self.assertNotIn("АКБ: 11%", html)
+        self.assertNotIn("pm-voltage", html)
 
     def test_board_read_does_not_scan_samples_or_events(self):
         database.init_db()

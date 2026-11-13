@@ -2,10 +2,10 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 3 PAUSED — PUBLIC KEY NOT READ`
+- Status: `PHASE 3 LOCAL — EMPTY HOUSE BLOCK, NOT DEPLOYED`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
-- Next phase: 3 step 1 still open. The live `public` label was not read. The route is not open.
-- Last updated: 2026-11-13T20:01:34Z
+- Next phase: route gate inside phase 3, only after an explicit yes. The empty block is local and not deployed.
+- Last updated: 2026-11-13T20:17:54Z
 
 ## Phase board
 
@@ -14,7 +14,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 | 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
 | 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
-| 3 Public block, then route, then poll | paused at step 1 | 2026-11-13T20:01:34Z. Debug SQL 403, then SSH publickey denied. Section not added. Route not opened. Poll stays off. |
+| 3 Public block, then route, then poll | local empty block, not deployed | 2026-11-13T20:17:54Z. Operator: every key may see the house block. Poll stays off. Route not opened. 43 tests OK. |
 | 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
 
 ## Review
@@ -41,3 +41,5 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T19:45:27Z — Phase 2 local. House sample does not move the apartment voltage bar or the lamp. No deploy. 41 tests OK.
 - 2026-11-13T19:50:43Z — Phase 3 step 1 paused. The local monitor key is not accepted by the live debug route. No section, no route, no poll. Route, if later approved, starts at the GCP poller and ends at one basement host via the shelter WireGuard peer.
 - 2026-11-13T20:01:34Z — Continue retried step 1. SSH to the server was rejected for want of a key. The VM is not in the cloud projects this PC can list. Public sections still unknown. No code, no route.
+- 2026-11-13T20:12:03Z — Retried with the instance key from earlier chats. `public` is on role `Публічна` with `artur`, `init_group`, `techahead_yaroslav`, and `vasyl`. Stopped before the section write. No route.
+- 2026-11-13T20:17:54Z — Operator said the house block is public for every key. Empty block is local. Poll off. No deploy. 43 tests OK.

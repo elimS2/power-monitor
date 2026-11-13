@@ -948,8 +948,9 @@
             if (window.pmRefreshBreakers) window.pmRefreshBreakers();
           }
         }
-        if (d.pm_deye) {
-          el = document.getElementById('pm-deye');
+        [['pm_deye', 'pm-deye'], ['pm_deye_house', 'pm-deye-house']].forEach(function(pair) {
+          if (!d[pair[0]]) return;
+          el = document.getElementById(pair[1]);
           if (el) {
             var openStates = {};
             el.querySelectorAll('details').forEach(function(det) {
@@ -963,7 +964,7 @@
                 }
               }
             });
-            el.innerHTML = d.pm_deye;
+            el.innerHTML = d[pair[0]];
             el.querySelectorAll('details').forEach(function(det) {
               var key = det.getAttribute('data-ls-key');
               if (key) {
@@ -982,7 +983,7 @@
               }
             });
           }
-        }
+        });
         if (d.pm_mk) { el = document.getElementById('pm-mk-wrap'); if (el) el.innerHTML = d.pm_mk; }
         if (d.title) document.title = d.title;
         if (d.favicon) {
