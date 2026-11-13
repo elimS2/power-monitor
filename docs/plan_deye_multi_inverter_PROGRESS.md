@@ -2,16 +2,16 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `REVIEWED / READY FOR LOCAL WORK`
+- Status: `PHASE 0 CANDIDATE — WAITING FOR CONFIRMATION`
 - Active skin: A (registry + `deye_log.inverter_id`)
-- Next phase: 0 (find the basement host). Do not start it from this review.
-- Last updated: 2026-11-13T18:51:12Z
+- Next phase: 0, operator gate. Candidate `192.168.0.104`. Do not start Phase 1.
+- Last updated: 2026-11-13T19:06:51Z
 
 ## Phase board
 
 | Phase | State | Note |
 |---|---|---|
-| 0 Find basement host | not started | Diff the live breaker LAN (`192.168.0.0/24` on 2026-11-08/09) against `.100`–`.104`. No schema, no route, no firewall. |
+| 0 Find basement host | candidate, waiting | 2026-11-13T19:06:51Z scan. OpenWrt WAN `192.168.0.109`. Candidate `192.168.0.104` High-Flying, TCP 8899 open. `read_deye` not run: no serial. |
 | 1 Schema, backfill, apartment writers | not started | Nullable `inverter_id`. Poller and `POST /api/deye-heartbeat` both write the apartment id. No second poll. |
 | 2 Scope apartment reads | not started | Lamp, `detection.py`, voltage JSON, the aggregate cache, and `/api/dashboard-fragments` stay apartment-only unless the key may see `deye_details`. |
 | 3 Public block, then route, then poll | not started | `poll_enabled` stays 0 until `api_key_config_get("public")` has an explicit list, the role-or-key write has one target, and GCP can reach the host. House poll is its own task. |
@@ -31,3 +31,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T18:42:00Z — Lead review. No code.
 - 2026-11-13T18:47:00Z — Critic round 1 fixes applied. No code. Implementation still blocked.
 - 2026-11-13T18:51:12Z — Final confirmation APPROVE. Status `REVIEWED / READY FOR LOCAL WORK`. No code. Next phase is still 0, and it waits for an explicit continue.
+- 2026-11-13T19:06:51Z — Prompt #2 continue. Read-only scan. Candidate `192.168.0.104`. Tuya MACs moved to `.103` and `.108`. New Akuvox-family host `.105` has no port 8899. Serial not read. Phase 1 not started.
