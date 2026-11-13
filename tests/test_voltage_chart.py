@@ -34,6 +34,7 @@ class VoltageChartTests(unittest.TestCase):
         self.assertIn("vchart-strip", html)
         self.assertIn("Колесо збільшує", html)
         self.assertIn("щипок", html)
+        self.assertIn("Свайп", html)
         self.assertIn("vchart-full", html)
         self.assertIn("На весь екран", html)
         self.assertIn('preserveAspectRatio="none"', html)

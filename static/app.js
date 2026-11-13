@@ -723,49 +723,114 @@
     });
   }
 
-  function vchartInFullscreen(host) {
-    return !!(host && (document.fullscreenElement === host || host.classList.contains('is-full')));
-  }
-
-  function vchartCssFull(host, on) {
-    if (!host) return;
-    host.classList.toggle('is-full', !!on);
-    document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart-host.is-full'));
-    vchartSyncFullscreen(host);
+  function vchartInFullscreen(chart) {
+    return !!(chart && chart.classList.contains('is-full'));
   }
 
   function vchartSyncFullscreen(one) {
-    var hosts = one ? [one] : Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
+    var hosts = [];
+    if (one && one.classList && one.classList.contains('vchart-host')) hosts = [one];
+    else hosts = Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
     hosts.forEach(function(host) {
-    host.querySelectorAll('.vchart-full').forEach(function(btn) {
-    var on = vchartInFullscreen(host);
-    btn.setAttribute('aria-label', on ? 'Згорнути' : 'На весь екран');
-    var enter = btn.querySelector('.vchart-full-enter');
-    var exit = btn.querySelector('.vchart-full-exit');
-    if (enter) enter.hidden = on;
-    if (exit) exit.hidden = !on;
-    });
+      host.querySelectorAll('.vchart-full').forEach(function(btn) {
+        var chart = btn.closest('.vchart');
+        var on = vchartInFullscreen(chart);
+        btn.setAttribute('aria-label', on ? 'Згорнути' : 'На весь екран');
+        var enter = btn.querySelector('.vchart-full-enter');
+        var exit = btn.querySelector('.vchart-full-exit');
+        if (enter) enter.hidden = on;
+        if (exit) exit.hidden = !on;
+      });
     });
   }
 
-  function vchartToggleFullscreen(host) {
-    if (!host) return;
-    var css = host.classList.contains('is-full');
-    var native = document.fullscreenElement === host;
-    if (css || native) {
-      vchartCssFull(host, false);
-      if (native && document.exitFullscreen) document.exitFullscreen();
-      return;
-    }
-    if (!host.requestFullscreen) {
-      vchartCssFull(host, true);
-      return;
-    }
-    var pending = host.requestFullscreen();
-    if (pending && pending.catch) pending.catch(function() { vchartCssFull(host, true); });
+  function vchartCssFull(chart, on) {
+    if (!chart) return;
+    if (chart.classList.contains('vchart-host')) chart = chart.querySelector('.vchart.is-full') || chart.querySelector('.vchart');
+    if (!chart) return;
+    document.querySelectorAll('.vchart.is-full').forEach(function(other) {
+      if (other !== chart) {
+        other.classList.remove('is-full', 'is-turned');
+        var dots = other.querySelector('.vchart-dots');
+        if (dots) dots.remove();
+      }
+    });
+    chart.classList.toggle('is-full', !!on);
+    if (on) chart.open = true;
+    vchartOrient(chart);
+    vchartPaintDots(chart);
+    document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-full'));
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+    vchartSyncFullscreen(chart.closest('.vchart-host'));
   }
 
-  document.addEventListener('fullscreenchange', vchartSyncFullscreen);
+  function vchartToggleFullscreen(chart) {
+    if (!chart) return;
+    vchartCssFull(chart, !chart.classList.contains('is-full'));
+  }
+
+  function vchartSiblings(chart) {
+    var host = chart && chart.closest ? chart.closest('.vchart-host') : null;
+    if (!host) return chart ? [chart] : [];
+    return Array.prototype.slice.call(host.querySelectorAll('.vchart'));
+  }
+
+  function vchartOrient(chart) {
+    if (!chart) return;
+    var portrait = window.innerHeight > window.innerWidth + 20;
+    chart.classList.toggle('is-turned', chart.classList.contains('is-full') && portrait);
+  }
+
+  function vchartPaintDots(chart) {
+    var old = chart.querySelector('.vchart-dots');
+    if (!chart.classList.contains('is-full')) {
+      if (old) old.remove();
+      return;
+    }
+    var list = vchartSiblings(chart);
+    if (!old) {
+      old = document.createElement('div');
+      old.className = 'vchart-dots';
+      var legend = chart.querySelector('.vchart-legend');
+      if (legend) chart.insertBefore(old, legend);
+      else chart.appendChild(old);
+    }
+    old.innerHTML = '';
+    list.forEach(function(item, index) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'vchart-dot' + (item === chart ? ' is-on' : '');
+      button.setAttribute('aria-label', 'Графік ' + (index + 1));
+      button.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        vchartShowSibling(chart, index - list.indexOf(chart));
+      });
+      old.appendChild(button);
+    });
+  }
+
+  function vchartShowSibling(chart, dir) {
+    if (!dir) return;
+    var list = vchartSiblings(chart);
+    var index = list.indexOf(chart);
+    if (index < 0) return;
+    var next = list[(index + dir + list.length) % list.length];
+    chart.classList.remove('is-full', 'is-turned');
+    vchartPaintDots(chart);
+    next.classList.add('is-full');
+    next.open = true;
+    vchartOrient(next);
+    vchartPaintDots(next);
+    document.body.classList.toggle('pm-vchart-lock', true);
+    vchartSyncFullscreen(next.closest('.vchart-host'));
+    vchartApply(next.closest('.vchart-host'));
+  }
+
+  var vSwipe = null;
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.vchart.is-full').forEach(vchartOrient);
+  });
 
   document.addEventListener('wheel', function(e) {
     var box = vchartBox(e.target);
@@ -876,6 +941,16 @@
 
   document.addEventListener('pointerdown', function(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var fullChart = e.target.closest && e.target.closest('.vchart.is-full');
+    if (fullChart && !(e.target.closest && e.target.closest('button, .vchart-help-pop'))) {
+      vSwipe = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        chart: fullChart,
+        plot: !!vchartSurface(e.target)
+      };
+    }
     var surface = vchartSurface(e.target);
     if (!surface || (e.target.closest && e.target.closest('.vchart-reset'))) return;
     var chart = surface.closest('.vchart');
@@ -962,7 +1037,11 @@
     var rect = main.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     var z0 = vDrag.z;
-    var dt = (e.clientX - vDrag.x) / rect.width * (z0.t1 - z0.t0);
+    var turned = vDrag.plot.closest && vDrag.plot.closest('.vchart') && vDrag.plot.closest('.vchart').classList.contains('is-turned');
+    var delta = turned ? (e.clientY - vDrag.y) : (e.clientX - vDrag.x);
+    var size = turned ? rect.height : rect.width;
+    if (!size) return;
+    var dt = delta / size * (z0.t1 - z0.t0);
     var next = { t0: z0.t0 - dt, t1: z0.t1 - dt, y0: meta.y0, y1: meta.y1 };
     vZoom = vchartClamp(next, meta);
     if (box) box._vZoom = vZoom;
@@ -988,6 +1067,22 @@
       if (vDrag.plot) vDrag.plot.classList.remove('is-drag');
       surface = surface || vDrag.plot;
       vDrag = null;
+    }
+    if (e && vSwipe && e.pointerId === vSwipe.id) {
+      var dx = e.clientX - vSwipe.x;
+      var dy = e.clientY - vSwipe.y;
+      var swipeTurned = vSwipe.chart.classList.contains('is-turned');
+      var visual = swipeTurned ? dy : dx;
+      var cross = swipeTurned ? dx : dy;
+      var zoomed = vchartBox(vSwipe.chart) && vchartBox(vSwipe.chart)._vZoom;
+      var canSwitch = !(vSwipe.plot && zoomed);
+      if (!wasPinch && canSwitch && Math.abs(visual) > 56 && Math.abs(visual) > Math.abs(cross) * 1.2) {
+        vchartShowSibling(vSwipe.chart, visual < 0 ? 1 : -1);
+        vSwipe = null;
+        vTap = null;
+        return;
+      }
+      vSwipe = null;
     }
     if (!e || !surface || wasPinch || e.pointerType === 'mouse' || moved > 18) return;
     var now = Date.now();
@@ -1020,7 +1115,7 @@
       return;
     }
     if (e.target.closest && e.target.closest('.vchart-full')) {
-      vchartToggleFullscreen(box);
+      vchartToggleFullscreen(e.target.closest('.vchart'));
       return;
     }
     var helpBtn = e.target.closest && e.target.closest('.vchart-help');
@@ -1057,7 +1152,7 @@
       if (help) help.setAttribute('aria-expanded', 'false');
       return;
     }
-    var full = document.querySelector('.vchart-host.is-full');
+    var full = document.querySelector('.vchart.is-full');
     if (!full) return;
     e.preventDefault();
     vchartCssFull(full, false);
@@ -1118,7 +1213,20 @@
         if (d[pair[0]] !== undefined) {
           el = document.getElementById(pair[1]);
           if (el) {
+            var fullKey = '';
+            var openFull = el.querySelector('.vchart.is-full');
+            if (openFull) fullKey = openFull.getAttribute('data-ls-key') || '';
             el.innerHTML = d[pair[0]];
+            if (fullKey) {
+              var again = el.querySelector('.vchart[data-ls-key="' + fullKey + '"]');
+              if (again) {
+                again.classList.add('is-full');
+                again.open = true;
+                vchartOrient(again);
+                vchartPaintDots(again);
+              }
+            }
+            document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-full'));
             var chart = el.querySelector('.vchart');
             if (chart && pair[1] === 'pm-voltage') {
               var shown = +chart.getAttribute('data-shift');
