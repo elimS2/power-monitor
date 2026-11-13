@@ -2,10 +2,10 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 3 LOCAL — EMPTY HOUSE BLOCK, NOT DEPLOYED`
+- Status: `PHASE 3 DEPLOYED — EMPTY HOUSE BLOCK, POLL OFF`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
-- Next phase: route gate inside phase 3, only after an explicit yes. The empty block is local and not deployed.
-- Last updated: 2026-11-13T20:17:54Z
+- Next phase: route gate inside phase 3, only after an explicit yes. The empty block is on the site and the page load is back under a second.
+- Last updated: 2026-11-13T20:26:24Z
 
 ## Phase board
 
@@ -14,7 +14,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 | 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
 | 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
-| 3 Public block, then route, then poll | local empty block, not deployed | 2026-11-13T20:17:54Z. Operator: every key may see the house block. Poll stays off. Route not opened. 43 tests OK. |
+| 3 Public block, then route, then poll | deployed, poll off | 2026-11-13T20:26:24Z. Page was 7.8s, then 0.10s after `1f2f34c`. House poll stays 0. Route not opened. |
 | 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
 
 ## Review
@@ -43,3 +43,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T20:01:34Z — Continue retried step 1. SSH to the server was rejected for want of a key. The VM is not in the cloud projects this PC can list. Public sections still unknown. No code, no route.
 - 2026-11-13T20:12:03Z — Retried with the instance key from earlier chats. `public` is on role `Публічна` with `artur`, `init_group`, `techahead_yaroslav`, and `vasyl`. Stopped before the section write. No route.
 - 2026-11-13T20:17:54Z — Operator said the house block is public for every key. Empty block is local. Poll off. No deploy. 43 tests OK.
+- 2026-11-13T20:26:24Z — Empty block was already live. Admin open was 7.8s because the newest-sample query sorted the whole history. Deployed `1f2f34c`. Repeat open 0.10s. House poll 0. No route.
