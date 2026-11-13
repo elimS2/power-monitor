@@ -545,6 +545,13 @@ details[open] summary::before { content: '▼ '; }
   z-index: 90;
 }
 body.pm-vchart-lock { overflow: hidden; }
+.vchart.is-full { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.vchart.is-full::details-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .vchart.is-full > summary,
 .vchart.is-full .vchart-nav,
 .vchart.is-full .vchart-legend,
