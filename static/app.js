@@ -718,12 +718,20 @@
     var btn = chart.querySelector('.vchart-reset');
     if (btn) btn.hidden = !host._vZoom;
     });
+    host.classList.toggle('is-zoom', !!host._vZoom);
     vchartSyncFullscreen(host);
     });
   }
 
   function vchartInFullscreen(host) {
-    return !!(host && document.fullscreenElement === host);
+    return !!(host && (document.fullscreenElement === host || host.classList.contains('is-full')));
+  }
+
+  function vchartCssFull(host, on) {
+    if (!host) return;
+    host.classList.toggle('is-full', !!on);
+    document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart-host.is-full'));
+    vchartSyncFullscreen(host);
   }
 
   function vchartSyncFullscreen(one) {
@@ -742,11 +750,19 @@
 
   function vchartToggleFullscreen(host) {
     if (!host) return;
-    if (vchartInFullscreen(host)) {
-      if (document.exitFullscreen) document.exitFullscreen();
-    } else if (host.requestFullscreen) {
-      host.requestFullscreen();
+    var css = host.classList.contains('is-full');
+    var native = document.fullscreenElement === host;
+    if (css || native) {
+      vchartCssFull(host, false);
+      if (native && document.exitFullscreen) document.exitFullscreen();
+      return;
     }
+    if (!host.requestFullscreen) {
+      vchartCssFull(host, true);
+      return;
+    }
+    var pending = host.requestFullscreen();
+    if (pending && pending.catch) pending.catch(function() { vchartCssFull(host, true); });
   }
 
   document.addEventListener('fullscreenchange', vchartSyncFullscreen);
@@ -783,26 +799,136 @@
     vchartApply(box);
   }, { passive: false });
 
-  document.addEventListener('pointerdown', function(e) {
-    if (e.button !== 0) return;
-    var plot = e.target.closest && e.target.closest('.vchart-host .vchart-plot');
-    if (!plot || (e.target.closest && e.target.closest('.vchart-reset'))) return;
-    var main = plot.querySelector('.vchart-main');
-    if (!main) return;
-    var dragHost = vchartBox(plot);
+  var vTouches = [];
+  var vPinch = null;
+  var vTap = null;
+  var vIgnoreDbl = 0;
+
+  function vchartSurface(node) {
+    return node && node.closest && node.closest('.vchart-plot, .vchart-strip');
+  }
+
+  function vchartTouchAt(id) {
+    for (var i = 0; i < vTouches.length; i++) if (vTouches[i].id === id) return vTouches[i];
+    return null;
+  }
+
+  function vchartForgetTouch(id) {
+    for (var i = vTouches.length - 1; i >= 0; i--) if (vTouches[i].id === id) vTouches.splice(i, 1);
+  }
+
+  function vchartTimeAt(svg, clientX, clientY, meta) {
+    var pt = vchartPoint(svg, clientX, clientY);
+    if (!pt || !meta.w) return null;
+    return meta.t0 + (pt.x / meta.w) * (meta.t1 - meta.t0);
+  }
+
+  function vchartStoreZoom(box, meta, next) {
+    if (!box) return;
+    next = vchartClamp(next, meta);
+    box._vZoom = vchartIsFull(next, meta) ? null : next;
+    vZoom = box._vZoom;
+    vchartApply(box);
+  }
+
+  function vchartPinchApply() {
+    if (!vPinch) return;
+    var a = vchartTouchAt(vPinch.idA);
+    var b = vchartTouchAt(vPinch.idB);
+    var rect = vPinch.main.getBoundingClientRect();
+    if (!a || !b || !rect.width) return;
+    var fA = (a.x - rect.left) / rect.width;
+    var fB = (b.x - rect.left) / rect.width;
+    var df = fB - fA;
+    if (Math.abs(df) < 0.04) return;
+    var span = (vPinch.tB - vPinch.tA) / df;
+    if (!isFinite(span) || span <= 0) return;
+    var t0 = vPinch.tA - fA * span;
+    vchartStoreZoom(vPinch.box, vPinch.meta, {
+      t0: t0, t1: t0 + span, y0: vPinch.meta.y0, y1: vPinch.meta.y1
+    });
+  }
+
+  function vchartDoubleTap(surface, clientX, clientY) {
+    var chart = surface.closest('.vchart');
+    var main = chart && chart.querySelector('.vchart-main');
+    var box = vchartBox(surface);
+    if (!main || !box) return;
     var meta = vchartMeta(main);
+    var svg = surface.classList.contains('vchart-strip') ? surface : main;
+    var t = vchartTimeAt(svg, clientX, clientY, meta);
+    if (t == null) return;
+    var z = box._vZoom || vchartFull(meta);
+    var full = meta.t1 - meta.t0;
+    var span = z.t1 - z.t0;
+    if (span < full * 0.6) {
+      box._vZoom = null;
+      vZoom = null;
+      vchartApply(box);
+    } else {
+      var nextSpan = Math.max(15 * 60, span / 3);
+      vchartStoreZoom(box, meta, {
+        t0: t - nextSpan / 2, t1: t + nextSpan / 2, y0: meta.y0, y1: meta.y1
+      });
+    }
+    vIgnoreDbl = Date.now() + 500;
+  }
+
+  document.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var surface = vchartSurface(e.target);
+    if (!surface || (e.target.closest && e.target.closest('.vchart-reset'))) return;
+    var chart = surface.closest('.vchart');
+    var main = chart && chart.querySelector('.vchart-main');
+    if (!main) return;
+    vTouches.push({ id: e.pointerId, x: e.clientX, y: e.clientY, surface: surface, moved: 0 });
+    var same = vTouches.filter(function(p) { return p.surface === surface || (p.surface.closest && p.surface.closest('.vchart') === chart); });
+    if (same.length >= 2) {
+      vchartEndDrag();
+      var first = same[0];
+      var second = same[1];
+      var meta = vchartMeta(main);
+      var svgA = first.surface.classList.contains('vchart-strip') ? first.surface : main;
+      var svgB = second.surface.classList.contains('vchart-strip') ? second.surface : main;
+      var tA = vchartTimeAt(svgA, first.x, first.y, meta);
+      var tB = vchartTimeAt(svgB, second.x, second.y, meta);
+      if (tA == null || tB == null) return;
+      vPinch = { idA: first.id, idB: second.id, tA: tA, tB: tB, main: main, box: vchartBox(surface), meta: meta };
+      surface.classList.add('is-pinch');
+      if (surface.setPointerCapture) {
+        try { surface.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+      return;
+    }
+    var dragHost = vchartBox(surface);
+    var zoomed = dragHost && dragHost._vZoom;
+    if (e.pointerType !== 'mouse' && !zoomed) return;
+    var metaDrag = vchartMeta(main);
     vDrag = {
       id: e.pointerId,
-      plot: plot,
-      z: (dragHost && dragHost._vZoom) || vchartFull(meta),
+      plot: surface,
+      z: zoomed || vchartFull(metaDrag),
       x: e.clientX,
       y: e.clientY
     };
-    plot.classList.add('is-drag');
-    if (plot.setPointerCapture) plot.setPointerCapture(e.pointerId);
+    surface.classList.add('is-drag');
+    if (surface.setPointerCapture) {
+      try { surface.setPointerCapture(e.pointerId); } catch (err) {}
+    }
   });
 
   document.addEventListener('pointermove', function(e) {
+    var touch = vchartTouchAt(e.pointerId);
+    if (touch) {
+      touch.moved += Math.abs(e.clientX - touch.x) + Math.abs(e.clientY - touch.y);
+      touch.x = e.clientX;
+      touch.y = e.clientY;
+    }
+    if (vPinch && (e.pointerId === vPinch.idA || e.pointerId === vPinch.idB)) {
+      if (e.cancelable) e.preventDefault();
+      vchartPinchApply();
+      return;
+    }
     var box = vDrag && vDrag.plot ? vchartBox(vDrag.plot) : vchartBox(e.target);
     var hover = e.target.closest && e.target.closest('.vchart');
     var dragMain = vDrag && vDrag.plot ? vDrag.plot.querySelector('.vchart-main') : null;
@@ -848,14 +974,35 @@
   });
 
   function vchartEndDrag(e) {
-    if (!vDrag || (e && e.pointerId !== vDrag.id)) return;
-    if (vDrag.plot) vDrag.plot.classList.remove('is-drag');
-    vDrag = null;
+    var touch = e ? vchartTouchAt(e.pointerId) : null;
+    var moved = touch ? touch.moved : (e && vDrag && e.pointerId === vDrag.id
+      ? Math.abs(e.clientX - vDrag.x) + Math.abs(e.clientY - vDrag.y) : 0);
+    var surface = touch ? touch.surface : null;
+    var wasPinch = !!(vPinch && e && (e.pointerId === vPinch.idA || e.pointerId === vPinch.idB));
+    if (e) vchartForgetTouch(e.pointerId);
+    if (vPinch && (!vchartTouchAt(vPinch.idA) || !vchartTouchAt(vPinch.idB))) {
+      document.querySelectorAll('.is-pinch').forEach(function(el) { el.classList.remove('is-pinch'); });
+      vPinch = null;
+    }
+    if (vDrag && (!e || e.pointerId === vDrag.id)) {
+      if (vDrag.plot) vDrag.plot.classList.remove('is-drag');
+      surface = surface || vDrag.plot;
+      vDrag = null;
+    }
+    if (!e || !surface || wasPinch || e.pointerType === 'mouse' || moved > 18) return;
+    var now = Date.now();
+    if (vTap && now - vTap.t < 300 && Math.abs(e.clientX - vTap.x) < 28 && Math.abs(e.clientY - vTap.y) < 28) {
+      vTap = null;
+      vchartDoubleTap(surface, e.clientX, e.clientY);
+      return;
+    }
+    vTap = { t: now, x: e.clientX, y: e.clientY, surface: surface };
   }
   document.addEventListener('pointerup', vchartEndDrag);
   document.addEventListener('pointercancel', vchartEndDrag);
 
   document.addEventListener('dblclick', function(e) {
+    if (Date.now() < vIgnoreDbl) return;
     if (!(e.target.closest && e.target.closest('.vchart-host .vchart-plot, .vchart-host .vchart-strip'))) return;
     var box = vchartBox(e.target);
     if (box) box._vZoom = null;
@@ -903,11 +1050,17 @@
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
     var pop = document.querySelector('.vchart-host .vchart-help-pop:not([hidden])');
-    if (!pop) return;
+    if (pop) {
+      e.preventDefault();
+      pop.hidden = true;
+      var help = pop.parentNode ? pop.parentNode.querySelector('.vchart-help') : null;
+      if (help) help.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    var full = document.querySelector('.vchart-host.is-full');
+    if (!full) return;
     e.preventDefault();
-    pop.hidden = true;
-    var help = pop.parentNode ? pop.parentNode.querySelector('.vchart-help') : null;
-    if (help) help.setAttribute('aria-expanded', 'false');
+    vchartCssFull(full, false);
   });
 
   vchartApply();
