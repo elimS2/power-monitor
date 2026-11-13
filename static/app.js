@@ -719,6 +719,7 @@
     if (btn) btn.hidden = !host._vZoom;
     });
     host.classList.toggle('is-zoom', !!host._vZoom);
+    host.querySelectorAll('.vchart.is-full').forEach(vchartFitFrame);
     vchartSyncFullscreen(host);
     });
   }
@@ -880,7 +881,37 @@
     bar.appendChild(dots);
     bar.appendChild(side(1, 'Наступний графік', '›'));
     chart.appendChild(bar);
+    vchartFitFrame(chart);
   }
+
+  function vchartFitFrame(chart) {
+    var frame = chart && chart.querySelector ? chart.querySelector('.vchart-frame') : null;
+    if (!frame) return;
+    if (!chart.classList.contains('is-full')) {
+      frame.style.position = '';
+      frame.style.left = '';
+      frame.style.right = '';
+      frame.style.top = '';
+      frame.style.bottom = '';
+      frame.style.height = '';
+      return;
+    }
+    var nav = chart.querySelector('.vchart-nav');
+    var legend = chart.querySelector('.vchart-legend');
+    var bar = chart.querySelector('.vchart-carousel');
+    var top = nav ? nav.offsetTop + nav.offsetHeight + 8 : 72;
+    var bottom = (legend ? legend.offsetHeight : 0) + (bar ? bar.offsetHeight : 0) + 18;
+    frame.style.position = 'absolute';
+    frame.style.left = '0.5rem';
+    frame.style.right = '0.5rem';
+    frame.style.top = top + 'px';
+    frame.style.bottom = bottom + 'px';
+    frame.style.height = 'auto';
+  }
+
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.vchart.is-full').forEach(vchartFitFrame);
+  });
 
   function vchartShowSibling(chart, dir) {
     if (!dir) return;
@@ -896,6 +927,7 @@
     next.open = true;
     if (host) host._vFront = next.getAttribute('data-ls-key') || '';
     vchartPaintDots(next);
+    vchartFitFrame(next);
     document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-page'));
     vchartSyncFullscreen(host);
     vchartApply(host);
