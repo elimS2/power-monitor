@@ -744,41 +744,101 @@
     });
   }
 
+  function vchartClearStage(chart) {
+    if (!chart) return;
+    chart.classList.remove('is-full', 'is-page', 'is-turned');
+    var extra = chart.querySelector('.vchart-carousel');
+    if (extra) extra.remove();
+  }
+
+  function vchartLockLandscape() {
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        var pending = screen.orientation.lock('landscape');
+        if (pending && pending.catch) pending.catch(function() {});
+      }
+    } catch (err) {}
+  }
+
+  function vchartUnlockLandscape() {
+    try {
+      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+    } catch (err) {}
+  }
+
+  function vchartMarkFront(chart) {
+    if (!chart) return;
+    var host = chart.closest('.vchart-host');
+    if (host) {
+      host._vFront = chart.getAttribute('data-ls-key') || '';
+      host.querySelectorAll('.vchart').forEach(function(item) {
+        if (item !== chart) vchartClearStage(item);
+      });
+    }
+    chart.classList.add('is-full');
+    chart.open = true;
+    vchartPaintDots(chart);
+    vchartSyncFullscreen(host);
+  }
+
   function vchartCssFull(chart, on) {
     if (!chart) return;
-    if (chart.classList.contains('vchart-host')) chart = chart.querySelector('.vchart.is-full') || chart.querySelector('.vchart');
-    if (!chart) return;
-    document.querySelectorAll('.vchart.is-full').forEach(function(other) {
-      if (other !== chart) {
-        other.classList.remove('is-full', 'is-turned');
-        var extra = other.querySelector('.vchart-carousel');
-        if (extra) extra.remove();
-      }
-    });
-    chart.classList.toggle('is-full', !!on);
-    if (on) chart.open = true;
-    vchartOrient(chart);
-    vchartPaintDots(chart);
-    document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-full'));
-    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
-    vchartSyncFullscreen(chart.closest('.vchart-host'));
+    if (!on) {
+      vchartClearStage(chart);
+      document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-page'));
+      vchartSyncFullscreen(chart.closest('.vchart-host'));
+      return;
+    }
+    vchartMarkFront(chart);
+    chart.classList.add('is-page');
+    document.body.classList.add('pm-vchart-lock');
   }
 
   function vchartToggleFullscreen(chart) {
     if (!chart) return;
-    vchartCssFull(chart, !chart.classList.contains('is-full'));
+    var host = chart.closest('.vchart-host') || chart;
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    if (chart.classList.contains('is-page')) {
+      vchartCssFull(chart, false);
+      return;
+    }
+    chart.open = true;
+    host._vFront = chart.getAttribute('data-ls-key') || '';
+    if (!host.requestFullscreen) {
+      vchartCssFull(chart, true);
+      return;
+    }
+    var pending = host.requestFullscreen();
+    var opened = function() {
+      vchartMarkFront(chart);
+      vchartLockLandscape();
+    };
+    if (pending && pending.then) pending.then(opened).catch(function() { vchartCssFull(chart, true); });
+    else opened();
   }
+
+  document.addEventListener('fullscreenchange', function() {
+    var host = document.fullscreenElement;
+    if (!host || !host.classList || !host.classList.contains('vchart-host')) {
+      document.querySelectorAll('.vchart.is-full').forEach(function(chart) {
+        if (!chart.classList.contains('is-page')) vchartClearStage(chart);
+      });
+      vchartUnlockLandscape();
+      vchartSyncFullscreen();
+      return;
+    }
+    var chart = host._vFront ? host.querySelector('.vchart[data-ls-key="' + host._vFront + '"]') : null;
+    vchartMarkFront(chart || host.querySelector('.vchart'));
+    vchartLockLandscape();
+  });
 
   function vchartSiblings(chart) {
     var host = chart && chart.closest ? chart.closest('.vchart-host') : null;
     if (!host) return chart ? [chart] : [];
     return Array.prototype.slice.call(host.querySelectorAll('.vchart'));
-  }
-
-  function vchartOrient(chart) {
-    if (!chart) return;
-    var portrait = window.innerHeight > window.innerWidth + 20;
-    chart.classList.toggle('is-turned', chart.classList.contains('is-full') && portrait);
   }
 
   function vchartPaintDots(chart) {
@@ -828,21 +888,18 @@
     var index = list.indexOf(chart);
     if (index < 0) return;
     var next = list[(index + dir + list.length) % list.length];
-    chart.classList.remove('is-full', 'is-turned');
-    vchartPaintDots(chart);
+    var host = chart.closest('.vchart-host');
+    var page = chart.classList.contains('is-page');
+    vchartClearStage(chart);
     next.classList.add('is-full');
+    if (page) next.classList.add('is-page');
     next.open = true;
-    vchartOrient(next);
+    if (host) host._vFront = next.getAttribute('data-ls-key') || '';
     vchartPaintDots(next);
-    document.body.classList.toggle('pm-vchart-lock', true);
-    vchartSyncFullscreen(next.closest('.vchart-host'));
-    vchartApply(next.closest('.vchart-host'));
+    document.body.classList.toggle('pm-vchart-lock', !!document.querySelector('.vchart.is-page'));
+    vchartSyncFullscreen(host);
+    vchartApply(host);
   }
-
-  var vSwipe = null;
-  window.addEventListener('resize', function() {
-    document.querySelectorAll('.vchart.is-full').forEach(vchartOrient);
-  });
 
   document.addEventListener('wheel', function(e) {
     var box = vchartBox(e.target);
@@ -953,16 +1010,6 @@
 
   document.addEventListener('pointerdown', function(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    var fullChart = e.target.closest && e.target.closest('.vchart.is-full');
-    if (fullChart && !(e.target.closest && e.target.closest('button, .vchart-help-pop'))) {
-      vSwipe = {
-        id: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
-        chart: fullChart,
-        plot: !!vchartSurface(e.target)
-      };
-    }
     var surface = vchartSurface(e.target);
     if (!surface || (e.target.closest && e.target.closest('.vchart-reset'))) return;
     var chart = surface.closest('.vchart');
@@ -1049,11 +1096,7 @@
     var rect = main.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     var z0 = vDrag.z;
-    var turned = vDrag.plot.closest && vDrag.plot.closest('.vchart') && vDrag.plot.closest('.vchart').classList.contains('is-turned');
-    var delta = turned ? (e.clientY - vDrag.y) : (e.clientX - vDrag.x);
-    var size = turned ? rect.height : rect.width;
-    if (!size) return;
-    var dt = delta / size * (z0.t1 - z0.t0);
+    var dt = (e.clientX - vDrag.x) / rect.width * (z0.t1 - z0.t0);
     var next = { t0: z0.t0 - dt, t1: z0.t1 - dt, y0: meta.y0, y1: meta.y1 };
     vZoom = vchartClamp(next, meta);
     if (box) box._vZoom = vZoom;
@@ -1079,22 +1122,6 @@
       if (vDrag.plot) vDrag.plot.classList.remove('is-drag');
       surface = surface || vDrag.plot;
       vDrag = null;
-    }
-    if (e && vSwipe && e.pointerId === vSwipe.id) {
-      var dx = e.clientX - vSwipe.x;
-      var dy = e.clientY - vSwipe.y;
-      var swipeTurned = vSwipe.chart.classList.contains('is-turned');
-      var visual = swipeTurned ? dy : dx;
-      var cross = swipeTurned ? dx : dy;
-      var zoomed = vchartBox(vSwipe.chart) && vchartBox(vSwipe.chart)._vZoom;
-      var canSwitch = !(vSwipe.plot && zoomed);
-      if (!wasPinch && canSwitch && Math.abs(visual) > 56 && Math.abs(visual) > Math.abs(cross) * 1.2) {
-        vchartShowSibling(vSwipe.chart, visual < 0 ? 1 : -1);
-        vSwipe = null;
-        vTap = null;
-        return;
-      }
-      vSwipe = null;
     }
     if (!e || !surface || wasPinch || e.pointerType === 'mouse' || moved > 18) return;
     var now = Date.now();
@@ -1167,7 +1194,8 @@
     var full = document.querySelector('.vchart.is-full');
     if (!full) return;
     e.preventDefault();
-    vchartCssFull(full, false);
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+    else vchartCssFull(full, false);
   });
 
   vchartApply();
@@ -1234,7 +1262,6 @@
               if (again) {
                 again.classList.add('is-full');
                 again.open = true;
-                vchartOrient(again);
                 vchartPaintDots(again);
               }
             }
