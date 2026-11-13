@@ -562,3 +562,22 @@ body.pm-vchart-lock { overflow: hidden; }
   background: #475569; cursor: pointer;
 }
 .vchart-dot.is-on { background: #e2e8f0; }
+.vchart-side {
+  position: absolute;
+  top: 46%;
+  z-index: 5;
+  width: 46px;
+  height: 84px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.vchart-side.prev { left: 2.15rem; }
+.vchart-side.next { right: 0.4rem; }
+.vchart-side:active { background: rgba(51, 65, 85, 0.92); }

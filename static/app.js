@@ -753,6 +753,7 @@
         other.classList.remove('is-full', 'is-turned');
         var dots = other.querySelector('.vchart-dots');
         if (dots) dots.remove();
+        other.querySelectorAll('.vchart-side').forEach(function(button) { button.remove(); });
       }
     });
     chart.classList.toggle('is-full', !!on);
@@ -785,6 +786,7 @@
     var old = chart.querySelector('.vchart-dots');
     if (!chart.classList.contains('is-full')) {
       if (old) old.remove();
+      chart.querySelectorAll('.vchart-side').forEach(function(button) { button.remove(); });
       return;
     }
     var list = vchartSiblings(chart);
@@ -808,6 +810,21 @@
       });
       old.appendChild(button);
     });
+    if (!chart.querySelector('.vchart-side')) {
+      [['prev', '‹', 'Попередній графік', -1], ['next', '›', 'Наступний графік', 1]].forEach(function(spec) {
+        var side = document.createElement('button');
+        side.type = 'button';
+        side.className = 'vchart-side ' + spec[0];
+        side.setAttribute('aria-label', spec[2]);
+        side.textContent = spec[1];
+        side.addEventListener('click', function(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          vchartShowSibling(chart, spec[3]);
+        });
+        chart.appendChild(side);
+      });
+    }
   }
 
   function vchartShowSibling(chart, dir) {
