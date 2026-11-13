@@ -2,10 +2,10 @@
 
 Companion of `docs/plan_deye_multi_inverter.md`.
 
-- Status: `PHASE 3 POLL ON`
+- Status: `PHASE 4 DONE`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
-- Next phase: 4, the shelter location sentence, only after an explicit yes. The house poll is live.
-- Last updated: 2026-11-13T20:56:34Z
+- Next phase: none. The four phases in this plan are done. House poll stays on the apartment-safe path.
+- Last updated: 2026-11-13T21:00:27Z
 
 ## Phase board
 
@@ -15,7 +15,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 | 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
 | 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
 | 3 Public block, then route, then poll | poll on | 2026-11-13T20:56:34Z. First house sample 3776 W, SOC 98%. Apartment stayed 3255 W, SOC 93%. Public page 0.10s, no apartment block. |
-| 4 Doc location fix | not started | `house/shelter-wifi.md` still says the router is on the desk. |
+| 4 Doc location fix | done | 2026-11-13T21:00:27Z. Shelter card says the router is in the basement. Logger host stays in Phase 0. No deploy. |
 
 ## Review
 
@@ -47,3 +47,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T20:35:26Z — GCP cannot open the basement logger. Packet leaves `ens4`. Shelter tunnel handshake is fresh. `192.168.0.104` is not in that peer's allowed networks. Stopped before adding a route.
 - 2026-11-13T20:49:06Z — Operator said yes to the one host and no poll. TCP 8899 from GCP is open through the shelter. House poll stays 0.
 - 2026-11-13T20:56:34Z — House poll on. First sample 3776 W, SOC 98%. Apartment sample stayed separate. Public page shows the house block only.
+- 2026-11-13T21:00:27Z — Phase 4. Shelter card no longer says the router is on the desk. No deploy.
