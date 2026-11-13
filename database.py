@@ -1480,7 +1480,7 @@ def recent_deye_log(n: int = 100, inverter_id: int | None = None) -> list[dict]:
                       ts
                FROM deye_log
                WHERE inverter_id = ?
-               ORDER BY id DESC LIMIT ?""",
+               ORDER BY ts DESC LIMIT ?""",
             (iid, n),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -1963,7 +1963,7 @@ def _last_nonzero_for_phase(key: str, limit: int, inverter_id: int | None = None
         rows = db.execute(
             f"""SELECT {key}, ts FROM deye_log
                 WHERE {key} > 0 AND inverter_id = ?
-                ORDER BY id DESC LIMIT ?""",
+                ORDER BY ts DESC LIMIT ?""",
             (iid, limit),
         ).fetchall()
     return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]

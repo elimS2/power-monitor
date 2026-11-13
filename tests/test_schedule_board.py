@@ -440,6 +440,17 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         self.assertNotIn("АКБ: 11%", html)
         self.assertNotIn("pm-voltage", html)
 
+    def test_recent_samples_follow_the_clock_not_the_row_id(self):
+        database.init_db()
+        apt = database.apartment_inverter_id()
+        database.save_deye_log(load_power_w=111, inverter_id=apt)
+        database.save_deye_log(load_power_w=222, inverter_id=apt)
+        with database._conn() as db:
+            ids = [row["id"] for row in db.execute("SELECT id FROM deye_log ORDER BY id").fetchall()]
+            db.execute("UPDATE deye_log SET ts=? WHERE id=?", (2_000, ids[0]))
+            db.execute("UPDATE deye_log SET ts=? WHERE id=?", (1_000, ids[1]))
+        self.assertEqual(database.recent_deye_log(1)[0]["load_power_w"], 111)
+
     def test_board_read_does_not_scan_samples_or_events(self):
         database.init_db()
         seen = []
