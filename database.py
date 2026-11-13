@@ -1404,6 +1404,32 @@ def house_inverter_record() -> dict | None:
     }
 
 
+def enabled_inverter_targets() -> list[dict]:
+    """Rows the poller may read. A blank house serial can come from the server env.
+
+    The stored host is never cleared here. A missing serial is returned as None
+    so the poller skips that row instead of guessing an address.
+    """
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT id, title, host, port, serial
+               FROM deye_inverter WHERE poll_enabled=1 ORDER BY id"""
+        ).fetchall()
+    targets = []
+    for row in rows:
+        serial = (row["serial"] or "").strip()
+        if not serial and row["title"] == HOUSE_INVERTER_TITLE:
+            serial = os.getenv("DEYE_HOUSE_SERIAL", "").strip()
+        targets.append({
+            "id": int(row["id"]),
+            "title": row["title"],
+            "host": (row["host"] or "").strip(),
+            "port": int(row["port"]),
+            "serial": serial or None,
+        })
+    return targets
+
+
 def save_deye_log(
     load_power_w: float | None = None,
     load_l1_w: float | None = None,

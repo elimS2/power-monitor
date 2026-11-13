@@ -42,8 +42,6 @@ from config import (
     DEYE_BATTERY_KWH,
     DEYE_POLL_IP,
     DEYE_POLL_INTERVAL_SEC,
-    DEYE_POLL_PORT,
-    DEYE_POLL_SERIAL,
     TUYA_ACCESS_ID,
     TUYA_ACCESS_SECRET,
     TUYA_BREAKER_ITP,
@@ -110,6 +108,7 @@ from database import (
     carry_open_outage,
     save_deye_log,
     apartment_inverter_id,
+    enabled_inverter_targets,
     save_heartbeat,
     save_tg_log,
     schedule_history_for_date,
@@ -387,55 +386,83 @@ async def setup_tg_bot():
 
 # ─── Background loop ─────────────────────────────────────────
 
-async def _poll_deye():
-    """Poll Deye inverter and save to DB. Runs in executor (blocking I/O)."""
+_inflight_polls: set[int] = set()
+
+
+async def _poll_target(row: dict) -> None:
+    """Read one registry row. A failure leaves its host unchanged."""
+    iid = int(row["id"])
+    if iid in _inflight_polls:
+        return
+    if not row.get("host") or not row.get("serial"):
+        log.warning("Deye poll skip [%s]: no host or serial", row.get("title"))
+        return
+    _inflight_polls.add(iid)
     try:
         from deye_reader import read_deye
 
-        port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None,
-            lambda: read_deye(host=DEYE_POLL_IP, port=port, serial=DEYE_POLL_SERIAL or None),
+            lambda: read_deye(
+                host=row["host"],
+                port=row["port"],
+                serial=row["serial"],
+                socket_timeout=10,
+            ),
         )
-        if data:
-            save_deye_log(
-                load_power_w=data.get("load_power_w"),
-                load_l1_w=data.get("load_l1_w"),
-                load_l2_w=data.get("load_l2_w"),
-                load_l3_w=data.get("load_l3_w"),
-                grid_power_w=data.get("grid_power_w"),
-                grid_v_l1=data.get("grid_v_l1"),
-                grid_v_l2=data.get("grid_v_l2"),
-                grid_v_l3=data.get("grid_v_l3"),
-                battery_soc=data.get("battery_soc"),
-                battery_power_w=data.get("battery_power_w"),
-                battery_voltage=data.get("battery_voltage"),
-                day_load_kwh=data.get("day_load_kwh"),
-                total_load_kwh=data.get("total_load_kwh"),
-                month_load_kwh=data.get("month_load_kwh"),
-                year_load_kwh=data.get("year_load_kwh"),
-                day_grid_import_kwh=data.get("day_grid_import_kwh"),
-                day_grid_export_kwh=data.get("day_grid_export_kwh"),
-                total_grid_import_kwh=data.get("total_grid_import_kwh"),
-                total_grid_export_kwh=data.get("total_grid_export_kwh"),
-                inverter_id=apartment_inverter_id(),
-            )
-            load = data.get("load_power_w", "?")
-            soc = data.get("battery_soc", "?")
-            day_kwh = data.get("day_load_kwh")
-            grid_w = data.get("grid_power_w")
-            day_str = f" day={round(day_kwh, 1)}kWh" if day_kwh is not None else ""
-            grid_str = f" grid={int(grid_w)}W" if grid_w is not None else ""
-            msg = f"Deye poll OK: load={load}W soc={soc}%{day_str}{grid_str}"
-            log.info(msg)
-            deye_poll_log.info(msg)
+        if not data:
+            deye_poll_log.warning("Deye poll failed [%s]", row["title"])
+            log.warning("Deye poll failed [%s]", row["title"])
+            return
+        save_deye_log(
+            load_power_w=data.get("load_power_w"),
+            load_l1_w=data.get("load_l1_w"),
+            load_l2_w=data.get("load_l2_w"),
+            load_l3_w=data.get("load_l3_w"),
+            grid_power_w=data.get("grid_power_w"),
+            grid_v_l1=data.get("grid_v_l1"),
+            grid_v_l2=data.get("grid_v_l2"),
+            grid_v_l3=data.get("grid_v_l3"),
+            battery_soc=data.get("battery_soc"),
+            battery_power_w=data.get("battery_power_w"),
+            battery_voltage=data.get("battery_voltage"),
+            day_load_kwh=data.get("day_load_kwh"),
+            total_load_kwh=data.get("total_load_kwh"),
+            month_load_kwh=data.get("month_load_kwh"),
+            year_load_kwh=data.get("year_load_kwh"),
+            day_grid_import_kwh=data.get("day_grid_import_kwh"),
+            day_grid_export_kwh=data.get("day_grid_export_kwh"),
+            total_grid_import_kwh=data.get("total_grid_import_kwh"),
+            total_grid_export_kwh=data.get("total_grid_export_kwh"),
+            inverter_id=iid,
+        )
+        load = data.get("load_power_w", "?")
+        soc = data.get("battery_soc", "?")
+        msg = f"Deye poll OK [{row['title']}]: load={load}W soc={soc}%"
+        log.info(msg)
+        deye_poll_log.info(msg)
+    except Exception as exc:
+        deye_poll_log.warning("Deye poll error [%s]: %s", row.get("title"), exc)
+        log.warning("Deye poll error [%s]: %s", row.get("title"), exc)
+    finally:
+        _inflight_polls.discard(iid)
+
+
+async def _poll_due_targets() -> None:
+    """Apartment read is awaited. Every other enabled row runs beside it."""
+    targets = enabled_inverter_targets()
+    if not targets:
+        return
+    apt_id = apartment_inverter_id()
+    apartment = None
+    for row in targets:
+        if row["id"] == apt_id:
+            apartment = row
         else:
-            deye_poll_log.warning("Deye poll failed (no data)")
-            log.warning("Deye poll failed (no data)")
-    except Exception as e:
-        deye_poll_log.warning("Deye poll error: %s", e)
-        log.warning("Deye poll error: %s", e)
+            asyncio.create_task(_poll_target(row))
+    if apartment is not None:
+        await _poll_target(apartment)
 
 
 async def _refresh_deye_aggregates() -> None:
@@ -493,11 +520,13 @@ async def bg_loop():
                 asyncio.create_task(_refresh_deye_aggregates())
             async def _deye_step():
                 nonlocal deye_poll_tick
-                if DEYE_POLL_IP:
-                    deye_poll_tick += 1
-                    if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
-                        await _poll_deye()
-                        deye_poll_tick = 0
+                targets = enabled_inverter_targets()
+                if not targets and not DEYE_POLL_IP:
+                    return
+                deye_poll_tick += 1
+                if deye_poll_tick * 30 >= DEYE_POLL_INTERVAL_SEC:
+                    await _poll_due_targets()
+                    deye_poll_tick = 0
 
             async def _breaker_step():
                 nonlocal breaker_slot_mark, breaker_timers_synced
@@ -570,10 +599,10 @@ async def lifespan(_app: FastAPI):
     else:
         log.info("Skipping avatar update on start (AVATAR_ON_START=0)")
     log.info("Power monitor started, DB=%s", DB_PATH)
-    if DEYE_POLL_IP:
+    targets = enabled_inverter_targets()
+    if targets or DEYE_POLL_IP:
         _setup_deye_poll_log()
-        port = DEYE_POLL_PORT if DEYE_POLL_PORT > 0 else (8899 if DEYE_POLL_SERIAL else 502)
-        log.info("Deye server-side polling enabled: %s:%s every %ds", DEYE_POLL_IP, port, DEYE_POLL_INTERVAL_SEC)
+        log.info("Deye polling %d enabled row(s) every %ds", len(targets), DEYE_POLL_INTERVAL_SEC)
     yield
     task.cancel()
 

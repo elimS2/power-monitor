@@ -430,6 +430,10 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         self.assertEqual(house["mac"], "74:e9:d8:39:22:8a")
         self.assertEqual(house["battery_kwh"], 160)
         self.assertEqual(house["poll_enabled"], 0)
+        self.assertNotIn(
+            database.HOUSE_INVERTER_TITLE,
+            [row["title"] for row in database.enabled_inverter_targets()],
+        )
 
     def test_house_block_says_there_is_no_sample(self):
         from power_monitor import house_deye_inner_html

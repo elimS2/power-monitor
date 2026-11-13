@@ -50,7 +50,7 @@ def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
 
 
 def read_deye_solarman(
-    host: str, port: int = 8899, serial: str = ""
+    host: str, port: int = 8899, serial: str = "", socket_timeout: float = 10,
 ) -> Optional[dict]:
     """Read via Solarman V5 (port 8899). Requires serial number."""
     try:
@@ -63,7 +63,9 @@ def read_deye_solarman(
         return None
 
     try:
-        modbus = PySolarmanV5(host, int(serial), port=port, mb_slave_id=1)
+        modbus = PySolarmanV5(
+            host, int(serial), port=port, mb_slave_id=1, socket_timeout=socket_timeout,
+        )
     except Exception:
         return None
 
@@ -164,6 +166,7 @@ def read_deye(
     host: Optional[str] = None,
     port: Optional[int] = None,
     serial: Optional[str] = None,
+    socket_timeout: float = 10,
 ) -> Optional[dict]:
     """Read registers. Uses Solarman if serial set and port 8899, else Modbus TCP."""
     if not host:
@@ -171,5 +174,5 @@ def read_deye(
     p = port if port is not None else 502
     s = serial or ""
     if s and p == 8899:
-        return read_deye_solarman(host=host, port=p, serial=s)
+        return read_deye_solarman(host=host, port=p, serial=s, socket_timeout=socket_timeout)
     return read_deye_modbus(host=host, port=p)
