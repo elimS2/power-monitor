@@ -152,6 +152,58 @@ class SocChartTests(unittest.TestCase):
         self.assertIn("світло було", html)
         self.assertIn("світла не було", html)
         self.assertIn(">заряд<", html)
+        self.assertIn("<details", html)
+        self.assertIn(" open", html)
+
+
+class BatteryBoardTests(unittest.TestCase):
+    def test_outage_runtime_uses_now_and_ten_minute_average(self):
+        from voltage_chart import build_battery_board
+        html = build_battery_board(
+            soc=50, cap_kwh=60, load_w=2000, load_avg_w=2500,
+            bat_w=2100, bat_avg_w=2400, avg_samples=8,
+            grid_v=(0, 0, 0),
+        )
+        self.assertIn(">50<", html)
+        self.assertIn(">30.0<", html)
+        self.assertIn("з 60", html)
+        self.assertIn(">2.0<", html)
+        self.assertIn(">2.5<", html)
+        self.assertIn("Без світла вистачить зараз 15 год, за 10 хв 12 год", html)
+        self.assertNotIn("До повної", html)
+
+    def test_charge_time_uses_charge_power(self):
+        from voltage_chart import build_battery_board
+        html = build_battery_board(
+            soc=80, cap_kwh=60, load_w=1500, load_avg_w=1500,
+            bat_w=-4000, bat_avg_w=-3000, avg_samples=6,
+            grid_v=(230, 230, 228),
+        )
+        self.assertIn("Заряд 4.0 кВт, до повної зараз 3 год, за 10 хв 4 год", html)
+        self.assertNotIn("Без світла", html)
+        self.assertNotIn("Мережа є", html)
+
+    def test_grid_without_charge_does_not_invent_a_runtime(self):
+        from voltage_chart import build_battery_board
+        html = build_battery_board(
+            soc=90, cap_kwh=160, load_w=8000, load_avg_w=7000,
+            bat_w=500, bat_avg_w=400, avg_samples=5,
+            grid_v=(228, 227, 226),
+        )
+        self.assertIn("Мережа є", html)
+        self.assertIn("з 160", html)
+        self.assertNotIn("Без світла", html)
+        self.assertNotIn("До повної", html)
+
+    def test_chart_fold_is_open_and_remembers_its_key(self):
+        html = build_voltage_chart(
+            now=_kyiv(2026, 11, 9, 1, 4), buckets=[], today=None, tomorrow=None,
+            queue="5.1", fold_key="house-voltage",
+        )
+        self.assertIn("<details", html)
+        self.assertIn('data-ls-key="house-voltage"', html)
+        self.assertIn('data-default-open="1"', html)
+        self.assertIn(" open", html)
 
 
 class SocBucketQueryTests(unittest.TestCase):
@@ -182,6 +234,27 @@ class SocBucketQueryTests(unittest.TestCase):
         rows = database.deye_voltage_buckets(start, start + 180, 60)
         self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(rows[0]["soc"], 70.0)
+
+    def test_recent_power_and_capacity(self):
+        start = _kyiv(2026, 11, 9, 0, 0)
+        apt = database.apartment_inverter_id()
+        with database._conn() as db:
+            db.execute("UPDATE deye_inverter SET battery_kwh=? WHERE id=?", (60, apt))
+            db.execute(
+                """INSERT INTO deye_log(load_power_w, battery_power_w, battery_soc, grid_v_l1, ts, inverter_id)
+                   VALUES (?,?,?,?,?,?)""",
+                (1000, -2000, 50, 0, start, apt),
+            )
+            db.execute(
+                """INSERT INTO deye_log(load_power_w, battery_power_w, battery_soc, grid_v_l1, ts, inverter_id)
+                   VALUES (?,?,?,?,?,?)""",
+                (3000, -4000, 50, 0, start + 1, apt),
+            )
+        means = database.deye_recent_power(apt, start - 1, start + 10)
+        self.assertEqual(means["n"], 2)
+        self.assertAlmostEqual(means["load_w"], 2000)
+        self.assertAlmostEqual(means["bat_w"], -3000)
+        self.assertAlmostEqual(database.inverter_battery_kwh(apt), 60)
 
 
 if __name__ == "__main__":

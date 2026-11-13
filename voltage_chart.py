@@ -71,6 +71,7 @@ def build_voltage_chart(
     future_sec: int = FUTURE_SEC,
     shift_days: int = 0,
     prev_enabled: bool = True,
+    fold_key: str = "",
 ) -> str:
     shift_days = max(0, int(shift_days))
     if shift_days == 0:
@@ -160,9 +161,10 @@ def build_voltage_chart(
     title = "Остання доба і графік відключень" if live else _day_title(t0)
     prev_attr = "" if prev_enabled else " disabled"
     next_attr = " disabled" if live else ""
+    fold_attr = f' data-ls-key="{fold_key}" data-default-open="1"' if fold_key else ""
     return (
-        f'<div class="vchart" data-shift="{shift_days}">'
-        '<div class="vchart-head">'
+        f'<details class="vchart" data-shift="{shift_days}" open{fold_attr}>'
+        '<summary class="vchart-head">'
         f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
         '<div class="vchart-head-side">'
         f"{span_html}"
@@ -184,7 +186,7 @@ def build_voltage_chart(
         "<p>Стрілки гортають попередні доби. Жива доба — останні 24 години і ще 6 годин графіка вперед.</p>"
         "<p>Кнопка з кутами розгортає графік на весь екран. Esc згортає.</p>"
         "</div></span>"
-        "</div></div>"
+        "</div></summary>"
         '<div class="vchart-nav">'
         f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
         f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
@@ -201,7 +203,7 @@ def build_voltage_chart(
         + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
         "</div>"
         + _legend()
-        + "</div>"
+        + "</details>"
     )
 
 
@@ -228,6 +230,7 @@ def build_load_chart(
     future_sec: int = FUTURE_SEC,
     shift_days: int = 0,
     prev_enabled: bool = True,
+    fold_key: str = "",
 ) -> str:
     """Same day window as the voltage chart. The line is consumption. The strip is light."""
     shift_days = max(0, int(shift_days))
@@ -308,9 +311,10 @@ def build_load_chart(
     title = "Остання доба, споживання" if live else _day_title(t0)
     prev_attr = "" if prev_enabled else " disabled"
     next_attr = " disabled" if live else ""
+    fold_attr = f' data-ls-key="{fold_key}" data-default-open="1"' if fold_key else ""
     return (
-        f'<div class="vchart vchart-load" data-shift="{shift_days}">'
-        '<div class="vchart-head">'
+        f'<details class="vchart vchart-load" data-shift="{shift_days}" open{fold_attr}>'
+        '<summary class="vchart-head">'
         f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
         '<div class="vchart-head-side">'
         f"{span_html}"
@@ -322,7 +326,7 @@ def build_load_chart(
         '<svg class="vchart-full-exit" viewBox="0 0 16 16" aria-hidden="true" hidden>'
         '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg></button>'
-        "</div></div>"
+        "</div></summary>"
         '<div class="vchart-nav">'
         f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
         f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
@@ -339,7 +343,7 @@ def build_load_chart(
         + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
         "</div>"
         + _load_legend()
-        + "</div>"
+        + "</details>"
     )
 
 
@@ -385,6 +389,7 @@ def build_soc_chart(
     future_sec: int = FUTURE_SEC,
     shift_days: int = 0,
     prev_enabled: bool = True,
+    fold_key: str = "",
 ) -> str:
     """Same day window as the voltage chart. The line is battery charge. The strip is light."""
     shift_days = max(0, int(shift_days))
@@ -463,9 +468,10 @@ def build_soc_chart(
     title = "Остання доба, заряд" if live else _day_title(t0)
     prev_attr = "" if prev_enabled else " disabled"
     next_attr = " disabled" if live else ""
+    fold_attr = f' data-ls-key="{fold_key}" data-default-open="1"' if fold_key else ""
     return (
-        f'<div class="vchart vchart-soc" data-shift="{shift_days}">'
-        '<div class="vchart-head">'
+        f'<details class="vchart vchart-soc" data-shift="{shift_days}" open{fold_attr}>'
+        '<summary class="vchart-head">'
         f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
         '<div class="vchart-head-side">'
         f"{span_html}"
@@ -477,7 +483,7 @@ def build_soc_chart(
         '<svg class="vchart-full-exit" viewBox="0 0 16 16" aria-hidden="true" hidden>'
         '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg></button>'
-        "</div></div>"
+        "</div></summary>"
         '<div class="vchart-nav">'
         f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
         f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
@@ -494,7 +500,7 @@ def build_soc_chart(
         + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
         "</div>"
         + _soc_legend()
-        + "</div>"
+        + "</details>"
     )
 
 
@@ -527,6 +533,151 @@ def _soc_legend() -> str:
             mark = f'<span class="vchart-mark vchart-box" style="background:{color}"></span>'
         html.append(f'<span class="vchart-key">{mark}{label}</span>')
     return '<div class="vchart-legend">' + "".join(html) + "</div>"
+
+
+_GRID_ON_V = 50.0
+_CHARGE_W = 100.0
+_LOAD_IDLE_W = 50.0
+_AVG_SAMPLES = 3
+
+
+def _eta_text(hours: float | None) -> str | None:
+    if hours is None:
+        return None
+    seconds = int(round(hours * 3600))
+    if seconds < 60:
+        return "менше хвилини"
+    days, rem = divmod(seconds, 86400)
+    hrs, rem = divmod(rem, 3600)
+    mins, _ = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days} д")
+    if hrs:
+        parts.append(f"{hrs} год")
+    if mins or not parts:
+        parts.append(f"{mins} хв")
+    return " ".join(parts)
+
+
+def _run_hours(energy_kwh: float, watts: float | None) -> float | None:
+    if energy_kwh <= 0 or watts is None or watts < _LOAD_IDLE_W:
+        return None
+    return energy_kwh / (watts / 1000.0)
+
+
+def _eta_pair(now_h: float | None, avg_h: float | None, have_avg: bool) -> str:
+    now_s = _eta_text(now_h) or "дуже довго"
+    if not have_avg:
+        return f"зараз {now_s}"
+    avg_s = _eta_text(avg_h) or "дуже довго"
+    return f"зараз {now_s}, за 10 хв {avg_s}"
+
+
+def _power_parts(watts: float | None) -> tuple[str, str, str, str]:
+    if watts is None:
+        return "---", "888", "", "none"
+    value = max(0.0, float(watts))
+    if value >= 1000:
+        return f"{value / 1000:.1f}", "88.8", "кВт", "ok"
+    return f"{value:.0f}", "8888", "Вт", "ok"
+
+
+def _power_words(watts: float) -> str:
+    digits, _ghost, unit, _band = _power_parts(watts)
+    return f"{digits} {unit}".strip()
+
+
+def _b_meter(label: str, digits: str, ghost: str, unit: str, state: str, band: str, bar_pct: float | None = None) -> str:
+    bar = ""
+    if bar_pct is not None:
+        bar = f'<div class="bbar" aria-hidden="true"><span style="width:{max(0.0, min(100.0, bar_pct)):.1f}%"></span></div>'
+    unit_html = f'<span class="vmeter-unit">{unit}</span>' if unit else ""
+    return (
+        f'<div class="vmeter vmeter-{band}">'
+        f'<div class="vmeter-phase">{label}</div>'
+        '<div class="vmeter-window">'
+        '<div class="vmeter-readout">'
+        f'<span class="vmeter-ghost" aria-hidden="true">{ghost}</span>'
+        f'<span class="vmeter-digits">{digits}</span>'
+        f"</div>{unit_html}</div>"
+        f"{bar}"
+        f'<div class="vmeter-state">{state}</div>'
+        "</div>"
+    )
+
+
+def build_battery_board(
+    *,
+    soc: float | None,
+    cap_kwh: float,
+    load_w: float | None,
+    load_avg_w: float | None,
+    bat_w: float | None,
+    bat_avg_w: float | None,
+    avg_samples: int,
+    grid_v: tuple[float | None, float | None, float | None],
+) -> str:
+    """Charge panel under the voltmeter. Averages are the last 10 minutes."""
+    known = [float(v) for v in grid_v if isinstance(v, (int, float))]
+    grid_on = any(v >= _GRID_ON_V for v in known) if known else None
+    have_avg = avg_samples >= _AVG_SAMPLES
+    cap = max(0.0, float(cap_kwh or 0))
+
+    if soc is None:
+        soc_meter = _b_meter("ЗАРЯД", "---", "888", "%", "немає", "none", 0)
+    else:
+        pct = max(0.0, min(100.0, float(soc)))
+        if pct < 15:
+            band, word = "dead", "майже порожньо"
+        elif pct < 30:
+            band, word = "low", "низький"
+        else:
+            band, word = "ok", "норма"
+        soc_meter = _b_meter("ЗАРЯД", f"{pct:.0f}", "888", "%", word, band, pct)
+
+    if soc is None or cap <= 0:
+        energy = _b_meter("ЗАПАС", "---", "888.8", "кВт·год", "немає ємності", "none")
+        left = 0.0
+        room = 0.0
+    else:
+        left = cap * max(0.0, min(100.0, float(soc))) / 100.0
+        room = cap - left
+        energy = _b_meter("ЗАПАС", f"{left:.1f}", "888.8", "кВт·год", f"з {cap:.0f}", "ok")
+
+    now_digits, now_ghost, now_unit, now_band = _power_parts(load_w)
+    avg_digits, avg_ghost, avg_unit, avg_band = _power_parts(load_avg_w if have_avg else None)
+    load_meter = _b_meter("ЗАРАЗ", now_digits, now_ghost, now_unit, "споживання", now_band)
+    avg_meter = _b_meter("10 ХВ", avg_digits, avg_ghost, avg_unit, "середнє", avg_band)
+
+    notes: list[str] = []
+    charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0
+    if grid_on is False and soc is not None and cap > 0 and not charging:
+        now_h = _run_hours(left, load_w)
+        avg_h = _run_hours(left, load_avg_w) if have_avg else None
+        notes.append("Без світла вистачить " + _eta_pair(now_h, avg_h, have_avg))
+    if charging:
+        if float(soc) >= 99.5 or room < 0.05:
+            notes.append("Заряд повний")
+        else:
+            now_h = _run_hours(room, abs(float(bat_w)))
+            avg_h = None
+            if have_avg and bat_avg_w is not None and bat_avg_w <= -_CHARGE_W:
+                avg_h = _run_hours(room, abs(float(bat_avg_w)))
+            notes.append(f"Заряд {_power_words(abs(float(bat_w)))}, до повної " + _eta_pair(now_h, avg_h, have_avg and avg_h is not None))
+    elif grid_on is True:
+        notes.append("Мережа є")
+    if not notes:
+        notes.append("Немає даних про батарею" if soc is None else "")
+    note_html = "".join(f'<p class="bboard-note">{line}</p>' for line in notes if line)
+    return (
+        '<div class="bboard">'
+        '<div class="bboard-meters">'
+        + soc_meter + energy + load_meter + avg_meter
+        + "</div>"
+        + note_html
+        + "</div>"
+    )
 
 
 def _day_title(t0: float) -> str:

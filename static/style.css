@@ -363,10 +363,43 @@ details[open] summary::before { content: '▼ '; }
 .vmeter-dead .vmeter-state { color: #fca5a5; }
 .vmeter-none .vmeter-state { color: #64748b; }
 .vboard-age { margin-top: 0.45rem; text-align: center; font-size: 0.72rem; color: #64748b; letter-spacing: 0.03em; }
+.bboard {
+  margin-top: 0.75rem;
+  background:
+    radial-gradient(circle at 14px 14px, #64748b 0 1.5px, transparent 2px),
+    radial-gradient(circle at calc(100% - 14px) 14px, #64748b 0 1.5px, transparent 2px),
+    radial-gradient(circle at 14px calc(100% - 14px), #64748b 0 1.5px, transparent 2px),
+    radial-gradient(circle at calc(100% - 14px) calc(100% - 14px), #64748b 0 1.5px, transparent 2px),
+    linear-gradient(180deg, #243044 0%, #151c2b 100%);
+  border: 1px solid #3d4d66;
+  border-radius: 14px;
+  padding: 0.85rem 0.7rem 0.65rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 10px 24px rgba(0,0,0,0.28);
+}
+.bboard-meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.bbar {
+  height: 6px; margin: 0 0.4rem 0.32rem; border-radius: 99px;
+  background: #0b1220; box-shadow: inset 0 1px 2px rgba(0,0,0,0.45); overflow: hidden;
+}
+.bbar span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #7f1d1d 0%, #b45309 28%, #4ade80 70%);
+}
+.bboard .vmeter-state { letter-spacing: 0.04em; text-transform: none; }
+.bboard-note { margin: 0.55rem 0.2rem 0; text-align: center; color: #e2e8f0; font-size: 0.84rem; }
+.bboard-note + .bboard-note { margin-top: 0.15rem; color: #cbd5e1; }
+.vchart > summary.vchart-head { list-style: none; cursor: pointer; }
+.vchart > summary.vchart-head::-webkit-details-marker { display: none; }
+.vchart > summary.vchart-head::marker { content: ""; }
+.vchart > summary.vchart-head > div:first-child::before { content: "▾  "; color: #94a3b8; }
+.vchart:not([open]) > summary.vchart-head > div:first-child::before { content: "▸  "; }
+@media (max-width: 720px) {
+  .bboard-meters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 420px) {
   .vmeter-ghost, .vmeter-digits { font-size: 1.05rem; }
-  .vboard { padding: 0.7rem 0.4rem 0.45rem; }
-  .vboard-meters { gap: 0.35rem; }
+  .vboard, .bboard { padding: 0.7rem 0.4rem 0.45rem; }
+  .vboard-meters, .bboard-meters { gap: 0.35rem; }
 }
 
 .vchart {
@@ -470,7 +503,9 @@ details[open] summary::before { content: '▼ '; }
   display: flex;
   flex-direction: column;
 }
-.vchart-host:fullscreen .vboard { display: none; }
+.vchart-host:fullscreen .vboard,
+.vchart-host:fullscreen .bboard { display: none; }
+.vchart-host:fullscreen .vchart > summary { flex: none; }
 .vchart-host:fullscreen .vchart {
   flex: 1; min-height: 0; margin: 0;
   display: flex; flex-direction: column;

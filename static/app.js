@@ -84,14 +84,23 @@
   var schedDetails = document.getElementById('sched_details');
   if (schedDetails) schedDetails.addEventListener('toggle', updScheduleNow);
 
-  // Details localStorage persistence
-  document.querySelectorAll('details[data-ls-key]').forEach(function(d) {
-    var key = d.getAttribute('data-ls-key');
-    var defaultOpen = d.getAttribute('data-default-open') === '1';
-    var saved = localStorage.getItem(key);
-    if (saved !== null) d.open = (saved === '1'); else d.open = defaultOpen;
-    d.addEventListener('toggle', function() { localStorage.setItem(key, d.open ? '1' : '0'); });
-  });
+  // Details localStorage persistence. Re-bind after a fragment replaces the node.
+  function bindLsDetails(root) {
+    var scope = root || document;
+    scope.querySelectorAll('details[data-ls-key]').forEach(function(d) {
+      if (d.dataset.lsBound === '1') return;
+      d.dataset.lsBound = '1';
+      var key = d.getAttribute('data-ls-key');
+      var defaultOpen = d.getAttribute('data-default-open') === '1';
+      var saved = null;
+      try { saved = localStorage.getItem(key); } catch (err) { saved = null; }
+      if (saved !== null) d.open = (saved === '1'); else d.open = defaultOpen;
+      d.addEventListener('toggle', function() {
+        try { localStorage.setItem(key, d.open ? '1' : '0'); } catch (err) {}
+      });
+    });
+  }
+  bindLsDetails(document);
 
   // Drag-drop section reorder
   var ORDER_KEY = 'pm_section_order';
@@ -855,6 +864,7 @@
   });
 
   document.addEventListener('click', function(e) {
+    if (e.target.closest && e.target.closest('summary .vchart-head-side')) e.preventDefault();
     var box = vchartBox(e.target);
     if (e.target.closest && e.target.closest('.vchart-reset')) {
       if (box) box._vZoom = null;
@@ -965,6 +975,7 @@
               }
             }
             vchartApply(el);
+            bindLsDetails(el);
           }
         }
         });

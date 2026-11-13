@@ -1533,6 +1533,38 @@ def _scoped_inverter(inverter_id: int | None) -> int:
     return int(inverter_id)
 
 
+def inverter_battery_kwh(inverter_id: int | None = None) -> float:
+    """Nameplate capacity of one registry row. Zero when the row has none."""
+    iid = _scoped_inverter(inverter_id)
+    with _conn() as db:
+        row = db.execute(
+            "SELECT battery_kwh FROM deye_inverter WHERE id=?",
+            (iid,),
+        ).fetchone()
+    if row is None or row["battery_kwh"] is None:
+        return 0.0
+    return float(row["battery_kwh"])
+
+
+def deye_recent_power(inverter_id: int | None, ts_from: float, ts_to: float) -> dict:
+    """Mean load and battery power over a short window. Battery sign stays Deye's."""
+    iid = _scoped_inverter(inverter_id)
+    with _conn() as db:
+        row = db.execute(
+            """SELECT AVG(load_power_w) AS load_w,
+                      AVG(battery_power_w) AS bat_w,
+                      COUNT(*) AS n
+               FROM deye_log
+               WHERE inverter_id=? AND ts>=? AND ts<?""",
+            (iid, ts_from, ts_to),
+        ).fetchone()
+    return {
+        "load_w": None if row["load_w"] is None else float(row["load_w"]),
+        "bat_w": None if row["bat_w"] is None else float(row["bat_w"]),
+        "n": int(row["n"] or 0),
+    }
+
+
 def recent_deye_log(n: int = 100, inverter_id: int | None = None) -> list[dict]:
     iid = _scoped_inverter(inverter_id)
     with _conn() as db:

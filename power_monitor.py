@@ -108,7 +108,9 @@ from database import (
     carry_open_outage,
     save_deye_log,
     apartment_inverter_id,
+    deye_recent_power,
     enabled_inverter_targets,
+    inverter_battery_kwh,
     house_inverter_record,
     save_heartbeat,
     save_tg_log,
@@ -122,6 +124,7 @@ from voltage_chart import (
     BUCKET_SEC,
     FUTURE_SEC,
     HISTORY_SEC,
+    build_battery_board,
     build_load_chart,
     build_soc_chart,
     build_voltage_chart,
@@ -699,7 +702,36 @@ def _fmt_panel_volts(value: float | None) -> str:
     return f"{float(value):05.1f}"
 
 
-def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0, inverter_id: int | None = None) -> str:
+def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
+    last = deye_rows[0] if deye_rows else None
+    now = time.time()
+    means = deye_recent_power(inverter_id, now - 600, now + 1)
+
+    def num(value):
+        return float(value) if isinstance(value, (int, float)) else None
+
+    return build_battery_board(
+        soc=num(last.get("battery_soc")) if last else None,
+        cap_kwh=inverter_battery_kwh(inverter_id),
+        load_w=num(last.get("load_power_w")) if last else None,
+        load_avg_w=means["load_w"],
+        bat_w=num(last.get("battery_power_w")) if last else None,
+        bat_avg_w=means["bat_w"],
+        avg_samples=means["n"],
+        grid_v=(
+            num(last.get("grid_v_l1")) if last else None,
+            num(last.get("grid_v_l2")) if last else None,
+            num(last.get("grid_v_l3")) if last else None,
+        ),
+    )
+
+
+def _build_voltage_panel(
+    deye_rows: list | None,
+    chart_shift: int = 0,
+    inverter_id: int | None = None,
+    fold_prefix: str = "apt",
+) -> str:
     """Three-phase panel meter: L1 yellow, L2 green, L3 red, 7-segment windows."""
     phases: list[tuple[str, float | None]] = [("L1", None), ("L2", None), ("L3", None)]
     age_html = "немає даних"
@@ -746,11 +778,12 @@ def _build_voltage_panel(deye_rows: list | None, chart_shift: int = 0, inverter_
         + "</div>"
         + f'<div class="vboard-age">{age_html}</div>'
         + "</div>"
-        + _voltage_chart_html(chart_shift, inverter_id)
+        + _battery_panel(deye_rows, inverter_id)
+        + _voltage_chart_html(chart_shift, inverter_id, fold_prefix)
     )
 
 
-def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) -> str:
+def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None, fold_prefix: str = "apt") -> str:
     now = time.time()
     oldest = deye_first_voltage_ts(inverter_id)
     shift = clamp_chart_shift(chart_shift, now, oldest)
@@ -771,7 +804,11 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) ->
         shift_days=shift,
         prev_enabled=prev_day_available(shift, now, oldest),
     )
-    return build_voltage_chart(**chart) + build_load_chart(**chart) + build_soc_chart(**chart)
+    return (
+        build_voltage_chart(**chart, fold_key=f"{fold_prefix}-voltage")
+        + build_load_chart(**chart, fold_key=f"{fold_prefix}-load")
+        + build_soc_chart(**chart, fold_key=f"{fold_prefix}-soc")
+    )
 
 
 def _alert_events_rows() -> str:
@@ -1022,7 +1059,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
     house_rec = house_inverter_record()
     house_rows = recent_deye_log(30, house_rec["id"]) if house_rec else []
     house_voltage_html = _build_voltage_panel(
-        house_rows, chart_shift, house_rec["id"] if house_rec else None,
+        house_rows, chart_shift, house_rec["id"] if house_rec else None, "house",
     )
 
     alert_html = dtek.alert_banner_html(dtek.alert_cache)
@@ -2113,7 +2150,7 @@ async def dashboard(key: str = Query("")):
     house_rec = house_inverter_record()
     house_rows = recent_deye_log(30, house_rec["id"]) if house_rec else []
     house_voltage_html = _build_voltage_panel(
-        house_rows, 0, house_rec["id"] if house_rec else None,
+        house_rows, 0, house_rec["id"] if house_rec else None, "house",
     )
 
     # ─── Alert events ───
