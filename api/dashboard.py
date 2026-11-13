@@ -81,16 +81,23 @@ def ep_schedule_board(key: str = Query(""), date: str = Query("")):
     return JSONResponse(payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
+def hide_private_deye_fragment(frags: dict, allowed: list[str]) -> dict:
+    """Drop the apartment inverter fragment when this key cannot see that section."""
+    if "deye_details" not in allowed:
+        frags.pop("pm_deye", None)
+    return frags
+
+
 @router.get("/api/dashboard-fragments")
 def ep_dashboard_fragments(key: str = Query(""), chart_shift: int = Query(0, ge=0, le=120)):
     check_permission(key, "dashboard")
     from power_monitor import _build_footer_content, _build_update_fragments, online_count, record_online
 
-    from api.deps import allowed_footer_parts
+    from api.deps import allowed_footer_parts, allowed_sections
 
     record_online(key)
 
-    frags = _build_update_fragments(chart_shift)
+    frags = hide_private_deye_fragment(_build_update_fragments(chart_shift), allowed_sections(key))
     key_label = API_KEYS.get(key, "")
     is_admin = API_KEYS.get(key) == "admin"
     footer_parts = allowed_footer_parts(key)

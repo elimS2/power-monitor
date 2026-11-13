@@ -1,7 +1,9 @@
 # Multi-inverter Deye on the Power Monitor dashboard
 
-- Status: `PHASE 1 LOCAL — NOT DEPLOYED`
-- Last updated: 2026-11-13T19:40:56Z
+- Status: `PHASE 2 LOCAL — NOT DEPLOYED`
+- Owner: Volodymyr
+- Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
+- Last updated: 2026-11-13T19:45:27Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -320,7 +322,8 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T18:51:12Z — After the first confirmation APPROVE, lead added one sentence. `role_update` returns False when `is_builtin` is 1 (`database.py` ~694). "Без Deye" is builtin, so a sole-user append is a direct `UPDATE roles`, the same path as the voltage rewrite. `role_update` is not the write. Final confirmation, same critic, verdict `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status set to `REVIEWED / READY FOR LOCAL WORK`. Implementation still waits for an explicit continue.
 - 2026-11-13T19:19:09Z — Prompt #6 revision. MAC is the stable identity; the address is last-seen. Registry gains `mac`. If the house host stops answering 8899, resolve `74:e9:d8:39:22:8a` from the shelter neighbor table instead of trusting DHCP. Apartment direct TCP to `192.168.0.104:8899` failed at 19:14:28Z. AVG blocked `owrt-phase0-read.py` as `IDP.Generic` (`c43dd3375964`); that file shape is retired. Temp copies removed. Previous review approval stays history for the earlier text. This revision is `DRAFT READY FOR REVIEW`. Phase 1 still has not started.
 - 2026-11-13T19:22:58Z — Lead review of the MAC revision, prompt #5, before the critic. Supersedes the row that paired `14:cc:20:b5:69:97` with `192.168.0.109`: that MAC was only a link-local neighbor.
-- 2026-11-13T19:40:56Z — Phase 1 local. `deye_inverter` seeded with the apartment row from env. `deye_log.inverter_id` added and backfilled. Poller and `POST /api/deye-heartbeat` write that id. No house poll, no deploy. `tests.test_schedule_board` and `tests.test_voltage_chart`: 39 tests OK. Unknown `inverter_id` raises. `save_deye_log` does not SELECT `deye_log`.
+- 2026-11-13T19:40:56Z — Phase 1 local. Apartment registry row, backfill, both writers pass that id. 39 tests OK. No house poll. No deploy.
+- 2026-11-13T19:45:27Z — Phase 2 local. Reads, the outage lamp, voltage JSON, and aggregates are scoped by inverter id. A house sample does not change the apartment voltage bar or `has_grid_voltage_now`. The live fragment omits `pm_deye` when the key cannot see `deye_details`. The overwritten dashboard assembly was removed. 41 tests OK. No house poll. No deploy.
 
 ### Open questions
 
@@ -360,10 +363,11 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T19:19:09Z — Prompt #6 revision. MAC table added. AVG false positive recorded.
 - 2026-11-13T19:26:00Z — MAC revision confirmed. Status `REVIEWED / READY FOR LOCAL WORK`.
 - 2026-11-13T19:40:56Z — Phase 1 code is local. Next is Phase 2 only after an explicit continue. Do not deploy this commit by itself unless the operator asks: writers already pass the apartment id, and no house row exists, but the public block is not in this step.
+- 2026-11-13T19:45:27Z — Phase 2 code is local. House sample stays out of the apartment lamp and voltage bar. No deploy.
 
 ## 11. Handoff for a new chat
 
-- Phase 1 is local and not deployed. Start Phase 2 only after an explicit continue. Do not enable a second poll. Do not copy the logger serial into git.
+- Phase 2 is local and not deployed. Start Phase 3 only after an explicit continue. Do not enable the house poll before the route gate. Do not copy the logger serial into git. Do not drop an SSH tunnel script in Temp.
 - Active skin: A.
 - Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
 - Do not add `deye_details` to the key labeled `public`.

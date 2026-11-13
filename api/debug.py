@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from api.deps import check_admin, check_permission
 from config import UA_TZ
-from database import DOWN_LIKE_EVENTS, _conn, events_in_range, parse_boiler_schedule
+from database import DOWN_LIKE_EVENTS, _conn, apartment_inverter_id, events_in_range, parse_boiler_schedule
 
 router = APIRouter(tags=["debug"])
 
@@ -60,8 +60,8 @@ def ep_debug_deye_battery(key: str = Query(""), days: int = Query(7, ge=1, le=31
     with _conn() as db:
         deye_rows = db.execute(
             """SELECT battery_soc, battery_power_w, ts FROM deye_log
-               WHERE ts >= ? AND ts <= ? ORDER BY ts""",
-            (ts_start, ts_end + charge_window_h * 3600),
+               WHERE ts >= ? AND ts <= ? AND inverter_id = ? ORDER BY ts""",
+            (ts_start, ts_end + charge_window_h * 3600, apartment_inverter_id()),
         ).fetchall()
     deye_rows = [dict(r) for r in deye_rows]
 
@@ -152,8 +152,8 @@ def ep_debug_discharge_paradox(key: str = Query(""), days: int = Query(8, ge=1, 
     with _conn() as db:
         deye_rows = db.execute(
             """SELECT battery_soc, battery_power_w, load_power_w, grid_v_l1, grid_v_l2, grid_v_l3, ts
-               FROM deye_log WHERE ts >= ? AND ts <= ? ORDER BY ts""",
-            (ts_start, ts_end),
+               FROM deye_log WHERE ts >= ? AND ts <= ? AND inverter_id = ? ORDER BY ts""",
+            (ts_start, ts_end, apartment_inverter_id()),
         ).fetchall()
     deye_rows = [dict(r) for r in deye_rows]
 

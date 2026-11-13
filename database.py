@@ -1381,10 +1381,18 @@ def save_deye_log(
                 ts, ts_kyiv, inverter_id,
             ),
         )
-        _record_voltage_sample(db, ts, grid_v_l1, grid_v_l2, grid_v_l3)
+        if int(inverter_id) == apartment_inverter_id():
+            _record_voltage_sample(db, ts, grid_v_l1, grid_v_l2, grid_v_l3)
 
 
-def recent_deye_log(n: int = 100) -> list[dict]:
+def _scoped_inverter(inverter_id: int | None) -> int:
+    if inverter_id is None:
+        return apartment_inverter_id()
+    return int(inverter_id)
+
+
+def recent_deye_log(n: int = 100, inverter_id: int | None = None) -> list[dict]:
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         rows = db.execute(
             """SELECT load_power_w, load_l1_w, load_l2_w, load_l3_w,
@@ -1394,15 +1402,23 @@ def recent_deye_log(n: int = 100) -> list[dict]:
                       day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                       day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
                       ts
-               FROM deye_log ORDER BY id DESC LIMIT ?""",
-            (n,),
+               FROM deye_log
+               WHERE inverter_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (iid, n),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def deye_voltage_buckets(ts_start: float, ts_end: float, bucket_sec: int = 60) -> list[dict]:
+def deye_voltage_buckets(
+    ts_start: float,
+    ts_end: float,
+    bucket_sec: int = 60,
+    inverter_id: int | None = None,
+) -> list[dict]:
     """One row per minute: mean voltage of live phases, and how many samples were dead."""
     step = bucket_sec if bucket_sec >= 1 else 60
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         rows = db.execute(
             """SELECT CAST(ts / ? AS INTEGER) * ? AS bucket,
@@ -1416,18 +1432,22 @@ def deye_voltage_buckets(ts_start: float, ts_end: float, bucket_sec: int = 60) -
                             THEN 1 ELSE 0 END) AS dead,
                       COUNT(*) AS n
                FROM deye_log
-               WHERE ts >= ? AND ts < ?
+               WHERE ts >= ? AND ts < ? AND inverter_id = ?
                GROUP BY bucket
                ORDER BY bucket""",
-            (step, step, ts_start, ts_end),
+            (step, step, ts_start, ts_end, iid),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def deye_first_voltage_ts() -> float | None:
-    """Oldest inverter sample. Uses the timestamp index."""
+def deye_first_voltage_ts(inverter_id: int | None = None) -> float | None:
+    """Oldest sample for one inverter. Uses the timestamp index."""
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
-        row = db.execute("SELECT MIN(ts) AS ts FROM deye_log").fetchone()
+        row = db.execute(
+            "SELECT MIN(ts) AS ts FROM deye_log WHERE inverter_id = ?",
+            (iid,),
+        ).fetchone()
     if not row or row["ts"] is None:
         return None
     return float(row["ts"])
@@ -1444,98 +1464,114 @@ def _integrate_kwh(rows: list) -> float:
     return total
 
 
-def deye_monthly_load_kwh() -> float | None:
+def deye_monthly_load_kwh(inverter_id: int | None = None) -> float | None:
     """Compute load energy (kWh) for current month from deye_log using trapezoidal integration."""
-    daily = deye_daily_load_kwh()
+    daily = deye_daily_load_kwh(inverter_id)
     if not daily:
         return None
     return round(sum(d["integrated_kwh"] for d in daily), 1)
 
 
-def _integrate_range(ts_start: float, ts_end: float) -> float | None:
+def _integrate_range(ts_start: float, ts_end: float, inverter_id: int | None = None) -> float | None:
     """Integrate load_power_w in [ts_start, ts_end]. Returns kWh or None if insufficient data."""
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         rows = db.execute(
             """SELECT load_power_w, ts FROM deye_log
-               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL
+               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL AND inverter_id = ?
                ORDER BY ts""",
-            (ts_start, ts_end),
+            (ts_start, ts_end, iid),
         ).fetchall()
     if len(rows) < 2:
         return None
     return round(_integrate_kwh([dict(r) for r in rows]), 2)
 
 
-def deye_day_load_kwh_integrated() -> float | None:
+def deye_day_load_kwh_integrated(inverter_id: int | None = None) -> float | None:
     """Load energy for today from load_power_w integration (our calculation)."""
     now = datetime.now(UA_TZ)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return _integrate_range(day_start.timestamp(), time.time())
+    return _integrate_range(day_start.timestamp(), time.time(), inverter_id)
 
 
-def deye_yearly_load_kwh() -> float | None:
+def deye_yearly_load_kwh(inverter_id: int | None = None) -> float | None:
     """Load energy for current year from load_power_w integration."""
     now = datetime.now(UA_TZ)
     year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-    return _integrate_range(year_start.timestamp(), time.time())
+    return _integrate_range(year_start.timestamp(), time.time(), inverter_id)
 
 
-def deye_total_load_kwh_integrated() -> float | None:
-    """Total load energy from first deye_log entry (our integration since start)."""
+def deye_total_load_kwh_integrated(inverter_id: int | None = None) -> float | None:
+    """Total load energy from the first sample of this inverter."""
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         row = db.execute(
-            "SELECT MIN(ts) as ts_min FROM deye_log WHERE load_power_w IS NOT NULL"
+            """SELECT MIN(ts) as ts_min FROM deye_log
+               WHERE load_power_w IS NOT NULL AND inverter_id = ?""",
+            (iid,),
         ).fetchone()
     if not row or row["ts_min"] is None:
         return None
-    return _integrate_range(row["ts_min"], time.time())
+    return _integrate_range(row["ts_min"], time.time(), iid)
 
 
 _EMPTY_BATTERY_MONTH = {"cycles": 0, "charge_kwh": 0.0, "discharge_kwh": 0.0}
 _deye_agg_lock = threading.Lock()
-_deye_agg = {
-    "daily": [],
-    "monthly_kwh": None,
-    "battery_daily": [],
-    "battery_monthly": dict(_EMPTY_BATTERY_MONTH),
-    "day_integrated": None,
-    "total_integrated": None,
-    "ready": False,
-}
+_deye_agg: dict[int, dict] = {}
 
 
-def deye_aggregates_snapshot() -> dict:
-    """Cheap copy of the last background aggregate. Never scans deye_log."""
+def _empty_deye_agg() -> dict:
+    return {
+        "daily": [],
+        "monthly_kwh": None,
+        "battery_daily": [],
+        "battery_monthly": dict(_EMPTY_BATTERY_MONTH),
+        "day_integrated": None,
+        "total_integrated": None,
+        "ready": False,
+    }
+
+
+def deye_aggregates_snapshot(inverter_id: int | None = None) -> dict:
+    """Cheap copy of the last background aggregate for one inverter. Never scans deye_log."""
+    iid = _scoped_inverter(inverter_id)
     with _deye_agg_lock:
-        snap = dict(_deye_agg)
-        snap["battery_monthly"] = dict(_deye_agg["battery_monthly"])
+        src = _deye_agg.get(iid) or _empty_deye_agg()
+        snap = dict(src)
+        snap["battery_monthly"] = dict(src["battery_monthly"])
         return snap
 
 
 def deye_aggregates_refresh() -> None:
-    """Recompute month, day and all-time integrations off the request path."""
+    """Recompute month, day and all-time integrations off the request path, per inverter."""
     t0 = time.perf_counter()
     try:
-        daily = deye_daily_load_kwh()
-        monthly = round(sum(d["integrated_kwh"] for d in daily), 1) if daily else None
-        battery_daily, battery_monthly = deye_battery_episodes_for_month()
-        day_integrated = deye_day_load_kwh_integrated()
-        total_integrated = deye_total_load_kwh_integrated()
+        with _conn() as db:
+            ids = [int(row["id"]) for row in db.execute("SELECT id FROM deye_inverter").fetchall()]
+        built: dict[int, dict] = {}
+        for iid in ids:
+            daily = deye_daily_load_kwh(iid)
+            monthly = round(sum(d["integrated_kwh"] for d in daily), 1) if daily else None
+            battery_daily, battery_monthly = deye_battery_episodes_for_month(iid)
+            built[iid] = {
+                "daily": daily,
+                "monthly_kwh": monthly,
+                "battery_daily": battery_daily,
+                "battery_monthly": battery_monthly or dict(_EMPTY_BATTERY_MONTH),
+                "day_integrated": deye_day_load_kwh_integrated(iid),
+                "total_integrated": deye_total_load_kwh_integrated(iid),
+                "ready": True,
+            }
     except Exception:
         log.exception("Deye aggregate refresh failed")
         return
     with _deye_agg_lock:
-        _deye_agg["daily"] = daily
-        _deye_agg["monthly_kwh"] = monthly
-        _deye_agg["battery_daily"] = battery_daily
-        _deye_agg["battery_monthly"] = battery_monthly or dict(_EMPTY_BATTERY_MONTH)
-        _deye_agg["day_integrated"] = day_integrated
-        _deye_agg["total_integrated"] = total_integrated
-        _deye_agg["ready"] = True
+        _deye_agg.clear()
+        _deye_agg.update(built)
     log.info(
-        "Deye aggregates refreshed in %.1fs (%d days)",
+        "Deye aggregates refreshed in %.1fs (%d inverters)",
         time.perf_counter() - t0,
-        len(daily),
+        len(built),
     )
 
 
@@ -1573,7 +1609,7 @@ def deye_cumulative_metrics(last: dict | None) -> list[dict]:
     return result
 
 
-def deye_daily_load_kwh() -> list[dict]:
+def deye_daily_load_kwh(inverter_id: int | None = None) -> list[dict]:
     """Compute load energy (kWh) per day for current month.
     Returns [{"date", "load_kwh", "grid_kwh", "integrated_kwh", "samples", "hours"}, ...].
     load_kwh, grid_kwh = last reading in interval (cumulative counters). integrated = trapezoidal load_power_w.
@@ -1584,12 +1620,13 @@ def deye_daily_load_kwh() -> list[dict]:
     ts_start = month_start.timestamp()
     ts_end = time.time()
 
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         rows = db.execute(
             """SELECT load_power_w, ts, day_load_kwh, day_grid_import_kwh FROM deye_log
-               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL
+               WHERE ts >= ? AND ts <= ? AND load_power_w IS NOT NULL AND inverter_id = ?
                ORDER BY ts""",
-            (ts_start, ts_end),
+            (ts_start, ts_end, iid),
         ).fetchall()
 
     if len(rows) < 2:
@@ -1684,7 +1721,7 @@ def _integrate_battery_power_both(rows: list) -> tuple[float, float]:
     return charge_kwh, discharge_kwh
 
 
-def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
+def deye_battery_episodes_for_month(inverter_id: int | None = None) -> tuple[list[dict], dict]:
     """
     Compute discharge (during outage) and charge (after power returns) episodes.
     Each down-up pair = one episode with full detail.
@@ -1701,11 +1738,12 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
     if not events:
         return [], {"cycles": 0, "charge_kwh": 0.0, "discharge_kwh": 0.0}
 
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         deye_rows = db.execute(
             """SELECT battery_soc, battery_power_w, grid_power_w, ts FROM deye_log
-               WHERE ts >= ? AND ts <= ? ORDER BY ts""",
-            (ts_start, ts_end + 3600),
+               WHERE ts >= ? AND ts <= ? AND inverter_id = ? ORDER BY ts""",
+            (ts_start, ts_end + 3600, iid),
         ).fetchall()
     deye_rows = [dict(r) for r in deye_rows]
 
@@ -1804,9 +1842,9 @@ def deye_battery_episodes_for_month() -> tuple[list[dict], dict]:
     return daily, monthly
 
 
-def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
-    """Get most recent deye_log entry where at least one phase has non-zero voltage."""
-    rows = recent_deye_log(limit)
+def last_nonzero_grid_voltage(limit: int = 60, inverter_id: int | None = None) -> dict | None:
+    """Get most recent sample for one inverter where at least one phase has non-zero voltage."""
+    rows = recent_deye_log(limit, inverter_id)
     for r in rows:
         v1 = r.get("grid_v_l1")
         v2 = r.get("grid_v_l2")
@@ -1816,9 +1854,9 @@ def last_nonzero_grid_voltage(limit: int = 60) -> dict | None:
     return None
 
 
-def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
-    """True if most recent deye_log (within max_age_sec) has at least one phase with voltage > 0."""
-    rows = recent_deye_log(1)
+def has_grid_voltage_now(max_age_sec: float = 300, inverter_id: int | None = None) -> bool:
+    """True if the newest sample for this inverter, within max_age_sec, has a live phase."""
+    rows = recent_deye_log(1, inverter_id)
     if not rows:
         return False
     r = rows[0]
@@ -1828,9 +1866,9 @@ def has_grid_voltage_now(max_age_sec: float = 300) -> bool:
     return (v1 and v1 > 0) or (v2 and v2 > 0) or (v3 and v3 > 0)
 
 
-def has_all_three_phases_voltage(max_age_sec: float = 300) -> bool:
-    """True if most recent deye_log has all three phases with voltage > 0."""
-    rows = recent_deye_log(1)
+def has_all_three_phases_voltage(max_age_sec: float = 300, inverter_id: int | None = None) -> bool:
+    """True if the newest sample for this inverter has all three phases with voltage > 0."""
+    rows = recent_deye_log(1, inverter_id)
     if not rows:
         return False
     r = rows[0]
@@ -1840,12 +1878,17 @@ def has_all_three_phases_voltage(max_age_sec: float = 300) -> bool:
     return (v1 and v1 > 0) and (v2 and v2 > 0) and (v3 and v3 > 0)
 
 
-def _last_nonzero_for_phase(key: str, limit: int) -> list[tuple[float, float]]:
+def _last_nonzero_for_phase(key: str, limit: int, inverter_id: int | None = None) -> list[tuple[float, float]]:
     """Останні limit ненульових показників для фази key. Повертає [(value, ts), ...] від нових до старих."""
+    if key not in ("grid_v_l1", "grid_v_l2", "grid_v_l3"):
+        raise ValueError("unknown phase")
+    iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         rows = db.execute(
-            f"""SELECT {key}, ts FROM deye_log WHERE {key} > 0 ORDER BY id DESC LIMIT ?""",
-            (limit,),
+            f"""SELECT {key}, ts FROM deye_log
+                WHERE {key} > 0 AND inverter_id = ?
+                ORDER BY id DESC LIMIT ?""",
+            (iid, limit),
         ).fetchall()
     return [(r[key], r["ts"]) for r in rows if r[key] is not None and r[key] > 0]
 
@@ -1857,6 +1900,7 @@ def deye_voltage_trend(
     is_scheduled: bool | None = None,
     all_absent_n: int = 23,
     all_absent_drop: int = 3,
+    inverter_id: int | None = None,
 ) -> str | None:
     """
     Висока/низька при змішаному або повністю відсутньому стані.
@@ -1864,7 +1908,8 @@ def deye_voltage_trend(
       (23, -3, середнє 20) > 240; 3) всі відсутні, не за графіком, хоча б 2 з 3 фаз так само > 240.
     low: тренд по відсутніх падає або present_avg ≤ 190.
     """
-    latest_row = recent_deye_log(1)
+    iid = _scoped_inverter(inverter_id)
+    latest_row = recent_deye_log(1, iid)
     if not latest_row:
         return None
     latest = latest_row[0]
@@ -1885,7 +1930,7 @@ def deye_voltage_trend(
         all_phase_keys = ["grid_v_l1", "grid_v_l2", "grid_v_l3"]
         high_count = 0
         for key in all_phase_keys:
-            vals_ts = _last_nonzero_for_phase(key, limit=need)
+            vals_ts = _last_nonzero_for_phase(key, need, iid)
             if len(vals_ts) < need:
                 continue
             values = [v for v, _ in vals_ts[:need]]
@@ -1908,7 +1953,7 @@ def deye_voltage_trend(
         use_count = need - all_absent_drop
         both_high = True
         for key in absent_keys:
-            vals_ts = _last_nonzero_for_phase(key, limit=need)
+            vals_ts = _last_nonzero_for_phase(key, need, iid)
             if len(vals_ts) < need:
                 both_high = False
                 break
@@ -1925,7 +1970,7 @@ def deye_voltage_trend(
 
     all_val_ts: list[tuple[float, float]] = []
     for key in absent_keys:
-        all_val_ts.extend(_last_nonzero_for_phase(key, limit=n))
+        all_val_ts.extend(_last_nonzero_for_phase(key, n, iid))
     all_val_ts.sort(key=lambda x: x[1], reverse=True)
     values_from_absent_phases = [v for v, _ in all_val_ts[:n]]
     if len(values_from_absent_phases) < 4:

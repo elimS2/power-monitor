@@ -355,6 +355,48 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
             ).fetchone()["c"]
         self.assertEqual(nulls, 0)
 
+    def test_house_sample_stays_out_of_apartment_reads(self):
+        database.init_db()
+        apt = database.apartment_inverter_id()
+        database.save_deye_log(
+            grid_v_l1=0, grid_v_l2=0, grid_v_l3=0, load_power_w=10,
+            inverter_id=apt,
+        )
+        with database._conn() as db:
+            before = db.execute(
+                "SELECT voltage_json FROM schedule_day WHERE queue=?",
+                (DTEK_QUEUE,),
+            ).fetchone()["voltage_json"]
+            db.execute(
+                """INSERT INTO deye_inverter(serial, mac, title, host, port, battery_kwh, poll_enabled)
+                   VALUES('house-test', '74:e9:d8:39:22:8a', 'house', '10.0.0.8', 8899, 160, 0)"""
+            )
+            house = db.execute(
+                "SELECT id FROM deye_inverter WHERE serial='house-test'"
+            ).fetchone()["id"]
+        database.save_deye_log(
+            grid_v_l1=230, grid_v_l2=230, grid_v_l3=230, load_power_w=9000,
+            inverter_id=house,
+        )
+        with database._conn() as db:
+            after = db.execute(
+                "SELECT voltage_json FROM schedule_day WHERE queue=?",
+                (DTEK_QUEUE,),
+            ).fetchone()["voltage_json"]
+        self.assertEqual(before, after)
+        self.assertFalse(database.has_grid_voltage_now())
+        self.assertTrue(all(
+            row.get("load_power_w") != 9000 for row in database.recent_deye_log(10)
+        ))
+        self.assertEqual(database.recent_deye_log(10, house)[0]["load_power_w"], 9000)
+
+    def test_fragment_hides_apartment_block_without_the_section(self):
+        from api.dashboard import hide_private_deye_fragment
+        hidden = hide_private_deye_fragment({"pm_deye": "АКБ: 40%"}, ["voltage_details"])
+        self.assertNotIn("pm_deye", hidden)
+        shown = hide_private_deye_fragment({"pm_deye": "АКБ: 40%"}, ["deye_details"])
+        self.assertEqual(shown["pm_deye"], "АКБ: 40%")
+
     def test_board_read_does_not_scan_samples_or_events(self):
         database.init_db()
         seen = []
