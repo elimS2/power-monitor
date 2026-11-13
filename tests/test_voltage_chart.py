@@ -25,9 +25,9 @@ class VoltageChartTests(unittest.TestCase):
         html = build_voltage_chart(
             now=now, buckets=buckets, today=None, tomorrow=None, queue="5.1",
         )
-        self.assertIn('stroke="#fb7185"', html)
         self.assertIn('stroke="#facc15"', html)
-        self.assertIn('stroke="#60a5fa"', html)
+        self.assertIn('stroke="#4ade80"', html)
+        self.assertIn('stroke="#f87171"', html)
         self.assertIn("за 10 хв 217–222 В", html)
         self.assertIn("data-t0=", html)
         self.assertIn("vchart-main", html)
@@ -60,7 +60,7 @@ class VoltageChartTests(unittest.TestCase):
             now=now, buckets=buckets, today=None, tomorrow=None, queue="5.1",
         )
         self.assertIn('fill="#fb923c"', html)
-        self.assertIn('fill="#fb7185"', html)
+        self.assertIn('fill="#facc15"', html)
 
     def test_future_off_slot_is_a_brown_column(self):
         now = _kyiv(2026, 11, 9, 1, 0)
@@ -107,6 +107,26 @@ class VoltageBucketQueryTests(unittest.TestCase):
         self.assertIsNone(rows[0]["l2"])
         self.assertEqual(rows[1]["dead"], 1)
         self.assertIsNone(rows[1]["l1"])
+
+
+class LoadChartTests(unittest.TestCase):
+    def test_consumption_line_and_light_strip(self):
+        from voltage_chart import build_load_chart
+        now = _kyiv(2026, 11, 9, 1, 4)
+        buckets = [
+            {"bucket": now - 3600, "l1": 230.0, "l2": 230.0, "l3": 230.0, "dead": 0, "n": 1, "load_w": 3200.0},
+            {"bucket": now - 1800, "l1": None, "l2": None, "l3": None, "dead": 4, "n": 4, "load_w": 40.0},
+        ]
+        html = build_load_chart(
+            now=now, buckets=buckets, today=None, tomorrow=None, queue="5.1",
+        )
+        self.assertIn('fill="#38bdf8"', html)
+        self.assertIn("Остання доба, споживання", html)
+        self.assertIn("черга 5.1", html)
+        self.assertIn('fill="#22c55e"', html)
+        self.assertIn('fill="#fb923c"', html)
+        self.assertIn("світло було", html)
+        self.assertIn("світла не було", html)
 
 
 if __name__ == "__main__":

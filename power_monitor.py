@@ -122,6 +122,7 @@ from voltage_chart import (
     BUCKET_SEC,
     FUTURE_SEC,
     HISTORY_SEC,
+    build_load_chart,
     build_voltage_chart,
     clamp_chart_shift,
     chart_window,
@@ -757,9 +758,10 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) ->
         t0 = now - HISTORY_SEC
         t1 = now + FUTURE_SEC
     cache = dtek.schedule_cache or {}
-    return build_voltage_chart(
+    buckets = deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC, inverter_id)
+    chart = dict(
         now=now,
-        buckets=deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC, inverter_id),
+        buckets=buckets,
         today=cache.get("today"),
         tomorrow=cache.get("tomorrow"),
         queue=DTEK_QUEUE,
@@ -768,6 +770,7 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None) ->
         shift_days=shift,
         prev_enabled=prev_day_available(shift, now, oldest),
     )
+    return build_voltage_chart(**chart) + build_load_chart(**chart)
 
 
 def _alert_events_rows() -> str:

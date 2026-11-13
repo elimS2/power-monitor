@@ -1567,6 +1567,7 @@ def deye_voltage_buckets(
                       AVG(CASE WHEN grid_v_l1 >= 50 THEN grid_v_l1 END) AS l1,
                       AVG(CASE WHEN grid_v_l2 >= 50 THEN grid_v_l2 END) AS l2,
                       AVG(CASE WHEN grid_v_l3 >= 50 THEN grid_v_l3 END) AS l3,
+                      AVG(load_power_w) AS load_w,
                       SUM(CASE
                             WHEN COALESCE(grid_v_l1, 0) < 50
                              AND COALESCE(grid_v_l2, 0) < 50

@@ -643,7 +643,7 @@
     var xAxis = host.querySelector('.vchart-xaxis');
     var nowEl = host.querySelector('.vchart-now');
     var yStep = 20;
-    var ySteps = [1, 2, 5, 10, 20];
+    var ySteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
     var yTarget = (z.y1 - z.y0) / 4;
     for (var i = 0; i < ySteps.length; i++) if (ySteps[i] >= yTarget) { yStep = ySteps[i]; break; }
     if (yAxis) {
@@ -686,29 +686,29 @@
   function vchartApply(one) {
     var hosts = one ? [one] : Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
     hosts.forEach(function(host) {
-    var main = host.querySelector('.vchart-main');
-    var strip = host.querySelector('.vchart-strip');
+    host.querySelectorAll('.vchart').forEach(function(chart) {
+    var main = chart.querySelector('.vchart-main');
+    var strip = chart.querySelector('.vchart-strip');
     if (!main || !strip) return;
     var meta = vchartMeta(main);
     var zoom = host._vZoom || null;
     if (zoom) {
-      zoom.y0 = meta.y0;
-      zoom.y1 = meta.y1;
+      zoom = { t0: zoom.t0, t1: zoom.t1, y0: meta.y0, y1: meta.y1 };
     }
     var z = zoom ? vchartClamp(zoom, meta) : vchartFull(meta);
     if (zoom && vchartIsFull(z, meta)) zoom = null;
     if (!zoom) z = vchartFull(meta);
-    else zoom = z;
-    host._vZoom = zoom;
+    else host._vZoom = { t0: z.t0, t1: z.t1, y0: z.y0, y1: z.y1 };
     var x = (z.t0 - meta.t0) / (meta.t1 - meta.t0) * meta.w;
     var w = (z.t1 - z.t0) / (meta.t1 - meta.t0) * meta.w;
     var y = (meta.y1 - z.y1) / (meta.y1 - meta.y0) * meta.plotH;
     var h = (z.y1 - z.y0) / (meta.y1 - meta.y0) * meta.plotH;
     main.setAttribute('viewBox', x.toFixed(2) + ' ' + y.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2));
     strip.setAttribute('viewBox', x.toFixed(2) + ' 0 ' + w.toFixed(2) + ' ' + meta.stripH);
-    vchartLayout(host, meta, z);
-    var btn = host.querySelector('.vchart-reset');
-    if (btn) btn.hidden = !zoom;
+    vchartLayout(chart, meta, z);
+    var btn = chart.querySelector('.vchart-reset');
+    if (btn) btn.hidden = !host._vZoom;
+    });
     vchartSyncFullscreen(host);
     });
   }
@@ -720,14 +720,14 @@
   function vchartSyncFullscreen(one) {
     var hosts = one ? [one] : Array.prototype.slice.call(document.querySelectorAll('.vchart-host'));
     hosts.forEach(function(host) {
-    var btn = host.querySelector('.vchart-full');
-    if (!btn) return;
+    host.querySelectorAll('.vchart-full').forEach(function(btn) {
     var on = vchartInFullscreen(host);
     btn.setAttribute('aria-label', on ? 'Згорнути' : 'На весь екран');
     var enter = btn.querySelector('.vchart-full-enter');
     var exit = btn.querySelector('.vchart-full-exit');
     if (enter) enter.hidden = on;
     if (exit) exit.hidden = !on;
+    });
     });
   }
 
@@ -746,7 +746,8 @@
     var box = vchartBox(e.target);
     var host = e.target.closest && e.target.closest('.vchart-plot, .vchart-strip');
     if (!box || !host || !box.contains(host)) return;
-    var main = box.querySelector('.vchart-main');
+    var chart = e.target.closest && e.target.closest('.vchart');
+    var main = chart ? chart.querySelector('.vchart-main') : null;
     var svg = e.target.closest('.vchart-main, .vchart-strip');
     if (!main || !svg) return;
     e.preventDefault();
@@ -794,9 +795,11 @@
 
   document.addEventListener('pointermove', function(e) {
     var box = vDrag && vDrag.plot ? vchartBox(vDrag.plot) : vchartBox(e.target);
-    var main = box ? box.querySelector('.vchart-main') : null;
-    var tip = box ? box.querySelector('.vchart-tip') : null;
-    if (main && tip && e.target.closest && e.target.closest('.vchart-main') && box.contains(e.target)) {
+    var hover = e.target.closest && e.target.closest('.vchart');
+    var dragMain = vDrag && vDrag.plot ? vDrag.plot.querySelector('.vchart-main') : null;
+    var main = dragMain || (hover ? hover.querySelector('.vchart-main') : null);
+    var tip = hover ? hover.querySelector('.vchart-tip') : null;
+    if (main && tip && hover && e.target.closest && e.target.closest('.vchart-main') && hover.contains(e.target)) {
       var metaTip = vchartMeta(main);
       var pt = vchartPoint(main, e.clientX, e.clientY);
       if (pt && pt.x >= 0 && pt.x <= metaTip.w && pt.y >= 0 && pt.y <= metaTip.plotH) {
