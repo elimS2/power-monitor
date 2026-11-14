@@ -165,7 +165,7 @@ def build_voltage_chart(
         now_html = f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
     span = _ten_minute_span(buckets, now) if live else ""
     span_html = f'<span class="vchart-span">{span}</span>' if span else ""
-    title = "Остання доба і графік відключень" if live else _day_title(t0)
+    title = "Остання доба, напруга" if live else _day_title(t0)
     prev_attr = "" if prev_enabled else " disabled"
     next_attr = " disabled" if live else ""
     fold_attr = f' data-ls-key="{fold_key}" data-default-open="1"' if fold_key else ""

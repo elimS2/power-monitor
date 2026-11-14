@@ -28,6 +28,8 @@ class VoltageChartTests(unittest.TestCase):
         self.assertIn('stroke="#facc15"', html)
         self.assertIn('stroke="#4ade80"', html)
         self.assertIn('stroke="#f87171"', html)
+        self.assertIn("Остання доба, напруга", html)
+        self.assertNotIn("графік відключень", html)
         self.assertIn("за 10 хв 217–222 В", html)
         self.assertIn("data-t0=", html)
         self.assertIn("vchart-main", html)
