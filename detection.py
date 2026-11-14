@@ -127,8 +127,8 @@ async def _send_voltage_recovery() -> None:
     await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
 
 
-async def _notify_high_voltage(voltage_alerted: bool) -> None:
-    """All three phases are still live and each is above 250 V."""
+async def _notify_live_voltage(voltage_alerted: bool, level: str) -> None:
+    """All three phases are live: each above 250 V, or each at or below 190 V."""
     from power_monitor import update_chat_photo
 
     if voltage_alerted:
@@ -158,13 +158,13 @@ async def _notify_high_voltage(voltage_alerted: bool) -> None:
         for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
             val = v.get(key)
             parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
-    s = VOLTAGE_STATUS["high"]
+    s = VOLTAGE_STATUS[level]
     msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
     if parts:
         msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
     save_event(s["event"])
     kv_set("voltage_anomaly", "1")
-    log.warning("VOLTAGE HIGH detected (all phases above 250)")
+    log.warning("VOLTAGE %s detected (all phases live)", level.upper())
     await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
 
 
@@ -186,11 +186,13 @@ async def analyze():
             phases_mixed = has_grid_voltage_now(inverter_id=_grid_id()) and not phases_ok
 
             if phases_ok:
-                high = deye_voltage_trend(1000, inverter_id=_grid_id()) == "high"
-                if high and not is_down:
-                    await _notify_high_voltage(voltage_alerted)
+                level = deye_voltage_trend(1000, inverter_id=_grid_id())
+                if level not in ("high", "low"):
+                    level = None
+                if level and not is_down:
+                    await _notify_live_voltage(voltage_alerted, level)
                     return
-                if voltage_alerted and not high:
+                if voltage_alerted and not level:
                     ok_count = int(kv_get("voltage_ok_count") or "0") + 1
                     kv_set("voltage_ok_count", str(ok_count))
                     kv_set("voltage_problem_count", "0")
@@ -217,8 +219,8 @@ async def analyze():
                     if nxt:
                         msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
-                    if high:
-                        await _notify_high_voltage(voltage_alerted)
+                    if level:
+                        await _notify_live_voltage(voltage_alerted, level)
             else:
                 if voltage_alerted and phases_mixed:
                     kv_set("voltage_ok_count", "0")
@@ -461,11 +463,13 @@ async def analyze():
             await update_chat_photo(True, message_to_send=msg)
 
         elif latest_alive:
-            high = deye_voltage_trend(1000, inverter_id=_grid_id()) == "high"
-            if high and not is_down:
-                await _notify_high_voltage(voltage_alerted)
+            level = deye_voltage_trend(1000, inverter_id=_grid_id())
+            if level not in ("high", "low"):
+                level = None
+            if level and not is_down:
+                await _notify_live_voltage(voltage_alerted, level)
                 return
-            if not high:
+            if not level:
                 kv_set("voltage_anomaly", "0")
             if not is_down:
                 return
@@ -498,8 +502,8 @@ async def analyze():
             if nxt:
                 msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
             await update_chat_photo(False, message_to_send=msg)
-            if high:
-                await _notify_high_voltage(voltage_alerted)
+            if level:
+                await _notify_live_voltage(voltage_alerted, level)
 
 
 async def watchdog():
