@@ -1079,9 +1079,14 @@
         });
         tip.hidden = false;
         var unit = ' В';
+        var shown = String(Math.round(vTip));
         if (hover.classList.contains('vchart-load')) unit = ' Вт';
         else if (hover.classList.contains('vchart-soc')) unit = ' %';
-        tip.textContent = when + ' · ' + Math.round(vTip) + unit;
+        else if (hover.classList.contains('vchart-temp')) {
+          unit = ' °C';
+          shown = vTip.toFixed(1);
+        }
+        tip.textContent = when + ' · ' + shown + unit;
         var bounds = main.getBoundingClientRect();
         var left = e.clientX - bounds.left + 12;
         if (left > bounds.width - 120) left = e.clientX - bounds.left - 120;

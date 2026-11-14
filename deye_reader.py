@@ -49,6 +49,31 @@ def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
     return val
 
 
+def decode_temp_c(raw: int) -> Optional[float]:
+    """Deye temperature: raw tenths, then minus 100. Reject values a pack cannot have."""
+    try:
+        value = round(float(raw) * 0.1 - 100.0, 1)
+    except (TypeError, ValueError):
+        return None
+    if value < -20.0 or value > 150.0:
+        return None
+    return value
+
+
+def _store_temps(data: dict, pair, battery) -> None:
+    if pair and len(pair) >= 2:
+        dc = decode_temp_c(pair[0])
+        radiator = decode_temp_c(pair[1])
+        if dc is not None:
+            data["temp_dc_c"] = dc
+        if radiator is not None:
+            data["temp_rad_c"] = radiator
+    if battery:
+        batt = decode_temp_c(battery[0])
+        if batt is not None:
+            data["temp_batt_c"] = batt
+
+
 def read_deye_solarman(
     host: str, port: int = 8899, serial: str = "", socket_timeout: float = 10,
 ) -> Optional[dict]:
@@ -78,6 +103,16 @@ def read_deye_solarman(
                 data["grid_v_l1"] = rr[0] * 0.1
                 data["grid_v_l2"] = rr[1] * 0.1
                 data["grid_v_l3"] = rr[2] * 0.1
+        except Exception:
+            pass
+        try:
+            pair = modbus.read_holding_registers(register_addr=540, quantity=2)
+            _store_temps(data, pair, None)
+        except Exception:
+            pass
+        try:
+            battery = modbus.read_holding_registers(register_addr=586, quantity=1)
+            _store_temps(data, None, battery)
         except Exception:
             pass
         for name, spec in REGS.items():
@@ -135,6 +170,14 @@ def read_deye_modbus(host: str, port: int = 502) -> Optional[dict]:
             data["grid_v_l1"] = rr.registers[0] * 0.1
             data["grid_v_l2"] = rr.registers[1] * 0.1
             data["grid_v_l3"] = rr.registers[2] * 0.1
+        try:
+            pair_rr = client.read_holding_registers(540, 2, slave=1)
+            pair = pair_rr.registers if not pair_rr.isError() and pair_rr.registers else None
+            batt_rr = client.read_holding_registers(586, 1, slave=1)
+            battery = batt_rr.registers if not batt_rr.isError() and batt_rr.registers else None
+            _store_temps(data, pair, battery)
+        except Exception:
+            pass
         for name, spec in REGS.items():
             if name in data:
                 continue

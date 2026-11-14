@@ -15,6 +15,13 @@ BUCKET_SEC = 60
 
 LOAD_COLOR = "#38bdf8"
 SOC_COLOR = "#a78bfa"
+TEMP_BATT_COLOR = "#22d3ee"
+TEMP_RAD_COLOR = "#fbbf24"
+TEMP_DC_COLOR = "#f472b6"
+TEMP_OUT_COLOR = "#93c5fd"
+TEMP_MIN = -20.0
+TEMP_MAX = 100.0
+OUTDOOR_HOLD_SEC = 35 * 60
 SOC_MIN = 0.0
 SOC_MAX = 100.0
 _PLOT_W = 600.0
@@ -184,7 +191,7 @@ def build_voltage_chart(
         "<p>Подвійний дотик наближає до пальця. Ще один подвійний дотик, подвійний клік або «Скинути» повертає всю добу.</p>"
         "<p>Біля курсора видно час і напругу.</p>"
         "<p>Стрілки гортають попередні доби. Жива доба — останні 24 години і ще 6 годин графіка вперед.</p>"
-        "<p>Кнопка з кутами відкриває цей графік на весь екран, без адресної стрічки. Стрілки знизу або крапки перемикають напругу, споживання і заряд. Esc згортає.</p>"
+        "<p>Кнопка з кутами відкриває цей графік на весь екран, без адресної стрічки. Стрілки знизу або крапки перемикають напругу, споживання, заряд і температуру. Esc згортає.</p>"
         "</div></span>"
         "</div></summary>"
         '<div class="vchart-nav">'
@@ -535,6 +542,193 @@ def _soc_legend() -> str:
     return '<div class="vchart-legend">' + "".join(html) + "</div>"
 
 
+def _temp_span(buckets: list[dict], now: float) -> str:
+    values = []
+    for row in buckets:
+        if now - 600 <= float(row["bucket"]) <= now and row.get("temp_batt") is not None:
+            values.append(float(row["temp_batt"]))
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    if abs(hi - lo) < 0.15:
+        return f"за 10 хв {hi:.1f} °C"
+    return f"за 10 хв {lo:.1f}–{hi:.1f} °C"
+
+
+def stamp_outdoor(buckets: list[dict], samples: list[tuple[float, float]]) -> list[dict]:
+    """Copy each minute and attach the latest outdoor reading, held for 35 minutes."""
+    stamped = []
+    index = 0
+    latest_ts = None
+    latest = None
+    ordered = sorted(samples, key=lambda item: item[0])
+    for row in buckets:
+        bucket = float(row["bucket"])
+        while index < len(ordered) and ordered[index][0] <= bucket:
+            latest_ts, latest = ordered[index]
+            index += 1
+        copied = dict(row)
+        if latest is not None and latest_ts is not None and 0 <= bucket - latest_ts <= OUTDOOR_HOLD_SEC:
+            copied["temp_out"] = latest
+        else:
+            copied["temp_out"] = None
+        stamped.append(copied)
+    return stamped
+
+
+def _temp_legend() -> str:
+    items = (
+        (TEMP_BATT_COLOR, "line", "батарея"),
+        (TEMP_OUT_COLOR, "line", "надворі"),
+        (TEMP_RAD_COLOR, "line", "радіатор"),
+        (TEMP_DC_COLOR, "line", "трансформатор"),
+        ("#7c4a32", "box", "без світла за графіком"),
+        ("#4b5563", "box", "можливе за графіком"),
+        ("#22c55e", "bar", "світло було"),
+        ("#fb923c", "bar", "світла не було"),
+    )
+    html = []
+    for color, kind, label in items:
+        if kind == "line":
+            mark = f'<span class="vchart-mark vchart-line" style="background:{color}"></span>'
+        else:
+            mark = f'<span class="vchart-mark vchart-box" style="background:{color}"></span>'
+        html.append(f'<span class="vchart-key">{mark}{label}</span>')
+    return '<div class="vchart-legend">' + "".join(html) + "</div>"
+
+
+def build_temp_chart(
+    *,
+    now: float,
+    buckets: list[dict],
+    today: dict | None,
+    tomorrow: dict | None,
+    queue: str,
+    history_sec: int = HISTORY_SEC,
+    future_sec: int = FUTURE_SEC,
+    shift_days: int = 0,
+    prev_enabled: bool = True,
+    fold_key: str = "",
+) -> str:
+    """Same day window as the voltage chart. Inverter temperatures plus outdoor. The strip is light."""
+    shift_days = max(0, int(shift_days))
+    if shift_days == 0:
+        t0 = now - history_sec
+        t1 = now + future_sec
+        live = True
+    else:
+        t0, t1, live = chart_window(now, shift_days)
+    schedule_from = now if live else t1
+
+    def x_of(ts: float) -> float:
+        return (ts - t0) / (t1 - t0) * _PLOT_W
+
+    def y_of(value: float) -> float:
+        clamped = min(TEMP_MAX, max(TEMP_MIN, value))
+        return (TEMP_MAX - clamped) / (TEMP_MAX - TEMP_MIN) * _PLOT_H
+
+    meta = (
+        f' data-t0="{t0:.0f}" data-t1="{t1:.0f}" data-ymin="{TEMP_MIN:.0f}" data-ymax="{TEMP_MAX:.0f}"'
+        f' data-w="{_PLOT_W:.0f}" data-ploth="{_PLOT_H:.0f}" data-striph="{_STRIP_H:.0f}"'
+    )
+    plot: list[str] = [
+        f'<svg class="vchart-main" viewBox="0 0 {_PLOT_W:.0f} {_PLOT_H:.0f}" preserveAspectRatio="none"{meta} role="img" '
+        f'aria-label="Температура за добу і графік черги {queue}">'
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_PLOT_H:.0f}" fill="#0c121c"/>'
+    ]
+    strip: list[str] = [
+        f'<svg class="vchart-strip" viewBox="0 0 {_PLOT_W:.0f} {_STRIP_H:.0f}" preserveAspectRatio="none" aria-hidden="true">'
+        f'<rect x="0" y="0" width="{_PLOT_W:.0f}" height="{_STRIP_H:.0f}" fill="#0c121c"/>'
+    ]
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "off"):
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#7c4a32", 0.95))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#7c4a32", 0.95))
+    for start, end in _schedule_spans(schedule_from, t1, today, tomorrow, "maybe"):
+        plot.append(_hrect(x_of(start), x_of(end), 0, _PLOT_H, "#4b5563", 0.8))
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, "#4b5563", 0.8))
+    for key, color in (
+        ("temp_dc", TEMP_DC_COLOR),
+        ("temp_rad", TEMP_RAD_COLOR),
+        ("temp_out", TEMP_OUT_COLOR),
+        ("temp_batt", TEMP_BATT_COLOR),
+    ):
+        plot.extend(_phase_paths(buckets, key, color, x_of, y_of))
+    show_now = t0 <= now <= t1
+    if show_now:
+        now_x = x_of(now)
+        plot.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_PLOT_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>'
+        )
+        strip.append(
+            f'<line x1="{now_x:.1f}" y1="0" x2="{now_x:.1f}" y2="{_STRIP_H:.0f}" '
+            f'stroke="#e2e8f0" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+        )
+    else:
+        now_x = 0.0
+    for start, end, kind in _fact_spans(buckets, now):
+        color = "#22c55e" if kind == "on" else "#fb923c"
+        strip.append(_hrect(x_of(start), x_of(end), 0, _STRIP_H, color, 1))
+    plot.append("</svg>")
+    strip.append("</svg>")
+
+    y_labels = []
+    tick = int(TEMP_MIN)
+    while tick <= TEMP_MAX + 0.01:
+        top = y_of(float(tick)) / _PLOT_H * 100
+        y_labels.append(f'<span style="top:{top:.2f}%">{int(tick)}</span>')
+        tick += 20
+    x_labels = []
+    for ts, label in _time_ticks(t0, t1):
+        left = x_of(ts) / _PLOT_W * 100
+        if left < -1 or left > 101:
+            continue
+        x_labels.append(f'<span style="left:{left:.2f}%">{label}</span>')
+    now_html = ""
+    if show_now:
+        now_pct = max(0.0, min(100.0, now_x / _PLOT_W * 100))
+        now_html = f'<div class="vchart-now" style="left:{now_pct:.2f}%">зараз</div>'
+    span = _temp_span(buckets, now) if live else ""
+    span_html = f'<span class="vchart-span">{span}</span>' if span else ""
+    title = "Остання доба, температура" if live else _day_title(t0)
+    prev_attr = "" if prev_enabled else " disabled"
+    next_attr = " disabled" if live else ""
+    fold_attr = f' data-ls-key="{fold_key}" data-default-open="1"' if fold_key else ""
+    return (
+        f'<details class="vchart vchart-temp" data-shift="{shift_days}" open{fold_attr}>'
+        '<summary class="vchart-head">'
+        f'<div>{title} <span class="vchart-queue">черга {queue}</span></div>'
+        '<div class="vchart-head-side">'
+        f"{span_html}"
+        '<button type="button" class="vchart-reset" hidden>Скинути</button>'
+        '<button type="button" class="vchart-full" aria-label="На весь екран">'
+        '<svg class="vchart-full-enter" viewBox="0 0 16 16" aria-hidden="true">'
+        '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+        '<svg class="vchart-full-exit" viewBox="0 0 16 16" aria-hidden="true" hidden>'
+        '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg></button>'
+        "</div></summary>"
+        '<div class="vchart-nav">'
+        f'<button type="button" class="vchart-day vchart-prev" data-dir="-1" aria-label="Попередня доба"{prev_attr}>‹</button>'
+        f'<span class="vchart-day-label">{_nav_label(t0, t1, live)}</span>'
+        f'<button type="button" class="vchart-day vchart-next" data-dir="1" aria-label="Наступна доба"{next_attr}>›</button>'
+        "</div>"
+        '<div class="vchart-frame">'
+        f'<div class="vchart-yaxis">{"".join(y_labels)}</div>'
+        '<div class="vchart-plot">'
+        + "".join(plot)
+        + now_html
+        + '<div class="vchart-tip" hidden></div>'
+        "</div>"
+        + "".join(strip)
+        + f'<div class="vchart-xaxis">{"".join(x_labels)}</div>'
+        "</div>"
+        + _temp_legend()
+        + "</details>"
+    )
+
+
 # Shared with the basement charge lane. Green only near a full pack, so 75% and 98% differ.
 SOC_STOPS = (
     (0.0, (127, 29, 29)),
@@ -626,7 +820,15 @@ def _cap_caption(cap: float) -> str:
     return f"з {text} кВт·год"
 
 
-def _b_meter(label: str, digits: str, unit: str, state: str, band: str, bar_pct: float | None = None) -> str:
+def _b_meter(
+    label: str,
+    digits: str,
+    unit: str,
+    state: str,
+    band: str,
+    bar_pct: float | None = None,
+    extra: str = "",
+) -> str:
     bar = ""
     if bar_pct is not None:
         width = max(0.0, min(100.0, bar_pct))
@@ -638,8 +840,9 @@ def _b_meter(label: str, digits: str, unit: str, state: str, band: str, bar_pct:
             f"</div>"
         )
     unit_html = f'<span class="vmeter-unit">{unit}</span>' if unit else ""
+    klass = f"vmeter vmeter-{band}" + (f" {extra}" if extra else "")
     return (
-        f'<div class="vmeter vmeter-{band}">'
+        f'<div class="{klass}">'
         f'<div class="vmeter-phase">{label}</div>'
         '<div class="vmeter-window">'
         '<div class="vmeter-readout">'
@@ -661,6 +864,7 @@ def build_battery_board(
     bat_avg_w: float | None,
     avg_samples: int,
     grid_v: tuple[float | None, float | None, float | None],
+    battery_c: float | None = None,
 ) -> str:
     """Charge panel under the voltmeter. Averages are the last 10 minutes."""
     known = [float(v) for v in grid_v if isinstance(v, (int, float))]
@@ -693,6 +897,17 @@ def build_battery_board(
     avg_digits, _avg_ghost, avg_unit, avg_band = _power_parts(load_avg_w if have_avg else None)
     load_meter = _b_meter("ЗАРАЗ", now_digits, now_unit, "споживання", now_band)
     avg_meter = _b_meter("10 ХВ", avg_digits, avg_unit, "середнє", avg_band)
+    if battery_c is None:
+        temp_meter = _b_meter("ТЕМП", "---", "°C", "немає", "none", extra="vmeter-temp")
+    else:
+        temp = float(battery_c)
+        if temp >= 55 or temp <= 5:
+            temp_band = "dead"
+        elif temp >= 45 or temp <= 10:
+            temp_band = "high"
+        else:
+            temp_band = "ok"
+        temp_meter = _b_meter("ТЕМП", f"{temp:.1f}", "°C", "батарея", temp_band, extra="vmeter-temp")
 
     notes: list[str] = []
     charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0
@@ -717,7 +932,7 @@ def build_battery_board(
     return (
         '<div class="bboard">'
         '<div class="bboard-meters">'
-        + soc_meter + energy + load_meter + avg_meter
+        + soc_meter + energy + load_meter + avg_meter + temp_meter
         + "</div>"
         + note_html
         + "</div>"

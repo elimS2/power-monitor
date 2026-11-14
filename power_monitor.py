@@ -107,6 +107,7 @@ from database import (
     backfill_schedule_actuals,
     carry_open_outage,
     save_deye_log,
+    weather_outdoor_samples,
     apartment_inverter_id,
     deye_recent_power,
     enabled_inverter_targets,
@@ -128,6 +129,8 @@ from voltage_chart import (
     soc_color,
     build_load_chart,
     build_soc_chart,
+    build_temp_chart,
+    stamp_outdoor,
     build_voltage_chart,
     clamp_chart_shift,
     chart_window,
@@ -434,6 +437,9 @@ async def _poll_target(row: dict) -> None:
             battery_soc=data.get("battery_soc"),
             battery_power_w=data.get("battery_power_w"),
             battery_voltage=data.get("battery_voltage"),
+            temp_batt_c=data.get("temp_batt_c"),
+            temp_rad_c=data.get("temp_rad_c"),
+            temp_dc_c=data.get("temp_dc_c"),
             day_load_kwh=data.get("day_load_kwh"),
             total_load_kwh=data.get("total_load_kwh"),
             month_load_kwh=data.get("month_load_kwh"),
@@ -724,6 +730,7 @@ def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
             num(last.get("grid_v_l2")) if last else None,
             num(last.get("grid_v_l3")) if last else None,
         ),
+        battery_c=num(last.get("temp_batt_c")) if last else None,
     )
 
 
@@ -794,6 +801,7 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None, fo
         t1 = now + FUTURE_SEC
     cache = dtek.schedule_cache or {}
     buckets = deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC, inverter_id)
+    outdoor = stamp_outdoor(buckets, weather_outdoor_samples(t0, min(t1, now)))
     chart = dict(
         now=now,
         buckets=buckets,
@@ -809,6 +817,7 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None, fo
         build_voltage_chart(**chart, fold_key=f"{fold_prefix}-voltage")
         + build_load_chart(**chart, fold_key=f"{fold_prefix}-load")
         + build_soc_chart(**chart, fold_key=f"{fold_prefix}-soc")
+        + build_temp_chart(**{**chart, "buckets": outdoor}, fold_key=f"{fold_prefix}-temp")
     )
 
 

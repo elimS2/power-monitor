@@ -288,6 +288,11 @@ def init_db():
             db.execute("ALTER TABLE deye_log ADD COLUMN inverter_id INTEGER")
         except sqlite3.OperationalError:
             pass
+        for col in ("temp_batt_c", "temp_rad_c", "temp_dc_c"):
+            try:
+                db.execute(f"ALTER TABLE deye_log ADD COLUMN {col} REAL")
+            except sqlite3.OperationalError:
+                pass
         apartment_id = _ensure_apartment_inverter(db)
         db.execute(
             "UPDATE deye_log SET inverter_id=? WHERE inverter_id IS NULL",
@@ -1488,6 +1493,9 @@ def save_deye_log(
     battery_soc: float | None = None,
     battery_power_w: float | None = None,
     battery_voltage: float | None = None,
+    temp_batt_c: float | None = None,
+    temp_rad_c: float | None = None,
+    temp_dc_c: float | None = None,
     day_load_kwh: float | None = None,
     total_load_kwh: float | None = None,
     month_load_kwh: float | None = None,
@@ -1515,15 +1523,17 @@ def save_deye_log(
                 grid_power_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
+                temp_batt_c, temp_rad_c, temp_dc_c,
                 day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                 day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
                 ts, ts_kyiv, inverter_id
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 load_power_w, load_l1_w, load_l2_w, load_l3_w,
                 grid_power_w,
                 grid_v_l1, grid_v_l2, grid_v_l3,
                 battery_soc, battery_power_w, battery_voltage,
+                temp_batt_c, temp_rad_c, temp_dc_c,
                 day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                 day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
                 ts, ts_kyiv, inverter_id,
@@ -1579,6 +1589,7 @@ def recent_deye_log(n: int = 100, inverter_id: int | None = None) -> list[dict]:
                       grid_power_w,
                       grid_v_l1, grid_v_l2, grid_v_l3,
                       battery_soc, battery_power_w, battery_voltage,
+                      temp_batt_c, temp_rad_c, temp_dc_c,
                       day_load_kwh, total_load_kwh, month_load_kwh, year_load_kwh,
                       day_grid_import_kwh, day_grid_export_kwh, total_grid_import_kwh, total_grid_export_kwh,
                       ts
@@ -1607,6 +1618,9 @@ def deye_voltage_buckets(
                       AVG(CASE WHEN grid_v_l3 >= 50 THEN grid_v_l3 END) AS l3,
                       AVG(load_power_w) AS load_w,
                       AVG(battery_soc) AS soc,
+                      AVG(temp_batt_c) AS temp_batt,
+                      AVG(temp_rad_c) AS temp_rad,
+                      AVG(temp_dc_c) AS temp_dc,
                       SUM(CASE
                             WHEN COALESCE(grid_v_l1, 0) < 50
                              AND COALESCE(grid_v_l2, 0) < 50
@@ -2299,6 +2313,29 @@ def _save_schedule_if_changed(target_date: str, grid: list[str], queue: str, eme
             len(changes),
         )
         return history_id
+
+
+def weather_outdoor_samples(ts_start: float, ts_end: float) -> list[tuple[float, float]]:
+    """Outdoor readings in the window, plus the last one before it so the line can start at the edge."""
+    with _conn() as db:
+        prior = db.execute(
+            """SELECT temp, ts FROM weather_log
+               WHERE ts < ? AND temp IS NOT NULL
+               ORDER BY ts DESC LIMIT 1""",
+            (ts_start,),
+        ).fetchone()
+        rows = db.execute(
+            """SELECT temp, ts FROM weather_log
+               WHERE ts >= ? AND ts < ? AND temp IS NOT NULL
+               ORDER BY ts""",
+            (ts_start, ts_end),
+        ).fetchall()
+    samples = []
+    if prior is not None:
+        samples.append((float(prior["ts"]), float(prior["temp"])))
+    for row in rows:
+        samples.append((float(row["ts"]), float(row["temp"])))
+    return samples
 
 
 def save_weather_log(temp, humidity, wind, code, t_min, t_max, ts: float):
