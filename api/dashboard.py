@@ -130,11 +130,11 @@ async def ep_refresh_status(key: str = Query("")):
     """Оновити аватарку та надіслати повідомлення про поточний стан у канал."""
     check_admin(key)
     from power_monitor import _ts_fmt_hm, get_display_status, update_chat_photo
-    from database import last_nonzero_grid_voltage
+    from database import last_nonzero_grid_voltage, notify_grid_inverter_id
 
     now = time.time()
     status = get_display_status()
-    v = last_nonzero_grid_voltage()
+    v = last_nonzero_grid_voltage(inverter_id=notify_grid_inverter_id())
     parts = []
     if v:
         for phase, k in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):

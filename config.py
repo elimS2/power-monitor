@@ -59,6 +59,11 @@ DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.d
 # When 1: ignore plug status, use only L1/L2/L3 phases from Deye for detection
 PHASES_ONLY = os.getenv("PHASES_ONLY", "0") == "1"
 
+# Which inverter's phases decide the voltage alerts and whether the light is gone.
+# "house" reads the basement Deye, past the apartment voltage limiters.
+# Set this to "apartment" if the basement logger stops answering.
+NOTIFY_GRID_SOURCE = "house"
+
 # Both plugs must be dead for this many consecutive heartbeats → outage (ignored if PHASES_ONLY)
 OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
 

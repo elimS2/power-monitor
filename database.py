@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime
 
-from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, DTEK_QUEUE, UA_TZ
+from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, DTEK_QUEUE, NOTIFY_GRID_SOURCE, UA_TZ
 from schedule_board import (
     apply_power_event,
     apply_voltage_sample,
@@ -1453,6 +1453,21 @@ def house_inverter_record() -> dict | None:
         "battery_kwh": float(row["battery_kwh"]),
         "poll_enabled": int(row["poll_enabled"]),
     }
+
+
+def notify_grid_inverter_id() -> int:
+    """Phases that decide voltage alerts and whether the light is gone.
+
+    NOTIFY_GRID_SOURCE is the switch. "house" is the basement. "apartment"
+    is the previous source, for when the basement logger stops answering.
+    A missing basement row falls back to the apartment so alerts do not go silent.
+    """
+    if NOTIFY_GRID_SOURCE == "house":
+        row = house_inverter_record()
+        if row is not None:
+            return int(row["id"])
+        log.warning("NOTIFY_GRID_SOURCE is house, but the basement inverter row is missing")
+    return apartment_inverter_id()
 
 
 def enabled_inverter_targets() -> list[dict]:

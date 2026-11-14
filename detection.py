@@ -32,12 +32,17 @@ from database import (
     kv_set,
     last_nonzero_grid_voltage,
     last_voltage_problem_ts,
+    notify_grid_inverter_id,
     recent_events,
     recent_heartbeats,
     save_event,
 )
 
 log = logging.getLogger("power_monitor")
+
+
+def _grid_id() -> int:
+    return notify_grid_inverter_id()
 
 _lock = asyncio.Lock()
 
@@ -106,7 +111,7 @@ async def _send_voltage_recovery() -> None:
     stable_mins = VOLTAGE_EPISODE_MIN_INTERVAL_SEC // 60
     stable_start = now - VOLTAGE_EPISODE_MIN_INTERVAL_SEC
     msg = f"\u2705 {_ts_fmt_hm(now)} Напруга стабілізувалась. {stable_mins} останніх хвилин без понаднормових коливань."
-    v = last_nonzero_grid_voltage()
+    v = last_nonzero_grid_voltage(inverter_id=_grid_id())
     if v:
         parts = []
         for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
@@ -136,8 +141,8 @@ async def analyze():
         voltage_alerted = kv_get("voltage_anomaly") == "1"
 
         if PHASES_ONLY:
-            phases_ok = has_all_three_phases_voltage()
-            phases_mixed = has_grid_voltage_now() and not phases_ok
+            phases_ok = has_all_three_phases_voltage(inverter_id=_grid_id())
+            phases_mixed = has_grid_voltage_now(inverter_id=_grid_id()) and not phases_ok
 
             if phases_ok:
                 if voltage_alerted:
@@ -175,7 +180,7 @@ async def analyze():
                     now = time.time()
                     slot = dtek.current_slot_status()
                     is_scheduled = slot in ("maybe", "off") if slot else False
-                    trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+                    trend = deye_voltage_trend(1000, is_scheduled=is_scheduled, inverter_id=_grid_id())
                     prev = recent_events(1)
                     since_ts = prev[0]["ts"] if prev else first_heartbeat_ts() or 0
                     kv_set("power_down", "1")
@@ -229,8 +234,8 @@ async def analyze():
                             msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
                             await update_chat_photo(True, voltage=None, message_to_send=msg, is_voltage_notification=True)
                         else:
-                            trend = deye_voltage_trend(1000)
-                            v = last_nonzero_grid_voltage()
+                            trend = deye_voltage_trend(1000, inverter_id=_grid_id())
+                            v = last_nonzero_grid_voltage(inverter_id=_grid_id())
                             parts_v = []
                             if v:
                                 for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
@@ -248,7 +253,7 @@ async def analyze():
                     else:
                         slot = dtek.current_slot_status()
                         is_scheduled = slot in ("maybe", "off") if slot else False
-                        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+                        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled, inverter_id=_grid_id())
                         if trend == "high":
                             if _voltage_suppressed():
                                 return
@@ -294,7 +299,7 @@ async def analyze():
             now = time.time()
             voltage_alerted = kv_get("voltage_anomaly") == "1"
 
-            if has_grid_voltage_now() and not voltage_alerted:
+            if has_grid_voltage_now(inverter_id=_grid_id()) and not voltage_alerted:
                 if _voltage_suppressed():
                     return
                 if not _voltage_can_send_problem():
@@ -315,8 +320,8 @@ async def analyze():
                     msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
                     await update_chat_photo(True, voltage=None, message_to_send=msg, is_voltage_notification=True)
                 else:
-                    trend = deye_voltage_trend(1000)
-                    v = last_nonzero_grid_voltage()
+                    trend = deye_voltage_trend(1000, inverter_id=_grid_id())
+                    v = last_nonzero_grid_voltage(inverter_id=_grid_id())
                     parts_v = []
                     if v:
                         for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
@@ -333,8 +338,8 @@ async def analyze():
                     await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                 return
 
-            if voltage_alerted and has_grid_voltage_now():
-                if has_all_three_phases_voltage():
+            if voltage_alerted and has_grid_voltage_now(inverter_id=_grid_id()):
+                if has_all_three_phases_voltage(inverter_id=_grid_id()):
                     ok_count = int(kv_get("voltage_ok_count") or "0") + 1
                     kv_set("voltage_ok_count", str(ok_count))
                     kv_set("voltage_problem_count", "0")
@@ -347,7 +352,7 @@ async def analyze():
 
             slot = dtek.current_slot_status()
             is_scheduled = slot in ("maybe", "off") if slot else False
-            trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+            trend = deye_voltage_trend(1000, is_scheduled=is_scheduled, inverter_id=_grid_id())
             if trend == "high":
                 if _voltage_suppressed():
                     return
@@ -395,7 +400,7 @@ async def analyze():
             if since_ts:
                 dur = _format_duration(int(now - since_ts))
                 msg += f"\n\U0001f553 Воно було {dur} ({_ts_fmt_hm(since_ts)} - {_ts_fmt_hm(now)})"
-            v = last_nonzero_grid_voltage()
+            v = last_nonzero_grid_voltage(inverter_id=_grid_id())
             if v:
                 parts = []
                 for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):

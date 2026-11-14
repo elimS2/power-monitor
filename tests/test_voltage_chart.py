@@ -390,6 +390,24 @@ class OutdoorSampleTests(unittest.TestCase):
         samples = database.weather_outdoor_samples(start, start + 3600)
         self.assertEqual(samples, [(start - 600, 3.0), (start + 60, 4.2)])
 
+    def test_alerts_follow_the_basement_until_the_switch_is_flipped(self):
+        apt = database.apartment_inverter_id()
+        house = database.house_inverter_record()["id"]
+        database.save_deye_log(grid_v_l1=243, grid_v_l2=0, grid_v_l3=0, inverter_id=apt)
+        database.save_deye_log(grid_v_l1=247, grid_v_l2=245, grid_v_l3=246, inverter_id=house)
+        previous = database.NOTIFY_GRID_SOURCE
+        try:
+            database.NOTIFY_GRID_SOURCE = "house"
+            chosen = database.notify_grid_inverter_id()
+            self.assertEqual(chosen, house)
+            self.assertTrue(database.has_all_three_phases_voltage(inverter_id=chosen))
+            database.NOTIFY_GRID_SOURCE = "apartment"
+            chosen = database.notify_grid_inverter_id()
+            self.assertEqual(chosen, apt)
+            self.assertFalse(database.has_all_three_phases_voltage(inverter_id=chosen))
+        finally:
+            database.NOTIFY_GRID_SOURCE = previous
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -111,6 +111,7 @@ from database import (
     apartment_inverter_id,
     deye_recent_power,
     enabled_inverter_targets,
+    notify_grid_inverter_id,
     inverter_battery_kwh,
     house_inverter_record,
     save_heartbeat,
@@ -599,8 +600,8 @@ async def lifespan(_app: FastAPI):
     task = asyncio.create_task(bg_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
-        if kv_get("voltage_anomaly") == "1" and has_grid_voltage_now():
-            trend = deye_voltage_trend(1000)
+        if kv_get("voltage_anomaly") == "1" and has_grid_voltage_now(inverter_id=notify_grid_inverter_id()):
+            trend = deye_voltage_trend(1000, inverter_id=notify_grid_inverter_id())
             if trend == "high":
                 await update_chat_photo(False, voltage="high", is_voltage_notification=True)
             elif trend == "low":
@@ -648,25 +649,25 @@ app.include_router(static_router)
 def get_display_status() -> dict:
     """
     Single source of truth for power/voltage status. Used by dashboard (and must match Telegram logic).
-    Uses Deye phases only (no plugs). Returns: {status_cls, status_text, icon}
+    Uses the inverter selected by NOTIFY_GRID_SOURCE, not the plugs. Returns: {status_cls, status_text, icon}
     """
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
-    phases_ok = has_all_three_phases_voltage()
-    phases_mixed = has_grid_voltage_now() and not phases_ok
+    phases_ok = has_all_three_phases_voltage(inverter_id=notify_grid_inverter_id())
+    phases_mixed = has_grid_voltage_now(inverter_id=notify_grid_inverter_id()) and not phases_ok
 
     slot = dtek.current_slot_status()
     is_scheduled = slot in ("maybe", "off") if slot else False
 
     # Voltage anomaly: mixed phases (e.g. L1+L3 ok, L2=0)
     if phases_mixed:
-        trend = deye_voltage_trend(1000)
+        trend = deye_voltage_trend(1000, inverter_id=notify_grid_inverter_id())
         s = VOLTAGE_STATUS.get(trend, VOLTAGE_STATUS[None])
         return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
 
     # Voltage anomaly: all phases gone, was high before
     if voltage_anomaly and not phases_ok and not phases_mixed:
-        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled)
+        trend = deye_voltage_trend(1000, is_scheduled=is_scheduled, inverter_id=notify_grid_inverter_id())
         if trend == "high":
             s = VOLTAGE_STATUS["high"]
             return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
