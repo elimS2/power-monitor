@@ -127,6 +127,47 @@ async def _send_voltage_recovery() -> None:
     await update_chat_photo(False, message_to_send=msg, is_voltage_notification=True)
 
 
+async def _notify_high_voltage(voltage_alerted: bool) -> None:
+    """All three phases are still live and each is above 250 V."""
+    from power_monitor import update_chat_photo
+
+    if voltage_alerted:
+        kv_set("voltage_ok_count", "0")
+        return
+    if _voltage_suppressed() or not _voltage_can_send_problem():
+        return
+    now = time.time()
+    problem_count = int(kv_get("voltage_problem_count") or "0") + 1
+    kv_set("voltage_problem_count", str(problem_count))
+    kv_set("voltage_ok_count", "0")
+    if problem_count < VOLTAGE_CONFIRM_COUNT:
+        return
+    kv_set("voltage_problem_count", "0")
+    cutoff = now - VOLTAGE_UNSTABLE_WINDOW_SEC
+    if count_voltage_problem_events_since(cutoff) >= VOLTAGE_UNSTABLE_CHANGES_THRESHOLD:
+        kv_set("voltage_unstable_until", str(now + VOLTAGE_UNSTABLE_SUPPRESS_SEC))
+        kv_set("voltage_anomaly", "1")
+        save_event("voltage_issue")
+        log.warning("VOLTAGE UNSTABLE — suppress 15 min")
+        msg = f"\u26a1 {_ts_fmt_hm(now)} Нестабільна напруга\nДеталі призупинено на 15 хв"
+        await update_chat_photo(True, voltage=None, message_to_send=msg, is_voltage_notification=True)
+        return
+    v = last_nonzero_grid_voltage(inverter_id=_grid_id())
+    parts = []
+    if v:
+        for phase, key in (("L1", "grid_v_l1"), ("L2", "grid_v_l2"), ("L3", "grid_v_l3")):
+            val = v.get(key)
+            parts.append(f"{phase}={val:.0f} В" if val is not None else f"{phase}=—")
+    s = VOLTAGE_STATUS["high"]
+    msg = f"\u26a1 {_ts_fmt_hm(now)} {s['text']}"
+    if parts:
+        msg += f"\n\U0001f4a0 Напруга: {', '.join(parts)}"
+    save_event(s["event"])
+    kv_set("voltage_anomaly", "1")
+    log.warning("VOLTAGE HIGH detected (all phases above 250)")
+    await update_chat_photo(False, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
+
+
 async def analyze():
     """Detect outages and voltage anomalies. Uses power_monitor for notifications (lazy import)."""
     from power_monitor import tg_send, update_chat_photo, _tg_inline_button
@@ -145,7 +186,11 @@ async def analyze():
             phases_mixed = has_grid_voltage_now(inverter_id=_grid_id()) and not phases_ok
 
             if phases_ok:
-                if voltage_alerted:
+                high = deye_voltage_trend(1000, inverter_id=_grid_id()) == "high"
+                if high and not is_down:
+                    await _notify_high_voltage(voltage_alerted)
+                    return
+                if voltage_alerted and not high:
                     ok_count = int(kv_get("voltage_ok_count") or "0") + 1
                     kv_set("voltage_ok_count", str(ok_count))
                     kv_set("voltage_problem_count", "0")
@@ -172,6 +217,8 @@ async def analyze():
                     if nxt:
                         msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
                     await update_chat_photo(False, message_to_send=msg)
+                    if high:
+                        await _notify_high_voltage(voltage_alerted)
             else:
                 if voltage_alerted and phases_mixed:
                     kv_set("voltage_ok_count", "0")
@@ -414,7 +461,12 @@ async def analyze():
             await update_chat_photo(True, message_to_send=msg)
 
         elif latest_alive:
-            kv_set("voltage_anomaly", "0")
+            high = deye_voltage_trend(1000, inverter_id=_grid_id()) == "high"
+            if high and not is_down:
+                await _notify_high_voltage(voltage_alerted)
+                return
+            if not high:
+                kv_set("voltage_anomaly", "0")
             if not is_down:
                 return
             now = time.time()
@@ -446,6 +498,8 @@ async def analyze():
             if nxt:
                 msg += f"\n\U0001f4c5 Наступне відключення: {nxt}"
             await update_chat_photo(False, message_to_send=msg)
+            if high:
+                await _notify_high_voltage(voltage_alerted)
 
 
 async def watchdog():

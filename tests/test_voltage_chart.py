@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -407,6 +408,31 @@ class OutdoorSampleTests(unittest.TestCase):
             self.assertFalse(database.has_all_three_phases_voltage(inverter_id=chosen))
         finally:
             database.NOTIFY_GRID_SOURCE = previous
+
+    def test_all_live_phases_above_250_are_high_voltage(self):
+        apt = database.apartment_inverter_id()
+        start = time.time()
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
+                   VALUES (?,?,?,?,?)""",
+                (251.0, 252.0, 253.0, start, apt),
+            )
+        self.assertEqual(database.deye_voltage_trend(inverter_id=apt), "high")
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
+                   VALUES (?,?,?,?,?)""",
+                (250.0, 260.0, 260.0, start + 30, apt),
+            )
+        self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
+                   VALUES (?,?,?,?,?)""",
+                (249.0, 260.0, 260.0, start + 60, apt),
+            )
+        self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
 
 
 if __name__ == "__main__":

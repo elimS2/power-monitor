@@ -656,6 +656,10 @@ def get_display_status() -> dict:
     phases_ok = has_all_three_phases_voltage(inverter_id=notify_grid_inverter_id())
     phases_mixed = has_grid_voltage_now(inverter_id=notify_grid_inverter_id()) and not phases_ok
 
+    if phases_ok and deye_voltage_trend(1000, inverter_id=notify_grid_inverter_id()) == "high":
+        s = VOLTAGE_STATUS["high"]
+        return {"status_cls": "down", "status_text": s["text"], "icon": s["icon"], "voltage": s["voltage"]}
+
     slot = dtek.current_slot_status()
     is_scheduled = slot in ("maybe", "off") if slot else False
 

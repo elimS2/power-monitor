@@ -2111,12 +2111,14 @@ def deye_voltage_trend(
     is_scheduled: bool | None = None,
     all_absent_n: int = 23,
     all_absent_drop: int = 3,
+    all_present_high_v: float = 250.0,
     inverter_id: int | None = None,
 ) -> str | None:
     """
     Висока/низька при змішаному або повністю відсутньому стані.
-    high: 1) змішаний стан і хоча б одна присутня > 240; 2) змішаний стан і 2 відсутні фази — обидві мали
-      (23, -3, середнє 20) > 240; 3) всі відсутні, не за графіком, хоча б 2 з 3 фаз так само > 240.
+    high: 1) усі три фази живі і кожна вище 250; 2) змішаний стан і хоча б одна присутня > 240;
+      3) змішаний стан і 2 відсутні фази — обидві мали (23, -3, середнє 20) > 240;
+      4) всі відсутні, не за графіком, хоча б 2 з 3 фаз так само > 240.
     low: тренд по відсутніх падає або present_avg ≤ 190.
     """
     iid = _scoped_inverter(inverter_id)
@@ -2129,6 +2131,10 @@ def deye_voltage_trend(
     present_keys = [k for k, v in phase_keys if v is not None and v > 0]
 
     if not absent_keys:
+        fresh = time.time() - float(latest["ts"]) <= 300
+        present_values = [v for _, v in phase_keys]
+        if fresh and all(v is not None and float(v) > all_present_high_v for v in present_values):
+            return "high"
         return None
 
     if not present_keys:
