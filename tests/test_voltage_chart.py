@@ -409,46 +409,46 @@ class OutdoorSampleTests(unittest.TestCase):
         finally:
             database.NOTIFY_GRID_SOURCE = previous
 
-    def test_all_live_phases_above_250_are_high_voltage(self):
+    def test_one_live_phase_above_245_is_high_voltage(self):
         apt = database.apartment_inverter_id()
         start = time.time()
         with database._conn() as db:
             db.execute(
                 """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
                    VALUES (?,?,?,?,?)""",
-                (251.0, 252.0, 253.0, start, apt),
+                (246.0, 230.0, 230.0, start, apt),
             )
         self.assertEqual(database.deye_voltage_trend(inverter_id=apt), "high")
         with database._conn() as db:
             db.execute(
                 """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
                    VALUES (?,?,?,?,?)""",
-                (250.0, 260.0, 260.0, start + 30, apt),
+                (245.0, 245.0, 245.0, start + 30, apt),
             )
         self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
         with database._conn() as db:
             db.execute(
                 """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
                    VALUES (?,?,?,?,?)""",
-                (249.0, 260.0, 260.0, start + 60, apt),
+                (244.0, 244.0, 244.0, start + 60, apt),
             )
         self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
 
-    def test_all_live_phases_at_or_below_190_are_low_voltage(self):
+    def test_one_live_phase_below_185_is_low_voltage(self):
         apt = database.apartment_inverter_id()
         start = time.time()
         with database._conn() as db:
             db.execute(
                 """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
                    VALUES (?,?,?,?,?)""",
-                (180.0, 185.0, 190.0, start, apt),
+                (184.0, 230.0, 230.0, start, apt),
             )
         self.assertEqual(database.deye_voltage_trend(inverter_id=apt), "low")
         with database._conn() as db:
             db.execute(
                 """INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id)
                    VALUES (?,?,?,?,?)""",
-                (180.0, 185.0, 191.0, start + 30, apt),
+                (185.0, 230.0, 230.0, start + 30, apt),
             )
         self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
 

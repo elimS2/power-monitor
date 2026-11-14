@@ -128,7 +128,7 @@ async def _send_voltage_recovery() -> None:
 
 
 async def _notify_live_voltage(voltage_alerted: bool, level: str) -> None:
-    """All three phases are live: each above 250 V, or each at or below 190 V."""
+    """All three phases are live: one above 245 V, or one below 185 V."""
     from power_monitor import update_chat_photo
 
     if voltage_alerted:
