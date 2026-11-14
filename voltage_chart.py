@@ -18,7 +18,7 @@ SOC_COLOR = "#a78bfa"
 TEMP_BATT_COLOR = "#22d3ee"
 TEMP_RAD_COLOR = "#fbbf24"
 TEMP_DC_COLOR = "#f472b6"
-TEMP_OUT_COLOR = "#93c5fd"
+TEMP_OUT_COLOR = "#f8fafc"
 TEMP_MIN = -20.0
 TEMP_MAX = 100.0
 OUTDOOR_HOLD_SEC = 35 * 60
@@ -579,7 +579,7 @@ def stamp_outdoor(buckets: list[dict], samples: list[tuple[float, float]]) -> li
 def _temp_legend() -> str:
     items = (
         (TEMP_BATT_COLOR, "line", "батарея"),
-        (TEMP_OUT_COLOR, "line", "надворі"),
+        (TEMP_OUT_COLOR, "line", "вулиця"),
         (TEMP_RAD_COLOR, "line", "радіатор"),
         (TEMP_DC_COLOR, "line", "трансформатор"),
         ("#7c4a32", "box", "без світла за графіком"),
