@@ -199,9 +199,23 @@ def init_db():
                 hosting    INTEGER NOT NULL DEFAULT 0,
                 proxy      INTEGER NOT NULL DEFAULT 0,
                 ok         INTEGER NOT NULL DEFAULT 0,
-                looked_up  REAL NOT NULL
+                looked_up  REAL NOT NULL,
+                alias      TEXT,
+                note       TEXT,
+                hostname   TEXT,
+                hostname_at REAL
             )
         """)
+        for col, typedef in (
+            ("alias", "TEXT"),
+            ("note", "TEXT"),
+            ("hostname", "TEXT"),
+            ("hostname_at", "REAL"),
+        ):
+            try:
+                db.execute(f"ALTER TABLE ip_info ADD COLUMN {col} {typedef}")
+            except sqlite3.OperationalError:
+                pass
         db.executescript("""
             CREATE TABLE IF NOT EXISTS breaker_sample (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1082,7 +1096,8 @@ def ip_info_for(ips: list[str]) -> dict[str, dict]:
     marks = ",".join("?" for _ in ips)
     with _conn() as db:
         rows = db.execute(
-            f"""SELECT ip, country, region, city, isp, org, asn, hosting, proxy, ok, looked_up
+            f"""SELECT ip, country, region, city, isp, org, asn, hosting, proxy, ok, looked_up,
+                       alias, note, hostname, hostname_at
                 FROM ip_info WHERE ip IN ({marks})""",
             ips,
         ).fetchall()
@@ -1102,6 +1117,32 @@ def ip_info_save(rows: list[tuple]) -> None:
                  isp=excluded.isp, org=excluded.org, asn=excluded.asn,
                  hosting=excluded.hosting, proxy=excluded.proxy,
                  ok=excluded.ok, looked_up=excluded.looked_up""",
+            rows,
+        )
+
+
+def ip_profile_save(ip: str, alias: str, note: str) -> None:
+    """Remember a name and a note. Does not touch the looked-up description."""
+    with _conn() as db:
+        db.execute(
+            """INSERT INTO ip_info(ip, hosting, proxy, ok, looked_up, alias, note)
+               VALUES(?, 0, 0, 0, 0, ?, ?)
+               ON CONFLICT(ip) DO UPDATE SET
+                 alias=excluded.alias, note=excluded.note""",
+            (ip, alias, note),
+        )
+
+
+def ip_hostname_save(rows: list[tuple]) -> None:
+    """Remember a reverse name and when it was asked. Leaves the note alone."""
+    if not rows:
+        return
+    with _conn() as db:
+        db.executemany(
+            """INSERT INTO ip_info(ip, hosting, proxy, ok, looked_up, hostname, hostname_at)
+               VALUES(?, 0, 0, 0, 0, ?, ?)
+               ON CONFLICT(ip) DO UPDATE SET
+                 hostname=excluded.hostname, hostname_at=excluded.hostname_at""",
             rows,
         )
 

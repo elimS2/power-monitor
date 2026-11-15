@@ -329,3 +329,24 @@ def ep_admin_access(key: str = Query(""), day: str = Query("")):
     except ValueError:
         return JSONResponse({"error": "bad day"}, status_code=400)
     return access_view(day)
+
+
+@router.post("/ip-note")
+async def ep_admin_ip_note(request: Request, key: str = Query("")):
+    """Save a nickname and a note for one address. Admin only."""
+    import re
+
+    from database import ip_profile_save
+
+    check_admin(key)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ip = str(body.get("ip") or "").strip()[:64]
+    if not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", ip):
+        return JSONResponse({"error": "bad ip"}, status_code=400)
+    alias = str(body.get("alias") or "").strip()[:80]
+    note = str(body.get("note") or "").strip()[:400]
+    ip_profile_save(ip, alias, note)
+    return {"ok": True, "ip": ip}

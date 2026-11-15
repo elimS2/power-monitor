@@ -193,6 +193,25 @@ def kind_label(hosting: int, proxy: int) -> str:
     return ""
 
 
+def lookup_hostname(ip: str) -> str:
+    """Reverse name, or an empty string when the address has none. Bounded wait."""
+    import socket
+    import threading
+
+    box: dict[str, str] = {}
+
+    def run():
+        try:
+            box["name"] = socket.gethostbyaddr(ip)[0] or ""
+        except Exception:
+            box["name"] = ""
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(1.2)
+    return (box.get("name") or "")[:200]
+
+
 def _stale(info: dict, now: float) -> bool:
     age = now - float(info.get("looked_up") or 0)
     if info.get("ok"):
@@ -218,11 +237,37 @@ def fetch_ip_batch(ips: list[str]) -> list[dict]:
     return [row for row in data if isinstance(row, dict)]
 
 
-def enrich_rows(rows: list[dict], fetch, now: float | None = None) -> None:
+def _hostname_due(info: dict | None, now: float) -> bool:
+    if not info or info.get("hostname_at") is None:
+        return True
+    return now - float(info["hostname_at"]) > _OK_AGE
+
+
+def _resolve_names(ips: list[str], lookup) -> list[tuple[str, str]]:
+    import concurrent.futures
+
+    if not ips:
+        return []
+    done = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(lookup, ip): ip for ip in ips}
+        finished, _pending = concurrent.futures.wait(futures, timeout=4)
+        for fut in finished:
+            ip = futures[fut]
+            try:
+                done.append((ip, (fut.result() or "")[:200]))
+            except Exception:
+                done.append((ip, ""))
+    return done
+
+
+def enrich_rows(rows: list[dict], fetch, now: float | None = None, host_lookup=None) -> None:
     """Fill country, city, provider and network from the cache. Look up only the gaps."""
-    from database import ip_info_for, ip_info_save
+    from database import ip_hostname_save, ip_info_for, ip_info_save
 
     now = time.time() if now is None else now
+    if host_lookup is None:
+        host_lookup = lookup_hostname
     ips = []
     for row in rows:
         ip = row.get("ip") or ""
@@ -261,6 +306,14 @@ def enrich_rows(rows: list[dict], fetch, now: float | None = None) -> None:
         if saving:
             ip_info_save(saving)
             cached = ip_info_for(ips)
+    need_names = [
+        ip for ip in ips
+        if is_public_ip(ip) and _hostname_due(cached.get(ip), now)
+    ]
+    if need_names:
+        named = _resolve_names(need_names[:20], host_lookup)
+        ip_hostname_save([(ip, name, now) for ip, name in named])
+        cached = ip_info_for(ips)
     for row in rows:
         info = cached.get(row.get("ip") or "") or {}
         row["country"] = info.get("country") or ""
@@ -269,6 +322,9 @@ def enrich_rows(rows: list[dict], fetch, now: float | None = None) -> None:
         row["org"] = info.get("org") or ""
         row["asn"] = info.get("asn") or ""
         row["net"] = kind_label(int(info.get("hosting") or 0), int(info.get("proxy") or 0))
+        row["hostname"] = info.get("hostname") or ""
+        row["alias"] = info.get("alias") or ""
+        row["note"] = info.get("note") or ""
         looked = info.get("looked_up")
         row["updated"] = (
             datetime.fromtimestamp(float(looked), UA_TZ).strftime("%d.%m.%Y") if looked else ""

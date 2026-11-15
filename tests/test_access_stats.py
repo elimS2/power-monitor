@@ -101,6 +101,7 @@ class AccessParseTests(unittest.TestCase):
             {"ip": "192.168.88.2"},
         ]
         asked = []
+        names = []
 
         def fetch(ips):
             asked.append(list(ips))
@@ -117,18 +118,31 @@ class AccessParseTests(unittest.TestCase):
                 "proxy": False,
             }]
 
-        access_stats.enrich_rows(rows, fetch, now=1_000_000)
+        def hosts(ip):
+            names.append(ip)
+            return "guest.example"
+
+        database.ip_profile_save("203.0.113.9", "Микита", "з будинку")
+        access_stats.enrich_rows(rows, fetch, now=1_000_000, host_lookup=hosts)
         self.assertEqual(asked, [["203.0.113.9"]])
+        self.assertEqual(names, ["203.0.113.9"])
         self.assertEqual(rows[0]["country"], "Ukraine")
         self.assertEqual(rows[0]["place"], "Brovary, Kyiv")
         self.assertEqual(rows[0]["isp"], "Example ISP")
+        self.assertEqual(rows[0]["hostname"], "guest.example")
+        self.assertEqual(rows[0]["alias"], "Микита")
+        self.assertEqual(rows[0]["note"], "з будинку")
         self.assertEqual(rows[0]["net"], "")
         self.assertEqual(rows[0]["updated"], "12.01.1970")
         self.assertEqual(rows[1]["country"], "")
-        access_stats.enrich_rows(rows, fetch, now=1_000_100)
+        access_stats.enrich_rows(rows, fetch, now=1_000_100, host_lookup=hosts)
         self.assertEqual(len(asked), 1)
-        access_stats.enrich_rows(rows, fetch, now=1_000_000 + 31 * 86400)
+        self.assertEqual(len(names), 1)
+        self.assertEqual(rows[0]["alias"], "Микита")
+        access_stats.enrich_rows(rows, fetch, now=1_000_000 + 31 * 86400, host_lookup=hosts)
         self.assertEqual(len(asked), 2)
+        self.assertEqual(len(names), 2)
+        self.assertEqual(rows[0]["alias"], "Микита")
 
     def test_datacenter_mark(self):
         self.assertEqual(access_stats.kind_label(1, 0), "датацентр")

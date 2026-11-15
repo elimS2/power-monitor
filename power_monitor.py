@@ -2438,7 +2438,7 @@ async def admin_page(key: str = Query("")):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f172a">
 <title>Адмін-портал — Power Monitor</title>
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}">
 </head><body data-pm-key="{escape(key)}">
 <h1>Power Monitor — Адмін-портал</h1>
 <p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
@@ -2500,8 +2500,8 @@ async def admin_page(key: str = Query("")):
   <a href="#access-next" id="access-next">›</a>
 </div>
 <p id="access-empty" style="display:none;color:var(--muted)">Цього дня заходів немає.</p>
-<table>
-<thead><tr><th>Ключ</th><th>Адреса</th><th>Країна</th><th>Місто</th><th>Провайдер</th><th>Компанія</th><th>Мережа</th><th>Тип</th><th>Оновлено</th><th>Відкриття</th><th>Оновлення</th><th>Останній</th></tr></thead>
+<table class="access-table">
+<thead><tr><th class="access-who">Хто</th><th class="access-where">Звідки</th><th class="access-when">За день</th><th class="access-note">Нотатка</th></tr></thead>
 <tbody id="access-body"></tbody>
 </table>
 </div>
@@ -2581,13 +2581,87 @@ async def admin_page(key: str = Query("")):
     document.getElementById('access-empty').style.display = rows.length ? 'none' : 'block';
     rows.forEach(function(row) {{
       var tr = document.createElement('tr');
-      [row.label, row.ip, row.country, row.place, row.isp, row.org, row.asn, row.net, row.updated, row.page_hits, row.poll_hits, row.last].forEach(function(val) {{
-        var td = document.createElement('td');
-        td.textContent = val;
-        tr.appendChild(td);
-      }});
+      tr.appendChild(whoCell(row));
+      tr.appendChild(whereCell(row));
+      tr.appendChild(whenCell(row));
+      tr.appendChild(noteCell(row));
       body.appendChild(tr);
     }});
+  }}
+  function textCell(val) {{
+    var td = document.createElement('td');
+    td.textContent = val == null ? '' : val;
+    return td;
+  }}
+  function stackLine(text, muted) {{
+    var line = document.createElement('div');
+    line.className = muted ? 'access-muted' : 'access-line';
+    line.textContent = text || '';
+    if (!text) line.hidden = true;
+    return line;
+  }}
+  function whoCell(row) {{
+    var td = document.createElement('td');
+    td.appendChild(stackLine(row.label));
+    td.appendChild(fieldControl(row.ip, 'alias', row.alias, 'Псевдонім'));
+    td.appendChild(stackLine(row.ip, true));
+    td.appendChild(stackLine(row.hostname, true));
+    return td;
+  }}
+  function whereCell(row) {{
+    var td = document.createElement('td');
+    var place = [row.country, row.place].filter(Boolean).join(', ');
+    td.appendChild(stackLine(place));
+    td.appendChild(stackLine(row.isp));
+    td.appendChild(stackLine(row.org, true));
+    td.appendChild(stackLine(row.asn, true));
+    var meta = [row.net, row.updated ? 'оновлено ' + row.updated : ''].filter(Boolean).join(' · ');
+    td.appendChild(stackLine(meta, true));
+    return td;
+  }}
+  function whenCell(row) {{
+    var td = document.createElement('td');
+    td.appendChild(stackLine('Відкриття ' + row.page_hits));
+    td.appendChild(stackLine('Оновлення ' + row.poll_hits));
+    td.appendChild(stackLine(row.last, true));
+    return td;
+  }}
+  function noteCell(row) {{
+    var td = document.createElement('td');
+    var input = document.createElement('textarea');
+    input.value = row.note || '';
+    input.dataset.field = 'note';
+    input.dataset.ip = row.ip;
+    input.placeholder = 'Нотатка';
+    input.addEventListener('change', function() {{ saveIpFields(input); }});
+    td.appendChild(input);
+    return td;
+  }}
+  function fieldControl(ip, field, value, placeholder) {{
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = value || '';
+    input.placeholder = placeholder || '';
+    input.dataset.field = field;
+    input.dataset.ip = ip;
+    input.addEventListener('change', function() {{ saveIpFields(input); }});
+    return input;
+  }}
+  function saveIpFields(input) {{
+    var tr = input.closest('tr');
+    var ip = input.dataset.ip;
+    var alias = tr.querySelector('[data-field=alias]').value;
+    var note = tr.querySelector('[data-field=note]').value;
+    document.querySelectorAll('[data-ip]').forEach(function(other) {{
+      if (other.dataset.ip !== ip) return;
+      if (other.dataset.field === 'alias') other.value = alias;
+      if (other.dataset.field === 'note') other.value = note;
+    }});
+    fetch('/api/admin/ip-note' + qs(), {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{ip: ip, alias: alias, note: note}})
+    }}).catch(function() {{}});
   }}
   function loadAccess(day) {{
     var url = '/api/admin/access' + qs() + (day ? '&day=' + encodeURIComponent(day) : '');
