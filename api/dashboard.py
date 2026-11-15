@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from api.deps import check_admin, check_permission
@@ -96,7 +96,10 @@ def hide_private_deye_fragment(frags: dict, allowed: list[str]) -> dict:
 
 
 @router.get("/api/dashboard-fragments")
-def ep_dashboard_fragments(key: str = Query(""), chart_shift: int = Query(0, ge=0, le=120)):
+def ep_dashboard_fragments(request: Request, key: str = Query(""), chart_shift: int = Query(0, ge=0, le=120)):
+    from access_stats import POLL, client_ip_from_request, note_access
+
+    note_access(key, client_ip_from_request(request), POLL)
     check_permission(key, "dashboard")
     from power_monitor import _build_footer_content, _build_update_fragments, online_count, record_online
 

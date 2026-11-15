@@ -311,3 +311,21 @@ async def ep_admin_key_set_permissions(label: str, request: Request, key: str = 
         role_id = int(role_id) if role_id else None
     api_key_config_set_permissions(label, sections=sec, endpoints=ep, role_id=role_id)
     return {"ok": True, "label": label, "sections": sec, "role_id": role_id, "endpoints": ep}
+
+
+@router.get("/access")
+def ep_admin_access(key: str = Query(""), day: str = Query("")):
+    """One Kyiv day of dashboard visits. Admin only. Does not build the public page."""
+    from datetime import datetime
+
+    from access_stats import access_view, parse_day
+    from config import UA_TZ
+
+    check_admin(key)
+    if not day:
+        day = datetime.now(UA_TZ).strftime("%Y-%m-%d")
+    try:
+        day = parse_day(day)
+    except ValueError:
+        return JSONResponse({"error": "bad day"}, status_code=400)
+    return access_view(day)

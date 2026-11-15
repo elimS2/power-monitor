@@ -507,6 +507,11 @@ async def bg_loop():
     breaker_carried_day = None
     while True:
         try:
+            from access_stats import flush_access
+            try:
+                flush_access()
+            except Exception:
+                log.error("access flush failed")
             today_kyiv = datetime.now(UA_TZ).strftime("%Y-%m-%d")
             if carried_day != today_kyiv:
                 carry_open_outage()
@@ -618,6 +623,11 @@ async def lifespan(_app: FastAPI):
         _setup_deye_poll_log()
         log.info("Deye polling %d enabled row(s) every %ds", len(targets), DEYE_POLL_INTERVAL_SEC)
     yield
+    try:
+        from access_stats import flush_access
+        flush_access()
+    except Exception:
+        log.error("access flush on stop failed")
     task.cancel()
 
 
@@ -1917,9 +1927,11 @@ def _key_expired_html() -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(key: str = Query("")):
+async def dashboard(request: Request, key: str = Query("")):
     from api.deps import allowed_footer_parts, allowed_sections, check_permission
+    from access_stats import PAGE, client_ip_from_request, note_access
 
+    note_access(key, client_ip_from_request(request), PAGE)
     try:
         check_permission(key, "dashboard")
     except HTTPException as e:
@@ -2434,6 +2446,7 @@ async def admin_page(key: str = Query("")):
   <button type="button" class="admin-tab btn active" data-tab="keys">Ключі API</button>
   <button type="button" class="admin-tab btn" data-tab="roles">Ролі</button>
   <button type="button" class="admin-tab btn" data-tab="notify">Сповіщення</button>
+  <button type="button" class="admin-tab btn" data-tab="access">Заходи</button>
 </div>
 <div id="admin-tab-keys">
 <h2>Ключі API</h2>
@@ -2477,6 +2490,20 @@ async def admin_page(key: str = Query("")):
 </p>
 <button type="button" id="admin-send-status-btn" class="btn" style="margin-top:0.5rem">Надіслати статус в активний канал</button>
 <span id="admin-send-status-feedback" style="margin-left:0.5rem;font-size:0.9rem"></span>
+</div>
+<div id="admin-tab-access" style="display:none">
+<h2>Заходи</h2>
+<p style="margin-bottom:0.75rem;color:var(--muted)">Одна доба. Відкриття — захід на сторінку. Оновлення — поки вкладка лишалась відкритою. Пульс роутера сюди не входить.</p>
+<div class="brk-nav">
+  <a href="#access-prev" id="access-prev">‹</a>
+  <span id="access-date">—</span>
+  <a href="#access-next" id="access-next">›</a>
+</div>
+<p id="access-empty" style="display:none;color:var(--muted)">Цього дня заходів немає.</p>
+<table>
+<thead><tr><th>Ключ</th><th>Адреса</th><th>Відкриття</th><th>Оновлення</th><th>Останній</th></tr></thead>
+<tbody id="access-body"></tbody>
+</table>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
@@ -2528,7 +2555,52 @@ async def admin_page(key: str = Query("")):
       document.getElementById('admin-tab-keys').style.display = btn.dataset.tab === 'keys' ? 'block' : 'none';
       document.getElementById('admin-tab-roles').style.display = btn.dataset.tab === 'roles' ? 'block' : 'none';
       document.getElementById('admin-tab-notify').style.display = btn.dataset.tab === 'notify' ? 'block' : 'none';
+      document.getElementById('admin-tab-access').style.display = btn.dataset.tab === 'access' ? 'block' : 'none';
+      if (btn.dataset.tab === 'access') loadAccess(accessDate);
     }});
+  }});
+  var accessDate = '';
+  function shiftAccessDay(iso, days) {{
+    var parts = iso.split('-');
+    var shifted = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2] + days));
+    var month = shifted.getUTCMonth() + 1;
+    var dayNum = shifted.getUTCDate();
+    return shifted.getUTCFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (dayNum < 10 ? '0' : '') + dayNum;
+  }}
+  function paintAccess(data) {{
+    if (!data || !data.day) return;
+    accessDate = data.day;
+    var shown = data.day.split('-');
+    document.getElementById('access-date').textContent = shown[2] + '.' + shown[1] + '.' + shown[0];
+    var next = document.getElementById('access-next');
+    if (data.day >= data.today) next.classList.add('is-disabled');
+    else next.classList.remove('is-disabled');
+    var body = document.getElementById('access-body');
+    while (body.firstChild) body.removeChild(body.firstChild);
+    var rows = data.rows || [];
+    document.getElementById('access-empty').style.display = rows.length ? 'none' : 'block';
+    rows.forEach(function(row) {{
+      var tr = document.createElement('tr');
+      [row.label, row.ip, row.page_hits, row.poll_hits, row.last].forEach(function(val) {{
+        var td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      }});
+      body.appendChild(tr);
+    }});
+  }}
+  function loadAccess(day) {{
+    var url = '/api/admin/access' + qs() + (day ? '&day=' + encodeURIComponent(day) : '');
+    fetch(url).then(function(r) {{ return r.json(); }}).then(paintAccess).catch(function() {{}});
+  }}
+  document.getElementById('access-prev').addEventListener('click', function(ev) {{
+    ev.preventDefault();
+    if (accessDate) loadAccess(shiftAccessDay(accessDate, -1));
+  }});
+  document.getElementById('access-next').addEventListener('click', function(ev) {{
+    ev.preventDefault();
+    if (!accessDate || document.getElementById('access-next').classList.contains('is-disabled')) return;
+    loadAccess(shiftAccessDay(accessDate, 1));
   }});
   var voltageToggle = document.getElementById('admin-voltage-notify-toggle');
   if (voltageToggle) {{

@@ -176,6 +176,17 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_deye_ts ON deye_log(ts);
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS access_day (
+                day        TEXT NOT NULL,
+                label      TEXT NOT NULL,
+                ip         TEXT NOT NULL,
+                page_hits  INTEGER NOT NULL,
+                poll_hits  INTEGER NOT NULL,
+                last_ts    REAL NOT NULL,
+                PRIMARY KEY (day, label, ip)
+            )
+        """)
         db.executescript("""
             CREATE TABLE IF NOT EXISTS breaker_sample (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1019,6 +1030,34 @@ def api_key_config_list() -> list[dict]:
             "updated_at": r["updated_at"],
         })
     return result
+
+
+def access_day_merge(rows: list[tuple]) -> None:
+    """Add counts onto one row per Kyiv day, key label, and address."""
+    if not rows:
+        return
+    with _conn() as db:
+        db.executemany(
+            """INSERT INTO access_day(day, label, ip, page_hits, poll_hits, last_ts)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(day, label, ip) DO UPDATE SET
+                 page_hits = page_hits + excluded.page_hits,
+                 poll_hits = poll_hits + excluded.poll_hits,
+                 last_ts = MAX(access_day.last_ts, excluded.last_ts)""",
+            rows,
+        )
+
+
+def access_day_for(day: str) -> list[dict]:
+    """One day, latest visit first."""
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT label, ip, page_hits, poll_hits, last_ts
+               FROM access_day WHERE day=?
+               ORDER BY last_ts DESC, label, ip""",
+            (day,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def save_heartbeat(p204: int, p175: int):
