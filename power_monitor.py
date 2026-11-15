@@ -2437,9 +2437,8 @@ async def admin_page(key: str = Query("")):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f172a">
-<title>Адмін-портал — Power Monitor</title>
-<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}">
-</head><body data-pm-key="{escape(key)}">
+<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}-flow">
+</head><body class="admin-page" data-pm-key="{escape(key)}">
 <h1>Power Monitor — Адмін-портал</h1>
 <p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
 <div class="admin-tabs" style="margin-bottom:1.5rem">
@@ -2491,19 +2490,22 @@ async def admin_page(key: str = Query("")):
 <button type="button" id="admin-send-status-btn" class="btn" style="margin-top:0.5rem">Надіслати статус в активний канал</button>
 <span id="admin-send-status-feedback" style="margin-left:0.5rem;font-size:0.9rem"></span>
 </div>
-<div id="admin-tab-access" style="display:none">
-<h2>Заходи</h2>
-<p style="margin-bottom:0.75rem;color:var(--muted)">Одна доба. Відкриття — захід на сторінку. Оновлення — поки вкладка лишалась відкритою. Пульс роутера сюди не входить.</p>
-<div class="brk-nav">
+<div id="admin-tab-access" class="access-wow" style="display:none">
+<div class="access-wow-ambient"></div>
+<div class="access-wow-shell">
+<div class="access-wow-hero">
+  <span class="access-wow-badge">Заходи</span>
+  <h2 class="access-wow-title">Хто <span class="access-wow-accent">заходив</span></h2>
+  <p class="access-wow-lead">Одна доба. Відкриття — захід на сторінку. Оновлення — поки вкладка лишалась відкритою. Пульс роутера сюди не входить.</p>
+</div>
+<div class="access-wow-nav brk-nav">
   <a href="#access-prev" id="access-prev">‹</a>
   <span id="access-date">—</span>
   <a href="#access-next" id="access-next">›</a>
 </div>
-<p id="access-empty" style="display:none;color:var(--muted)">Цього дня заходів немає.</p>
-<table class="access-table">
-<thead><tr><th class="access-who">Хто</th><th class="access-where">Звідки</th><th class="access-when">За день</th><th class="access-note">Нотатка</th></tr></thead>
-<tbody id="access-body"></tbody>
-</table>
+<p id="access-empty" class="access-wow-empty" style="display:none">Цього дня заходів немає.</p>
+<div id="access-body" class="access-wow-list"></div>
+</div>
 </div>
 <div id="admin-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center" class="admin-modal">
 <div style="background:var(--bg);padding:1.5rem;border-radius:8px;max-width:480px;width:90%">
@@ -2580,12 +2582,13 @@ async def admin_page(key: str = Query("")):
     var rows = data.rows || [];
     document.getElementById('access-empty').style.display = rows.length ? 'none' : 'block';
     rows.forEach(function(row) {{
-      var tr = document.createElement('tr');
-      tr.appendChild(whoCell(row));
-      tr.appendChild(whereCell(row));
-      tr.appendChild(whenCell(row));
-      tr.appendChild(noteCell(row));
-      body.appendChild(tr);
+      var card = document.createElement('article');
+      card.className = 'access-card';
+      card.appendChild(whoCell(row));
+      card.appendChild(whereCell(row));
+      card.appendChild(whenCell(row));
+      card.appendChild(noteCell(row));
+      body.appendChild(card);
     }});
   }}
   function textCell(val) {{
@@ -2600,58 +2603,107 @@ async def admin_page(key: str = Query("")):
     if (!text) line.hidden = true;
     return line;
   }}
+  function block(title) {{
+    var el = document.createElement('div');
+    el.className = 'access-block';
+    el.appendChild(stackLine(title)).className = 'access-kicker';
+    return el;
+  }}
   function whoCell(row) {{
-    var td = document.createElement('td');
-    td.appendChild(stackLine(row.label));
-    td.appendChild(fieldControl(row.ip, 'alias', row.alias, 'Псевдонім'));
-    td.appendChild(stackLine(row.ip, true));
-    td.appendChild(stackLine(row.hostname, true));
-    return td;
+    var el = block('Хто');
+    var facts = factRow();
+    facts.appendChild(fact('Ключ', row.label || ''));
+    var alias = optionalField(row, 'alias', 'Псевдонім', false);
+    alias.classList.add('access-fact', 'access-fact-add');
+    facts.appendChild(alias);
+    facts.appendChild(fact('Адреса', row.ip || '', true));
+    if (row.hostname) facts.appendChild(fact('Домен', row.hostname, true));
+    el.appendChild(facts);
+    return el;
   }}
   function whereCell(row) {{
-    var td = document.createElement('td');
-    var place = [row.country, row.place].filter(Boolean).join(', ');
-    td.appendChild(stackLine(place));
-    td.appendChild(stackLine(row.isp));
-    td.appendChild(stackLine(row.org, true));
-    td.appendChild(stackLine(row.asn, true));
-    var meta = [row.net, row.updated ? 'оновлено ' + row.updated : ''].filter(Boolean).join(' · ');
-    td.appendChild(stackLine(meta, true));
-    return td;
+    var el = block('Звідки');
+    var facts = factRow();
+    if (row.country) facts.appendChild(fact('Країна', row.country));
+    if (row.place) facts.appendChild(fact('Місто', row.place));
+    if (row.isp) facts.appendChild(fact('Провайдер', row.isp));
+    if (row.org) facts.appendChild(fact('Компанія', row.org, true));
+    if (row.asn) facts.appendChild(fact('Мережа', row.asn, true));
+    if (row.net) facts.appendChild(fact('Тип', row.net));
+    if (row.updated) facts.appendChild(fact('Оновлено', row.updated, true));
+    el.appendChild(facts);
+    return el;
   }}
   function whenCell(row) {{
-    var td = document.createElement('td');
-    td.appendChild(stackLine('Відкриття ' + row.page_hits));
-    td.appendChild(stackLine('Оновлення ' + row.poll_hits));
-    td.appendChild(stackLine(row.last, true));
-    return td;
+    var el = block('За день');
+    var facts = factRow();
+    facts.appendChild(fact('Відкриття', String(row.page_hits)));
+    facts.appendChild(fact('Оновлення', String(row.poll_hits)));
+    facts.appendChild(fact('Час', row.last || '', true));
+    el.appendChild(facts);
+    return el;
+  }}
+  function factRow() {{
+    var row = document.createElement('div');
+    row.className = 'access-facts';
+    return row;
+  }}
+  function fact(label, text, muted) {{
+    return factNode(label, stackLine(text, muted));
+  }}
+  function factNode(label, node) {{
+    var wrap = document.createElement('div');
+    wrap.className = 'access-fact';
+    var kicker = document.createElement('div');
+    kicker.className = 'access-kicker';
+    kicker.textContent = label;
+    wrap.appendChild(kicker);
+    wrap.appendChild(node);
+    return wrap;
   }}
   function noteCell(row) {{
-    var td = document.createElement('td');
-    var input = document.createElement('textarea');
-    input.value = row.note || '';
-    input.dataset.field = 'note';
-    input.dataset.ip = row.ip;
-    input.placeholder = 'Нотатка';
-    input.addEventListener('change', function() {{ saveIpFields(input); }});
-    td.appendChild(input);
-    return td;
+    var el = document.createElement('div');
+    el.className = 'access-block access-note-block';
+    el.appendChild(optionalField(row, 'note', 'Нотатка', true));
+    return el;
   }}
-  function fieldControl(ip, field, value, placeholder) {{
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.value = value || '';
-    input.placeholder = placeholder || '';
-    input.dataset.field = field;
-    input.dataset.ip = ip;
-    input.addEventListener('change', function() {{ saveIpFields(input); }});
-    return input;
+  function optionalField(row, field, label, multiline) {{
+    var slot = document.createElement('div');
+    function showEditor(value, focus) {{
+      slot.textContent = '';
+      var input = multiline ? document.createElement('textarea') : document.createElement('input');
+      if (!multiline) input.type = 'text';
+      input.value = value || '';
+      input.placeholder = label;
+      input.dataset.field = field;
+      input.dataset.ip = row.ip;
+      input.addEventListener('change', function() {{ saveIpFields(input); }});
+      input.addEventListener('blur', function() {{
+        if (!input.value.trim()) showAdder();
+      }});
+      slot.appendChild(input);
+      if (focus) input.focus();
+    }}
+    function showAdder() {{
+      slot.textContent = '';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'access-add';
+      btn.textContent = '+ ' + label;
+      btn.addEventListener('click', function() {{ showEditor('', true); }});
+      slot.appendChild(btn);
+    }}
+    if ((multiline ? row.note : row.alias) && String(multiline ? row.note : row.alias).trim()) showEditor(multiline ? row.note : row.alias, false);
+    else showAdder();
+    return slot;
   }}
   function saveIpFields(input) {{
-    var tr = input.closest('tr');
+    var tr = input.closest('.access-card');
     var ip = input.dataset.ip;
-    var alias = tr.querySelector('[data-field=alias]').value;
-    var note = tr.querySelector('[data-field=note]').value;
+    var aliasEl = tr.querySelector('[data-field=alias]');
+    var noteEl = tr.querySelector('[data-field=note]');
+    var alias = aliasEl ? aliasEl.value : '';
+    var note = noteEl ? noteEl.value : '';
     document.querySelectorAll('[data-ip]').forEach(function(other) {{
       if (other.dataset.ip !== ip) return;
       if (other.dataset.field === 'alias') other.value = alias;

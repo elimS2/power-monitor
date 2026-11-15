@@ -3,6 +3,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text);
        max-width: 800px; margin: 0 auto; padding: 1rem; opacity: 0; transition: opacity 0.15s ease; }
+body.admin-page { max-width: none; padding: 1rem 1.5rem; }
 body.pm-ready { opacity: 1; }
 h1 { text-align: center; font-size: 1.3rem; color: var(--muted); margin-bottom: 1rem; }
 .status { text-align: center; font-size: 1.8rem; font-weight: 700; padding: 1.2rem;
@@ -28,12 +29,123 @@ table { width: 100%; border-collapse: collapse; background: var(--card); border-
 .access-table .access-note { width: 24%; }
 .access-line, .access-muted { display: block; line-height: 1.35; }
 .access-muted { color: var(--muted); font-size: 0.78rem; }
-.access-table input, .access-table textarea {
-  width: 100%; max-width: 100%; margin-top: 0.25rem;
-  background: transparent; color: var(--text); border: 1px solid var(--border);
-  border-radius: 4px; padding: 0.25rem; font: inherit;
+.access-table input, .access-table textarea,
+.access-card input, .access-card textarea {
+  width: 100%; max-width: 100%; margin-top: 0.35rem; box-sizing: border-box;
+  color: #e2e8f0; font: inherit; line-height: 1.45;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
+  backdrop-filter: blur(10px);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.access-table textarea { min-height: 3.4rem; resize: vertical; }
+.access-card input { border-radius: 999px; padding: 0.42rem 0.9rem; }
+.access-table textarea, .access-card textarea { min-height: 4.4rem; resize: vertical; }
+.access-card input::placeholder,
+.access-card textarea::placeholder { color: #64748b; }
+.access-card input:hover,
+.access-card textarea:hover { border-color: rgba(148, 163, 184, 0.48); }
+.access-card input:focus,
+.access-card textarea:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
+}
+.access-add {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  color: #67e8f9; font: inherit; font-size: 0.82rem; font-weight: 650;
+  padding: 0.15rem 0; opacity: 0.72;
+}
+.access-add:hover { opacity: 1; }
+.access-note-block:has(.access-add) { align-self: end; }
+.access-wow {
+  --access-accent: #22d3ee;
+  position: relative;
+  margin: 0.4rem -0.4rem 0;
+  padding: 0.2rem 0.2rem 1.5rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse 90% 55% at 8% -18%, rgba(8, 145, 178, 0.22), transparent 52%),
+    radial-gradient(ellipse 70% 48% at 100% 0%, rgba(99, 102, 241, 0.16), transparent 50%),
+    radial-gradient(ellipse 55% 40% at 48% 100%, rgba(45, 212, 191, 0.1), transparent 58%);
+  overflow-x: clip;
+}
+.access-wow-ambient {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 22%, rgba(34, 211, 238, 0.08), transparent 42%),
+    radial-gradient(circle at 86% 10%, rgba(129, 140, 248, 0.09), transparent 38%);
+}
+.access-wow-shell { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 0.9rem; }
+.access-wow-badge {
+  display: inline-block; width: fit-content;
+  padding: 0.28rem 0.75rem; border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.42);
+  background: rgba(8, 145, 178, 0.16);
+  color: #67e8f9; font-size: 0.68rem; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.access-wow-title {
+  margin: 0.35rem 0 0; font-size: clamp(1.35rem, 2.4vw, 1.8rem);
+  font-weight: 800; letter-spacing: -0.03em; text-transform: none; color: var(--text);
+}
+.access-wow-accent {
+  background: linear-gradient(120deg, #22d3ee 0%, #818cf8 48%, #2dd4bf 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.access-wow-lead { margin: 0.35rem 0 0; max-width: 42rem; color: var(--muted); font-size: 0.9rem; }
+.access-wow-nav a {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  min-width: 2rem; text-align: center;
+}
+.access-wow-nav #access-date {
+  font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: 0.02em;
+}
+.access-wow-empty { color: var(--muted); }
+.access-wow-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.access-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.85rem 1.4rem;
+  position: relative;
+  padding: 0.95rem 1.05rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(15, 17, 23, 0.72);
+  box-shadow: 0 0 0 1px rgba(8, 145, 178, 0.08), 0 14px 36px rgba(2, 6, 23, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+.access-block { flex: 1 1 18rem; min-width: min(100%, 16rem); }
+.access-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 1rem;
+}
+.access-fact { min-width: 5.5rem; max-width: 100%; }
+.access-fact-add { align-self: end; min-width: 0; }
+.access-fact .access-kicker { margin-bottom: 0.12rem; }
+.access-card::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: linear-gradient(90deg, #0891b2, #818cf8, #2dd4bf, #0891b2);
+  background-size: 220% 100%;
+}
+.access-card .access-note-block { grid-column: 1 / -1; }
+.access-kicker { color: #94a3b8; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.35rem; }
+@media (max-width: 720px) {
+  .access-block { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .access-card::before { background-size: 100% 100%; }
+}
 th, td { padding: 0.5rem 0.75rem; text-align: left; font-size: 0.9rem; }
 th { background: var(--border); color: var(--muted); font-weight: 500; }
 tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
