@@ -94,6 +94,47 @@ class AccessParseTests(unittest.TestCase):
         self.assertEqual(hits[0], 1)
         self.assertEqual(hits[1], 1)
 
+    def test_ip_details_come_from_cache_and_skip_private_addresses(self):
+        self._use_temp_db()
+        rows = [
+            {"ip": "203.0.113.9"},
+            {"ip": "192.168.88.2"},
+        ]
+        asked = []
+
+        def fetch(ips):
+            asked.append(list(ips))
+            return [{
+                "status": "success",
+                "query": "203.0.113.9",
+                "country": "Ukraine",
+                "regionName": "Kyiv",
+                "city": "Brovary",
+                "isp": "Example ISP",
+                "org": "Example ISP",
+                "as": "AS1 Example",
+                "hosting": False,
+                "proxy": False,
+            }]
+
+        access_stats.enrich_rows(rows, fetch, now=1_000_000)
+        self.assertEqual(asked, [["203.0.113.9"]])
+        self.assertEqual(rows[0]["country"], "Ukraine")
+        self.assertEqual(rows[0]["place"], "Brovary, Kyiv")
+        self.assertEqual(rows[0]["isp"], "Example ISP")
+        self.assertEqual(rows[0]["net"], "")
+        self.assertEqual(rows[0]["updated"], "12.01.1970")
+        self.assertEqual(rows[1]["country"], "")
+        access_stats.enrich_rows(rows, fetch, now=1_000_100)
+        self.assertEqual(len(asked), 1)
+        access_stats.enrich_rows(rows, fetch, now=1_000_000 + 31 * 86400)
+        self.assertEqual(len(asked), 2)
+
+    def test_datacenter_mark(self):
+        self.assertEqual(access_stats.kind_label(1, 0), "датацентр")
+        self.assertEqual(access_stats.kind_label(0, 1), "проксі")
+        self.assertEqual(access_stats.place_label("Seoul", "Seoul"), "Seoul")
+
     def _use_temp_db(self):
         self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self._tmpdir.cleanup)

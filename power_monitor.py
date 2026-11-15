@@ -2501,7 +2501,7 @@ async def admin_page(key: str = Query("")):
 </div>
 <p id="access-empty" style="display:none;color:var(--muted)">Цього дня заходів немає.</p>
 <table>
-<thead><tr><th>Ключ</th><th>Адреса</th><th>Відкриття</th><th>Оновлення</th><th>Останній</th></tr></thead>
+<thead><tr><th>Ключ</th><th>Адреса</th><th>Країна</th><th>Місто</th><th>Провайдер</th><th>Компанія</th><th>Мережа</th><th>Тип</th><th>Оновлено</th><th>Відкриття</th><th>Оновлення</th><th>Останній</th></tr></thead>
 <tbody id="access-body"></tbody>
 </table>
 </div>
@@ -2581,7 +2581,7 @@ async def admin_page(key: str = Query("")):
     document.getElementById('access-empty').style.display = rows.length ? 'none' : 'block';
     rows.forEach(function(row) {{
       var tr = document.createElement('tr');
-      [row.label, row.ip, row.page_hits, row.poll_hits, row.last].forEach(function(val) {{
+      [row.label, row.ip, row.country, row.place, row.isp, row.org, row.asn, row.net, row.updated, row.page_hits, row.poll_hits, row.last].forEach(function(val) {{
         var td = document.createElement('td');
         td.textContent = val;
         tr.appendChild(td);

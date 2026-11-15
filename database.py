@@ -187,6 +187,21 @@ def init_db():
                 PRIMARY KEY (day, label, ip)
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS ip_info (
+                ip         TEXT PRIMARY KEY,
+                country    TEXT,
+                region     TEXT,
+                city       TEXT,
+                isp        TEXT,
+                org        TEXT,
+                asn        TEXT,
+                hosting    INTEGER NOT NULL DEFAULT 0,
+                proxy      INTEGER NOT NULL DEFAULT 0,
+                ok         INTEGER NOT NULL DEFAULT 0,
+                looked_up  REAL NOT NULL
+            )
+        """)
         db.executescript("""
             CREATE TABLE IF NOT EXISTS breaker_sample (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1058,6 +1073,37 @@ def access_day_for(day: str) -> list[dict]:
             (day,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def ip_info_for(ips: list[str]) -> dict[str, dict]:
+    """Cached descriptions for the given addresses."""
+    if not ips:
+        return {}
+    marks = ",".join("?" for _ in ips)
+    with _conn() as db:
+        rows = db.execute(
+            f"""SELECT ip, country, region, city, isp, org, asn, hosting, proxy, ok, looked_up
+                FROM ip_info WHERE ip IN ({marks})""",
+            ips,
+        ).fetchall()
+    return {row["ip"]: dict(row) for row in rows}
+
+
+def ip_info_save(rows: list[tuple]) -> None:
+    """Remember a lookup. One row per address."""
+    if not rows:
+        return
+    with _conn() as db:
+        db.executemany(
+            """INSERT INTO ip_info(ip, country, region, city, isp, org, asn, hosting, proxy, ok, looked_up)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(ip) DO UPDATE SET
+                 country=excluded.country, region=excluded.region, city=excluded.city,
+                 isp=excluded.isp, org=excluded.org, asn=excluded.asn,
+                 hosting=excluded.hosting, proxy=excluded.proxy,
+                 ok=excluded.ok, looked_up=excluded.looked_up""",
+            rows,
+        )
 
 
 def save_heartbeat(p204: int, p175: int):

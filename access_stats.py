@@ -166,8 +166,117 @@ def add_parsed(acc: dict, hit: dict, lookup) -> None:
         row[2] = hit["ts"]
 
 
+_PRIVATE_RE = re.compile(
+    r"^(127\.|10\.|192\.168\.|0\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.)"
+)
+_OK_AGE = 30 * 86400
+_FAIL_AGE = 6 * 3600
+
+
+def is_public_ip(ip: str) -> bool:
+    return bool(ip) and _PRIVATE_RE.match(ip) is None and ":" not in ip
+
+
+def place_label(city: str, region: str) -> str:
+    city = city or ""
+    region = region or ""
+    if city and region and city != region:
+        return f"{city}, {region}"
+    return city or region
+
+
+def kind_label(hosting: int, proxy: int) -> str:
+    if hosting:
+        return "датацентр"
+    if proxy:
+        return "проксі"
+    return ""
+
+
+def _stale(info: dict, now: float) -> bool:
+    age = now - float(info.get("looked_up") or 0)
+    if info.get("ok"):
+        return age > _OK_AGE
+    return age > _FAIL_AGE
+
+
+def fetch_ip_batch(ips: list[str]) -> list[dict]:
+    """One request for up to 100 addresses. Empty list if the service does not answer."""
+    import json
+    import urllib.request
+
+    payload = json.dumps(ips[:100]).encode()
+    req = urllib.request.Request(
+        "http://ip-api.com/batch?fields=status,country,regionName,city,isp,org,as,hosting,proxy,query",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=4) as response:
+        data = json.loads(response.read().decode())
+    if not isinstance(data, list):
+        return []
+    return [row for row in data if isinstance(row, dict)]
+
+
+def enrich_rows(rows: list[dict], fetch, now: float | None = None) -> None:
+    """Fill country, city, provider and network from the cache. Look up only the gaps."""
+    from database import ip_info_for, ip_info_save
+
+    now = time.time() if now is None else now
+    ips = []
+    for row in rows:
+        ip = row.get("ip") or ""
+        if ip and ip not in ips:
+            ips.append(ip)
+    cached = ip_info_for(ips)
+    missing = [
+        ip for ip in ips
+        if is_public_ip(ip) and (ip not in cached or _stale(cached[ip], now))
+    ]
+    if missing:
+        try:
+            found = fetch(missing[:100])
+        except Exception:
+            found = []
+        by_ip = {item.get("query"): item for item in found if item.get("query")}
+        saving = []
+        for ip in missing[:100]:
+            item = by_ip.get(ip)
+            if item and item.get("status") == "success":
+                saving.append((
+                    ip,
+                    (item.get("country") or "")[:80],
+                    (item.get("regionName") or "")[:80],
+                    (item.get("city") or "")[:80],
+                    (item.get("isp") or "")[:120],
+                    (item.get("org") or "")[:120],
+                    (item.get("as") or "")[:120],
+                    1 if item.get("hosting") else 0,
+                    1 if item.get("proxy") else 0,
+                    1,
+                    now,
+                ))
+            else:
+                saving.append((ip, "", "", "", "", "", "", 0, 0, 0, now))
+        if saving:
+            ip_info_save(saving)
+            cached = ip_info_for(ips)
+    for row in rows:
+        info = cached.get(row.get("ip") or "") or {}
+        row["country"] = info.get("country") or ""
+        row["place"] = place_label(info.get("city") or "", info.get("region") or "")
+        row["isp"] = info.get("isp") or ""
+        row["org"] = info.get("org") or ""
+        row["asn"] = info.get("asn") or ""
+        row["net"] = kind_label(int(info.get("hosting") or 0), int(info.get("proxy") or 0))
+        looked = info.get("looked_up")
+        row["updated"] = (
+            datetime.fromtimestamp(float(looked), UA_TZ).strftime("%d.%m.%Y") if looked else ""
+        )
+
+
 def access_view(day: str) -> dict:
-    """Flush, then one day, newest visit first."""
+    """Flush, then one day, newest visit first. Address details come from the cache."""
     from database import access_day_for
 
     flush_access()
@@ -181,4 +290,5 @@ def access_view(day: str) -> dict:
             "poll_hits": rec["poll_hits"],
             "last": datetime.fromtimestamp(rec["last_ts"], UA_TZ).strftime("%H:%M:%S"),
         })
+    enrich_rows(rows, fetch_ip_batch)
     return {"day": day, "today": today, "rows": rows}
