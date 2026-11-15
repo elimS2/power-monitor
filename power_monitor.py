@@ -2437,7 +2437,7 @@ async def admin_page(key: str = Query("")):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0f172a">
-<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}-flow">
+<link rel="stylesheet" href="/style.css?v={GIT_COMMIT}-link">
 </head><body class="admin-page" data-pm-key="{escape(key)}">
 <h1>Power Monitor — Адмін-портал</h1>
 <p style="margin-bottom:1rem"><a href="/?key={escape(qk)}" style="color:#6ee7b7">← Назад на дашборд</a></p>
