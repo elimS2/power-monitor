@@ -114,6 +114,7 @@ from database import (
     notify_grid_inverter_id,
     inverter_battery_kwh,
     house_inverter_record,
+    HOUSE_INVERTER_TITLE,
     save_heartbeat,
     save_tg_log,
     schedule_history_for_date,
@@ -420,6 +421,7 @@ async def _poll_target(row: dict) -> None:
                 port=row["port"],
                 serial=row["serial"],
                 socket_timeout=10,
+                hv=row.get("title") == HOUSE_INVERTER_TITLE,
             ),
         )
         if not data:

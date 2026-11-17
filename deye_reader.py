@@ -49,6 +49,26 @@ def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
     return val
 
 
+def decode_hv_battery_volts(raw_voltage: int) -> float:
+    """HV pack voltage. Register 587 is tenths of a volt, not hundredths."""
+    return float(raw_voltage) * 0.1
+
+
+def decode_hv_battery_watts(raw_power: int, raw_power_2: int | None = None) -> float:
+    """Sum of the two HV battery ports. Each register is signed watts times 10."""
+    watts = _to_signed16(int(raw_power)) * 10
+    if raw_power_2 is not None:
+        watts += _to_signed16(int(raw_power_2)) * 10
+    return float(watts)
+
+
+def _apply_hv_battery(data: dict, block) -> None:
+    if not block or len(block) < 9:
+        return
+    data["battery_voltage"] = decode_hv_battery_volts(block[0])
+    data["battery_power_w"] = decode_hv_battery_watts(block[3], block[8])
+
+
 def decode_temp_c(raw: int) -> Optional[float]:
     """Deye temperature: raw tenths, then minus 100. Reject values a pack cannot have."""
     try:
@@ -76,6 +96,7 @@ def _store_temps(data: dict, pair, battery) -> None:
 
 def read_deye_solarman(
     host: str, port: int = 8899, serial: str = "", socket_timeout: float = 10,
+    hv: bool = False,
 ) -> Optional[dict]:
     """Read via Solarman V5 (port 8899). Requires serial number."""
     try:
@@ -127,6 +148,12 @@ def read_deye_solarman(
                     data[name] = _parse_reg_val(rr[0], signed, scale)
             except Exception:
                 pass
+        if hv:
+            try:
+                block = modbus.read_holding_registers(register_addr=587, quantity=9)
+                _apply_hv_battery(data, block)
+            except Exception:
+                pass
         for name, spec in REGS_32BIT.items():
             addr_hi, addr_lo, scale = spec
             try:
@@ -148,7 +175,7 @@ def read_deye_solarman(
     return data if data else None
 
 
-def read_deye_modbus(host: str, port: int = 502) -> Optional[dict]:
+def read_deye_modbus(host: str, port: int = 502, hv: bool = False) -> Optional[dict]:
     """Read via Modbus TCP (port 502)."""
     try:
         from pymodbus.client import ModbusTcpClient
@@ -200,6 +227,13 @@ def read_deye_modbus(host: str, port: int = 502) -> Optional[dict]:
                 if name in ("total_grid_import_kwh", "total_grid_export_kwh") and v > 100_000:
                     continue
                 data[name] = round(v, 2)
+        if hv:
+            try:
+                block_rr = client.read_holding_registers(587, 9, slave=1)
+                block = block_rr.registers if not block_rr.isError() and block_rr.registers else None
+                _apply_hv_battery(data, block)
+            except Exception:
+                pass
     finally:
         client.close()
     return data if data else None
@@ -210,6 +244,7 @@ def read_deye(
     port: Optional[int] = None,
     serial: Optional[str] = None,
     socket_timeout: float = 10,
+    hv: bool = False,
 ) -> Optional[dict]:
     """Read registers. Uses Solarman if serial set and port 8899, else Modbus TCP."""
     if not host:
@@ -217,5 +252,7 @@ def read_deye(
     p = port if port is not None else 502
     s = serial or ""
     if s and p == 8899:
-        return read_deye_solarman(host=host, port=p, serial=s, socket_timeout=socket_timeout)
-    return read_deye_modbus(host=host, port=p)
+        return read_deye_solarman(
+            host=host, port=p, serial=s, socket_timeout=socket_timeout, hv=hv,
+        )
+    return read_deye_modbus(host=host, port=p, hv=hv)

@@ -452,6 +452,11 @@ class OutdoorSampleTests(unittest.TestCase):
             )
         self.assertIsNone(database.deye_voltage_trend(inverter_id=apt))
 
+    def test_hv_battery_power_adds_both_ports_and_the_tens(self):
+        from deye_reader import decode_hv_battery_volts, decode_hv_battery_watts
+        self.assertAlmostEqual(decode_hv_battery_volts(5411), 541.1)
+        self.assertEqual(decode_hv_battery_watts(-1353, -1353), -27060.0)
+
 
 if __name__ == "__main__":
     unittest.main()
