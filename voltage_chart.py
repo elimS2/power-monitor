@@ -860,9 +860,8 @@ def build_battery_board(
     load_hour_w: float | None = None,
     bat_hour_w: float | None = None,
     hour_samples: int = 0,
-    hour_span: float = 0.0,
 ) -> str:
-    """Charge panel under the voltmeter. Forecasts use now, 10 minutes, and 1 hour."""
+    """Charge panel under the voltmeter. Forecasts use now, 10 minutes, and up to 1 hour."""
     known = [float(v) for v in grid_v if isinstance(v, (int, float))]
     grid_on = any(v >= _GRID_ON_V for v in known) if known else None
     have_avg = avg_samples >= _AVG_SAMPLES
@@ -907,7 +906,7 @@ def build_battery_board(
 
     notes: list[str] = []
     charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0
-    have_hour = hour_samples >= 10 and hour_span >= 45 * 60
+    have_hour = hour_samples >= 1 and load_hour_w is not None
     forecast = ""
     if grid_on is False and soc is not None and cap > 0 and not charging:
         forecast = _forecast_board(
@@ -922,14 +921,14 @@ def build_battery_board(
         if float(soc) >= 99.5 or room < 0.05:
             notes.append("Заряд повний")
         else:
-            hour_charge = bat_hour_w is not None and bat_hour_w <= -_CHARGE_W
+            hour_charge = hour_samples >= 1 and bat_hour_w is not None and bat_hour_w <= -_CHARGE_W
             ten_charge = have_avg and bat_avg_w is not None and bat_avg_w <= -_CHARGE_W
             forecast = _forecast_board(
                 "До повної",
                 (
                     ("ЗАРАЗ", _run_hours(room, abs(float(bat_w))), bat_w, True),
                     ("10 ХВ", _run_hours(room, abs(float(bat_avg_w))) if ten_charge else None, bat_avg_w, ten_charge),
-                    ("1 ГОД", _run_hours(room, abs(float(bat_hour_w))) if have_hour and hour_charge else None, bat_hour_w, have_hour and hour_charge),
+                    ("1 ГОД", _run_hours(room, abs(float(bat_hour_w))) if hour_charge else None, bat_hour_w, hour_charge),
                 ),
             )
     elif grid_on is True:

@@ -197,6 +197,25 @@ class BatteryBoardTests(unittest.TestCase):
         self.assertNotIn("Без світла", html)
         self.assertNotIn("Мережа є", html)
 
+    def test_hour_window_uses_a_shorter_available_span(self):
+        from voltage_chart import build_battery_board
+        outage = build_battery_board(
+            soc=50, cap_kwh=60, load_w=2000, load_avg_w=2500,
+            bat_w=2100, bat_avg_w=2400, avg_samples=8,
+            grid_v=(0, 0, 0),
+            load_hour_w=3000, hour_samples=2,
+        )
+        self.assertIn(">10 год<", outage)
+        self.assertNotIn("мало даних", outage)
+        charge = build_battery_board(
+            soc=80, cap_kwh=60, load_w=1500, load_avg_w=1500,
+            bat_w=-4000, bat_avg_w=-3000, avg_samples=6,
+            grid_v=(230, 230, 228),
+            bat_hour_w=-2000, hour_samples=1,
+        )
+        self.assertIn(">6 год<", charge)
+        self.assertNotIn("мало даних", charge)
+
     def test_grid_without_charge_does_not_invent_a_runtime(self):
         from voltage_chart import build_battery_board
         html = build_battery_board(

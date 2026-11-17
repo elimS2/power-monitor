@@ -748,7 +748,6 @@ def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
         load_hour_w=hour["load_w"],
         bat_hour_w=hour["bat_w"],
         hour_samples=hour["n"],
-        hour_span=hour["span"],
         grid_v=(
             num(last.get("grid_v_l1")) if last else None,
             num(last.get("grid_v_l2")) if last else None,
