@@ -54,7 +54,7 @@ def decode_hv_battery_volts(raw_voltage: int) -> float:
     return float(raw_voltage) * 0.1
 
 
-def decode_hv_battery_watts(raw_power: int, raw_power_2: int | None = None) -> float:
+def decode_hv_battery_watts(raw_power: int, raw_power_2: Optional[int] = None) -> float:
     """Sum of the two HV battery ports. Each register is signed watts times 10."""
     watts = _to_signed16(int(raw_power)) * 10
     if raw_power_2 is not None:
