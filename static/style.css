@@ -505,24 +505,27 @@ details[open] summary::before { content: '▼ '; }
   padding: 0.85rem 0.7rem 0.65rem;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 10px 24px rgba(0,0,0,0.28);
 }
-.bboard-meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.bboard-meters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 .bboard-eta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-top: 0.35rem;
+  margin-top: 0.5rem;
 }
-.bboard-caption {
-  margin: 0.55rem 0.2rem 0;
+.bboard-eta .vmeter-digits {
+  font-size: 1.02rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.vmeter-screen {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+  color: #cbd5e1;
   text-align: center;
-  color: #e2e8f0;
-  font-size: 0.84rem;
-}
-.bboard-eta .vmeter-digits { font-size: 1.02rem; }
-.bboard-meters .vmeter-temp {
-  grid-column: 1 / -1;
-  justify-self: center;
-  width: min(100%, 11rem);
 }
 .bbar {
   height: 6px; margin: 0 0.4rem 0.32rem; border-radius: 99px;
@@ -549,7 +552,10 @@ details[open] summary::before { content: '▼ '; }
 .vchart > summary.vchart-head > div:first-child::before { content: "▾  "; color: #94a3b8; }
 .vchart:not([open]) > summary.vchart-head > div:first-child::before { content: "▸  "; }
 @media (max-width: 720px) {
-  .bboard-meters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bboard-eta .vmeter-digits { font-size: 0.78rem; letter-spacing: 0; }
+  .bboard-eta .vmeter-screen { font-size: 0.58rem; }
+  .bboard .vmeter-window { flex-direction: column; align-items: center; }
+  .bboard .vmeter-unit { position: static; margin-top: 0.1rem; }
 }
 @media (max-width: 420px) {
   .vmeter-ghost, .vmeter-digits { font-size: 1.05rem; }

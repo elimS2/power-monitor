@@ -175,11 +175,12 @@ class BatteryBoardTests(unittest.TestCase):
         self.assertIn("з 60", html)
         self.assertIn(">2.0<", html)
         self.assertIn(">2.5<", html)
-        self.assertIn("Вистачить", html)
+        self.assertEqual(html.count("Вистачить"), 3)
         self.assertIn(">15 год<", html)
         self.assertIn(">12 год<", html)
         self.assertIn("мало даних", html)
         self.assertNotIn("До повної", html)
+        self.assertNotIn("bboard-caption", html)
 
     def test_charge_time_uses_charge_power(self):
         from voltage_chart import build_battery_board
@@ -188,7 +189,8 @@ class BatteryBoardTests(unittest.TestCase):
             bat_w=-4000, bat_avg_w=-3000, avg_samples=6,
             grid_v=(230, 230, 228),
         )
-        self.assertIn("До повної", html)
+        self.assertEqual(html.count("До повної"), 3)
+        self.assertNotIn("bboard-caption", html)
         self.assertIn("4.0 кВт", html)
         self.assertIn("3.0 кВт", html)
         self.assertIn(">3 год<", html)
@@ -206,6 +208,7 @@ class BatteryBoardTests(unittest.TestCase):
             load_hour_w=3000, hour_samples=2,
         )
         self.assertIn(">10 год<", outage)
+        self.assertIn(">3.0<", outage)
         self.assertNotIn("мало даних", outage)
         charge = build_battery_board(
             soc=80, cap_kwh=60, load_w=1500, load_avg_w=1500,

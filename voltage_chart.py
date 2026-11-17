@@ -820,6 +820,7 @@ def _b_meter(
     band: str,
     bar_pct: float | None = None,
     extra: str = "",
+    screen: str = "",
 ) -> str:
     bar = ""
     if bar_pct is not None:
@@ -832,6 +833,7 @@ def _b_meter(
             f"</div>"
         )
     unit_html = f'<span class="vmeter-unit">{unit}</span>' if unit else ""
+    screen_html = f'<div class="vmeter-screen">{screen}</div>' if screen else ""
     klass = f"vmeter vmeter-{band}" + (f" {extra}" if extra else "")
     return (
         f'<div class="{klass}">'
@@ -839,6 +841,7 @@ def _b_meter(
         '<div class="vmeter-window">'
         '<div class="vmeter-readout">'
         f'<span class="vmeter-digits">{digits}</span>'
+        f"{screen_html}"
         f"</div>{unit_html}</div>"
         f"{bar}"
         f'<div class="vmeter-state">{state}</div>'
@@ -865,6 +868,7 @@ def build_battery_board(
     known = [float(v) for v in grid_v if isinstance(v, (int, float))]
     grid_on = any(v >= _GRID_ON_V for v in known) if known else None
     have_avg = avg_samples >= _AVG_SAMPLES
+    have_hour = hour_samples >= 1 and load_hour_w is not None
     cap = max(0.0, float(cap_kwh or 0))
 
     if soc is None:
@@ -890,8 +894,10 @@ def build_battery_board(
 
     now_digits, _now_ghost, now_unit, now_band = _power_parts(load_w)
     avg_digits, _avg_ghost, avg_unit, avg_band = _power_parts(load_avg_w if have_avg else None)
+    hour_digits, _hour_ghost, hour_unit, hour_band = _power_parts(load_hour_w if have_hour else None)
     load_meter = _b_meter("ЗАРАЗ", now_digits, now_unit, "споживання", now_band)
     avg_meter = _b_meter("10 ХВ", avg_digits, avg_unit, "середнє", avg_band)
+    hour_meter = _b_meter("1 ГОД", hour_digits, hour_unit, "середнє", hour_band)
     if battery_c is None:
         temp_meter = _b_meter("ТЕМП", "---", "°C", "немає", "none", extra="vmeter-temp")
     else:
@@ -906,7 +912,6 @@ def build_battery_board(
 
     notes: list[str] = []
     charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0
-    have_hour = hour_samples >= 1 and load_hour_w is not None
     forecast = ""
     if grid_on is False and soc is not None and cap > 0 and not charging:
         forecast = _forecast_board(
@@ -939,7 +944,7 @@ def build_battery_board(
     return (
         '<div class="bboard">'
         '<div class="bboard-meters">'
-        + soc_meter + energy + load_meter + avg_meter + temp_meter
+        + soc_meter + energy + temp_meter + load_meter + avg_meter + hour_meter
         + "</div>"
         + forecast
         + note_html
@@ -951,15 +956,12 @@ def _forecast_board(caption: str, windows) -> str:
     meters = []
     for label, hours, watts, ready in windows:
         if not ready:
-            meters.append(_b_meter(label, "---", "", "мало даних", "none", extra="vmeter-eta"))
+            meters.append(_b_meter(label, "---", "", "мало даних", "none", extra="vmeter-eta", screen=caption))
             continue
         text = _eta_text(hours) or "довго"
         basis = _power_words(abs(float(watts))) if watts is not None else ""
-        meters.append(_b_meter(label, text, "", basis, "ok", extra="vmeter-eta"))
-    return (
-        f'<p class="bboard-caption">{caption}</p>'
-        f'<div class="bboard-eta">{"".join(meters)}</div>'
-    )
+        meters.append(_b_meter(label, text, "", basis, "ok", extra="vmeter-eta", screen=caption))
+    return f'<div class="bboard-eta">{"".join(meters)}</div>'
 
 
 def _day_title(t0: float) -> str:
