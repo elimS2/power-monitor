@@ -175,7 +175,10 @@ class BatteryBoardTests(unittest.TestCase):
         self.assertIn("з 60", html)
         self.assertIn(">2.0<", html)
         self.assertIn(">2.5<", html)
-        self.assertIn("Без світла вистачить зараз 15 год, за 10 хв 12 год", html)
+        self.assertIn("Вистачить", html)
+        self.assertIn(">15 год<", html)
+        self.assertIn(">12 год<", html)
+        self.assertIn("мало даних", html)
         self.assertNotIn("До повної", html)
 
     def test_charge_time_uses_charge_power(self):
@@ -185,7 +188,12 @@ class BatteryBoardTests(unittest.TestCase):
             bat_w=-4000, bat_avg_w=-3000, avg_samples=6,
             grid_v=(230, 230, 228),
         )
-        self.assertIn("Заряд 4.0 кВт, до повної зараз 3 год, за 10 хв 4 год", html)
+        self.assertIn("До повної", html)
+        self.assertIn("4.0 кВт", html)
+        self.assertIn("3.0 кВт", html)
+        self.assertIn(">3 год<", html)
+        self.assertIn(">4 год<", html)
+        self.assertIn("мало даних", html)
         self.assertNotIn("Без світла", html)
         self.assertNotIn("Мережа є", html)
 

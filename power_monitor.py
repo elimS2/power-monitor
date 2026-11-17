@@ -732,6 +732,7 @@ def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
     last = deye_rows[0] if deye_rows else None
     now = time.time()
     means = deye_recent_power(inverter_id, now - 600, now + 1)
+    hour = deye_recent_power(inverter_id, now - 3600, now + 1)
 
     def num(value):
         return float(value) if isinstance(value, (int, float)) else None
@@ -744,6 +745,10 @@ def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
         bat_w=num(last.get("battery_power_w")) if last else None,
         bat_avg_w=means["bat_w"],
         avg_samples=means["n"],
+        load_hour_w=hour["load_w"],
+        bat_hour_w=hour["bat_w"],
+        hour_samples=hour["n"],
+        hour_span=hour["span"],
         grid_v=(
             num(last.get("grid_v_l1")) if last else None,
             num(last.get("grid_v_l2")) if last else None,

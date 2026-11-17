@@ -1710,15 +1710,21 @@ def deye_recent_power(inverter_id: int | None, ts_from: float, ts_to: float) -> 
         row = db.execute(
             """SELECT AVG(load_power_w) AS load_w,
                       AVG(battery_power_w) AS bat_w,
-                      COUNT(*) AS n
+                      COUNT(*) AS n,
+                      MIN(ts) AS t0,
+                      MAX(ts) AS t1
                FROM deye_log
                WHERE inverter_id=? AND ts>=? AND ts<?""",
             (iid, ts_from, ts_to),
         ).fetchone()
+    span = 0.0
+    if row["t0"] is not None and row["t1"] is not None:
+        span = float(row["t1"]) - float(row["t0"])
     return {
         "load_w": None if row["load_w"] is None else float(row["load_w"]),
         "bat_w": None if row["bat_w"] is None else float(row["bat_w"]),
         "n": int(row["n"] or 0),
+        "span": span,
     }
 
 

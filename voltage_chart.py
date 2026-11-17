@@ -789,14 +789,6 @@ def _run_hours(energy_kwh: float, watts: float | None) -> float | None:
     return energy_kwh / (watts / 1000.0)
 
 
-def _eta_pair(now_h: float | None, avg_h: float | None, have_avg: bool) -> str:
-    now_s = _eta_text(now_h) or "дуже довго"
-    if not have_avg:
-        return f"зараз {now_s}"
-    avg_s = _eta_text(avg_h) or "дуже довго"
-    return f"зараз {now_s}, за 10 хв {avg_s}"
-
-
 def _power_parts(watts: float | None) -> tuple[str, str, str, str]:
     if watts is None:
         return "---", "888", "", "none"
@@ -865,8 +857,12 @@ def build_battery_board(
     avg_samples: int,
     grid_v: tuple[float | None, float | None, float | None],
     battery_c: float | None = None,
+    load_hour_w: float | None = None,
+    bat_hour_w: float | None = None,
+    hour_samples: int = 0,
+    hour_span: float = 0.0,
 ) -> str:
-    """Charge panel under the voltmeter. Averages are the last 10 minutes."""
+    """Charge panel under the voltmeter. Forecasts use now, 10 minutes, and 1 hour."""
     known = [float(v) for v in grid_v if isinstance(v, (int, float))]
     grid_on = any(v >= _GRID_ON_V for v in known) if known else None
     have_avg = avg_samples >= _AVG_SAMPLES
@@ -911,22 +907,34 @@ def build_battery_board(
 
     notes: list[str] = []
     charging = bat_w is not None and bat_w <= -_CHARGE_W and soc is not None and cap > 0
+    have_hour = hour_samples >= 10 and hour_span >= 45 * 60
+    forecast = ""
     if grid_on is False and soc is not None and cap > 0 and not charging:
-        now_h = _run_hours(left, load_w)
-        avg_h = _run_hours(left, load_avg_w) if have_avg else None
-        notes.append("Без світла вистачить " + _eta_pair(now_h, avg_h, have_avg))
-    if charging:
+        forecast = _forecast_board(
+            "Вистачить",
+            (
+                ("ЗАРАЗ", _run_hours(left, load_w), load_w, True),
+                ("10 ХВ", _run_hours(left, load_avg_w) if have_avg else None, load_avg_w, have_avg),
+                ("1 ГОД", _run_hours(left, load_hour_w) if have_hour else None, load_hour_w, have_hour),
+            ),
+        )
+    elif charging:
         if float(soc) >= 99.5 or room < 0.05:
             notes.append("Заряд повний")
         else:
-            now_h = _run_hours(room, abs(float(bat_w)))
-            avg_h = None
-            if have_avg and bat_avg_w is not None and bat_avg_w <= -_CHARGE_W:
-                avg_h = _run_hours(room, abs(float(bat_avg_w)))
-            notes.append(f"Заряд {_power_words(abs(float(bat_w)))}, до повної " + _eta_pair(now_h, avg_h, have_avg and avg_h is not None))
+            hour_charge = bat_hour_w is not None and bat_hour_w <= -_CHARGE_W
+            ten_charge = have_avg and bat_avg_w is not None and bat_avg_w <= -_CHARGE_W
+            forecast = _forecast_board(
+                "До повної",
+                (
+                    ("ЗАРАЗ", _run_hours(room, abs(float(bat_w))), bat_w, True),
+                    ("10 ХВ", _run_hours(room, abs(float(bat_avg_w))) if ten_charge else None, bat_avg_w, ten_charge),
+                    ("1 ГОД", _run_hours(room, abs(float(bat_hour_w))) if have_hour and hour_charge else None, bat_hour_w, have_hour and hour_charge),
+                ),
+            )
     elif grid_on is True:
         notes.append("Мережа є")
-    if not notes:
+    if not notes and not forecast:
         notes.append("Немає даних про батарею" if soc is None else "")
     note_html = "".join(f'<p class="bboard-note">{line}</p>' for line in notes if line)
     return (
@@ -934,8 +942,24 @@ def build_battery_board(
         '<div class="bboard-meters">'
         + soc_meter + energy + load_meter + avg_meter + temp_meter
         + "</div>"
+        + forecast
         + note_html
         + "</div>"
+    )
+
+
+def _forecast_board(caption: str, windows) -> str:
+    meters = []
+    for label, hours, watts, ready in windows:
+        if not ready:
+            meters.append(_b_meter(label, "---", "", "мало даних", "none", extra="vmeter-eta"))
+            continue
+        text = _eta_text(hours) or "довго"
+        basis = _power_words(abs(float(watts))) if watts is not None else ""
+        meters.append(_b_meter(label, text, "", basis, "ok", extra="vmeter-eta"))
+    return (
+        f'<p class="bboard-caption">{caption}</p>'
+        f'<div class="bboard-eta">{"".join(meters)}</div>'
     )
 
 

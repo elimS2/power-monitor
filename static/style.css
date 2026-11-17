@@ -506,6 +506,19 @@ details[open] summary::before { content: '▼ '; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 10px 24px rgba(0,0,0,0.28);
 }
 .bboard-meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.bboard-eta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.bboard-caption {
+  margin: 0.55rem 0.2rem 0;
+  text-align: center;
+  color: #e2e8f0;
+  font-size: 0.84rem;
+}
+.bboard-eta .vmeter-digits { font-size: 1.02rem; }
 .bboard-meters .vmeter-temp {
   grid-column: 1 / -1;
   justify-self: center;
