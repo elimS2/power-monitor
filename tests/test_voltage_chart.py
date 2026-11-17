@@ -193,8 +193,8 @@ class BatteryBoardTests(unittest.TestCase):
         self.assertNotIn("bboard-caption", html)
         self.assertIn("4.0 кВт", html)
         self.assertIn("3.0 кВт", html)
-        self.assertIn(">3 год<", html)
-        self.assertIn(">4 год<", html)
+        self.assertIn(">2 год 42 хв<", html)
+        self.assertIn(">3 год 36 хв<", html)
         self.assertIn("мало даних", html)
         self.assertNotIn("Без світла", html)
         self.assertNotIn("Мережа є", html)
@@ -216,8 +216,18 @@ class BatteryBoardTests(unittest.TestCase):
             grid_v=(230, 230, 228),
             bat_hour_w=-2000, hour_samples=1,
         )
-        self.assertIn(">6 год<", charge)
+        self.assertIn(">5 год 24 хв<", charge)
         self.assertNotIn("мало даних", charge)
+
+    def test_ninety_eight_percent_counts_as_full(self):
+        from voltage_chart import build_battery_board
+        html = build_battery_board(
+            soc=98, cap_kwh=153.6, load_w=3800, load_avg_w=4000,
+            bat_w=-20000, bat_avg_w=-20000, avg_samples=6,
+            grid_v=(220, 220, 219),
+        )
+        self.assertIn("Заряд повний", html)
+        self.assertNotIn("До повної", html)
 
     def test_grid_without_charge_does_not_invent_a_runtime(self):
         from voltage_chart import build_battery_board

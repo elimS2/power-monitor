@@ -762,6 +762,7 @@ _GRID_ON_V = 50.0
 _CHARGE_W = 100.0
 _LOAD_IDLE_W = 50.0
 _AVG_SAMPLES = 3
+_FULL_SOC = 98.0
 
 
 def _eta_text(hours: float | None) -> str | None:
@@ -889,7 +890,7 @@ def build_battery_board(
         room = 0.0
     else:
         left = cap * max(0.0, min(100.0, float(soc))) / 100.0
-        room = cap - left
+        room = max(0.0, cap * _FULL_SOC / 100.0 - left)
         energy = _b_meter("ЗАПАС", f"{left:.1f}", "кВт·год", _cap_caption(cap), "ok")
 
     now_digits, _now_ghost, now_unit, now_band = _power_parts(load_w)
@@ -923,7 +924,7 @@ def build_battery_board(
             ),
         )
     elif charging:
-        if float(soc) >= 99.5 or room < 0.05:
+        if float(soc) >= _FULL_SOC or room < 0.05:
             notes.append("Заряд повний")
         else:
             hour_charge = hour_samples >= 1 and bat_hour_w is not None and bat_hour_w <= -_CHARGE_W
