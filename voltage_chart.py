@@ -862,7 +862,8 @@ def build_battery_board(
     grid_v: tuple[float | None, float | None, float | None],
     battery_c: float | None = None,
     load_hour_w: float | None = None,
-    bat_hour_w: float | None = None,
+    bat_hour_charge_w: float | None = None,
+    hour_charge_samples: int = 0,
     hour_samples: int = 0,
 ) -> str:
     """Charge panel under the voltmeter. Forecasts use now, 10 minutes, and up to 1 hour."""
@@ -927,14 +928,18 @@ def build_battery_board(
         if float(soc) >= _FULL_SOC or room < 0.05:
             notes.append("Заряд повний")
         else:
-            hour_charge = hour_samples >= 1 and bat_hour_w is not None and bat_hour_w <= -_CHARGE_W
+            hour_charge = (
+                hour_charge_samples >= 1
+                and bat_hour_charge_w is not None
+                and bat_hour_charge_w <= -_CHARGE_W
+            )
             ten_charge = have_avg and bat_avg_w is not None and bat_avg_w <= -_CHARGE_W
             forecast = _forecast_board(
                 "До повної",
                 (
                     ("ЗАРАЗ", _run_hours(room, abs(float(bat_w))), bat_w, True),
                     ("10 ХВ", _run_hours(room, abs(float(bat_avg_w))) if ten_charge else None, bat_avg_w, ten_charge),
-                    ("1 ГОД", _run_hours(room, abs(float(bat_hour_w))) if hour_charge else None, bat_hour_w, hour_charge),
+                    ("1 ГОД", _run_hours(room, abs(float(bat_hour_charge_w))) if hour_charge else None, bat_hour_charge_w, hour_charge),
                 ),
             )
     elif grid_on is True:

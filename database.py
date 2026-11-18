@@ -1703,21 +1703,34 @@ def inverter_battery_kwh(inverter_id: int | None = None) -> float:
     return float(row["battery_kwh"])
 
 
-def deye_recent_power(inverter_id: int | None, ts_from: float, ts_to: float) -> dict:
-    """Mean load and battery power over a short window. Battery sign stays Deye's."""
+def deye_recent_power(
+    inverter_id: int | None,
+    ts_from: float,
+    ts_to: float,
+    charge_below: float = -100.0,
+) -> dict:
+    """Mean load and battery power over a short window. Battery sign stays Deye's.
+
+    bat_charge_w averages only samples at or below charge_below, so minutes
+    when the battery was not charging do not dilute the charge rate.
+    """
     iid = _scoped_inverter(inverter_id)
     with _conn() as db:
         row = db.execute(
             """SELECT AVG(load_power_w) AS load_w,
                       AVG(battery_power_w) AS bat_w,
+                      AVG(CASE WHEN battery_power_w <= ? THEN battery_power_w END) AS bat_charge_w,
+                      SUM(CASE WHEN battery_power_w <= ? THEN 1 ELSE 0 END) AS charge_n,
                       COUNT(*) AS n
                FROM deye_log
                WHERE inverter_id=? AND ts>=? AND ts<?""",
-            (iid, ts_from, ts_to),
+            (charge_below, charge_below, iid, ts_from, ts_to),
         ).fetchone()
     return {
         "load_w": None if row["load_w"] is None else float(row["load_w"]),
         "bat_w": None if row["bat_w"] is None else float(row["bat_w"]),
+        "bat_charge_w": None if row["bat_charge_w"] is None else float(row["bat_charge_w"]),
+        "charge_n": int(row["charge_n"] or 0),
         "n": int(row["n"] or 0),
     }
 

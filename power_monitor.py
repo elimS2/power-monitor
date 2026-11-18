@@ -127,6 +127,7 @@ from voltage_chart import (
     BUCKET_SEC,
     FUTURE_SEC,
     HISTORY_SEC,
+    _CHARGE_W,
     build_battery_board,
     soc_color,
     build_load_chart,
@@ -731,8 +732,8 @@ def _fmt_panel_volts(value: float | None) -> str:
 def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
     last = deye_rows[0] if deye_rows else None
     now = time.time()
-    means = deye_recent_power(inverter_id, now - 600, now + 1)
-    hour = deye_recent_power(inverter_id, now - 3600, now + 1)
+    means = deye_recent_power(inverter_id, now - 600, now + 1, charge_below=-_CHARGE_W)
+    hour = deye_recent_power(inverter_id, now - 3600, now + 1, charge_below=-_CHARGE_W)
 
     def num(value):
         return float(value) if isinstance(value, (int, float)) else None
@@ -746,7 +747,8 @@ def _battery_panel(deye_rows: list | None, inverter_id: int | None) -> str:
         bat_avg_w=means["bat_w"],
         avg_samples=means["n"],
         load_hour_w=hour["load_w"],
-        bat_hour_w=hour["bat_w"],
+        bat_hour_charge_w=hour["bat_charge_w"],
+        hour_charge_samples=hour["charge_n"],
         hour_samples=hour["n"],
         grid_v=(
             num(last.get("grid_v_l1")) if last else None,

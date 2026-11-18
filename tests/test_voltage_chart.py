@@ -214,7 +214,7 @@ class BatteryBoardTests(unittest.TestCase):
             soc=80, cap_kwh=60, load_w=1500, load_avg_w=1500,
             bat_w=-4000, bat_avg_w=-3000, avg_samples=6,
             grid_v=(230, 230, 228),
-            bat_hour_w=-2000, hour_samples=1,
+            bat_hour_charge_w=-2000, hour_charge_samples=1,
         )
         self.assertIn(">5 год 24 хв<", charge)
         self.assertNotIn("мало даних", charge)
@@ -228,6 +228,19 @@ class BatteryBoardTests(unittest.TestCase):
         )
         self.assertIn("Заряд повний", html)
         self.assertNotIn("До повної", html)
+
+    def test_hour_charge_uses_only_charging_minutes(self):
+        from voltage_chart import build_battery_board
+        html = build_battery_board(
+            soc=85, cap_kwh=60, load_w=1500, load_avg_w=1500,
+            bat_w=-10400, bat_avg_w=-10400, avg_samples=12,
+            grid_v=(220, 220, 219),
+            bat_hour_charge_w=-10400, hour_charge_samples=18,
+            hour_samples=108,
+        )
+        self.assertEqual(html.count(">45 хв<"), 3)
+        self.assertIn("10.4 кВт", html)
+        self.assertNotIn("мало даних", html)
 
     def test_grid_without_charge_does_not_invent_a_runtime(self):
         from voltage_chart import build_battery_board
@@ -314,7 +327,25 @@ class SocBucketQueryTests(unittest.TestCase):
         self.assertEqual(means["n"], 2)
         self.assertAlmostEqual(means["load_w"], 2000)
         self.assertAlmostEqual(means["bat_w"], -3000)
+        self.assertEqual(means["charge_n"], 2)
+        self.assertAlmostEqual(means["bat_charge_w"], -3000)
         self.assertAlmostEqual(database.inverter_battery_kwh(apt), 60)
+
+    def test_charge_average_skips_minutes_without_charge(self):
+        start = _kyiv(2026, 11, 9, 1, 0)
+        apt = database.apartment_inverter_id()
+        with database._conn() as db:
+            for load_w, bat_w, ts in ((1000, -10400, start), (1000, 2000, start + 1), (1000, -10400, start + 2)):
+                db.execute(
+                    """INSERT INTO deye_log(load_power_w, battery_power_w, battery_soc, grid_v_l1, ts, inverter_id)
+                       VALUES (?,?,?,?,?,?)""",
+                    (load_w, bat_w, 85, 230, ts, apt),
+                )
+        means = database.deye_recent_power(apt, start - 1, start + 10)
+        self.assertEqual(means["n"], 3)
+        self.assertEqual(means["charge_n"], 2)
+        self.assertAlmostEqual(means["bat_charge_w"], -10400)
+        self.assertAlmostEqual(means["bat_w"], (-10400 + 2000 - 10400) / 3)
 
     def test_temperature_average_and_saved_sample(self):
         start = _kyiv(2026, 11, 14, 2, 0)
