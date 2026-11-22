@@ -100,6 +100,8 @@ from database import (
     recent_alert_events,
     read_breaker_board,
     recent_deye_log,
+    overlay_fast_on_log_row,
+    apply_fast_minute_load,
     recent_events,
     recent_heartbeats,
     recent_tg_log,
@@ -927,15 +929,18 @@ def _build_voltage_panel(
     """Three-phase panel meter: L1 yellow, L2 green, L3 red, 7-segment windows."""
     phases: list[tuple[str, float | None]] = [("L1", None), ("L2", None), ("L3", None)]
     age_html = "немає даних"
+    battery_rows = deye_rows
     if deye_rows:
-        last = deye_rows[0]
+        stored = deye_rows[0]
+        last = overlay_fast_on_log_row(stored, inverter_id)
         phases = [
             ("L1", last.get("grid_v_l1")),
             ("L2", last.get("grid_v_l2")),
             ("L3", last.get("grid_v_l3")),
         ]
-        age_sec = int(time.time() - last["ts"])
+        age_sec = int(time.time() - stored["ts"])
         age_html = f"оновлено {age_sec} с тому"
+        battery_rows = [last]
     meters = []
     for name, raw in phases:
         value = float(raw) if isinstance(raw, (int, float)) else None
@@ -970,7 +975,7 @@ def _build_voltage_panel(
         + "</div>"
         + f'<div class="vboard-age">{age_html}</div>'
         + "</div>"
-        + _battery_panel(deye_rows, inverter_id)
+        + _battery_panel(battery_rows, inverter_id)
         + _voltage_chart_html(chart_shift, inverter_id, fold_prefix)
     )
 
@@ -985,6 +990,7 @@ def _voltage_chart_html(chart_shift: int = 0, inverter_id: int | None = None, fo
         t1 = now + FUTURE_SEC
     cache = dtek.schedule_cache or {}
     buckets = deye_voltage_buckets(t0, min(t1, now), BUCKET_SEC, inverter_id)
+    buckets = apply_fast_minute_load(buckets, t0, min(t1, now), BUCKET_SEC, inverter_id)
     outdoor = stamp_outdoor(buckets, weather_outdoor_samples(t0, min(t1, now)))
     chart = dict(
         now=now,
@@ -1129,11 +1135,12 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
     deye_summary_line2 = ""
     deye_rows = ""
     if deye_log:
-        last = deye_log[0]
+        stored = deye_log[0]
+        last = overlay_fast_on_log_row(stored, apartment_inverter_id())
         load_w = last.get("load_power_w")
         soc = last.get("battery_soc")
         v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
-        age_sec = int(time.time() - last["ts"])
+        age_sec = int(time.time() - stored["ts"])
         sep = " · "
         parts_rt, parts_tot = [], []
         if load_w is not None:
@@ -1303,7 +1310,8 @@ def house_deye_inner_html() -> str:
     rows = recent_deye_log(30, record["id"]) if record else []
     if not rows:
         return '<div class="mk">Немає заміру</div>'
-    last = rows[0]
+    stored = rows[0]
+    last = overlay_fast_on_log_row(stored, record["id"])
     load_w = last.get("load_power_w")
     soc = last.get("battery_soc")
     volts = []
@@ -2234,11 +2242,12 @@ async def dashboard(request: Request, key: str = Query("")):
     deye_summary_line2 = ""
     deye_rows = ""
     if deye_log:
-        last = deye_log[0]
+        stored = deye_log[0]
+        last = overlay_fast_on_log_row(stored, apartment_inverter_id())
         load_w = last.get("load_power_w")
         soc = last.get("battery_soc")
         v1, v2, v3 = last.get("grid_v_l1"), last.get("grid_v_l2"), last.get("grid_v_l3")
-        age_sec = int(time.time() - last["ts"])
+        age_sec = int(time.time() - stored["ts"])
         parts1 = []
         if load_w is not None:
             parts1.append(f"Споживання: {int(load_w)} Вт")

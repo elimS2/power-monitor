@@ -1844,6 +1844,76 @@ def deye_voltage_buckets(
     return [dict(r) for r in rows]
 
 
+_FAST_LIVE_KEYS = (
+    "grid_v_l1", "grid_v_l2", "grid_v_l3",
+    "load_l1_w", "load_l2_w", "load_l3_w", "load_power_w",
+)
+
+
+def latest_deye_fast(inverter_id: int | None, now: float, max_age_sec: float = 15) -> dict | None:
+    """Newest fast row for one inverter, or None when it is older than max_age_sec."""
+    iid = _scoped_inverter(inverter_id)
+    with _conn() as db:
+        row = db.execute(
+            """SELECT grid_v_l1, grid_v_l2, grid_v_l3,
+                      load_l1_w, load_l2_w, load_l3_w, load_power_w, ts
+               FROM deye_fast
+               WHERE inverter_id = ?
+               ORDER BY ts DESC
+               LIMIT 1""",
+            (iid,),
+        ).fetchone()
+    if row is None or now - float(row["ts"]) > max_age_sec:
+        return None
+    return dict(row)
+
+
+def overlay_fast_on_log_row(row: dict | None, inverter_id: int | None, now: float | None = None) -> dict | None:
+    """Copy a deye_log row and replace only the live volts and load. Timestamp stays."""
+    if not row:
+        return row
+    shown = dict(row)
+    fast = latest_deye_fast(inverter_id, time.time() if now is None else now)
+    if not fast:
+        return shown
+    for key in _FAST_LIVE_KEYS:
+        if fast.get(key) is not None:
+            shown[key] = fast[key]
+    return shown
+
+
+def apply_fast_minute_load(
+    buckets: list[dict],
+    ts_start: float,
+    ts_end: float,
+    bucket_sec: int = 60,
+    inverter_id: int | None = None,
+) -> list[dict]:
+    """Overwrite load_w with the fast-table maximum inside the same minute buckets."""
+    step = bucket_sec if bucket_sec >= 1 else 60
+    iid = _scoped_inverter(inverter_id)
+    with _conn() as db:
+        rows = db.execute(
+            """SELECT CAST(ts / ? AS INTEGER) * ? AS bucket,
+                      MAX(load_power_w) AS load_w
+               FROM deye_fast
+               WHERE ts >= ? AND ts < ? AND inverter_id = ?
+               GROUP BY bucket""",
+            (step, step, ts_start, ts_end, iid),
+        ).fetchall()
+    peaks = {row["bucket"]: row["load_w"] for row in rows if row["load_w"] is not None}
+    if not peaks:
+        return buckets
+    merged = []
+    for bucket in buckets:
+        item = dict(bucket)
+        peak = peaks.get(item.get("bucket"))
+        if peak is not None:
+            item["load_w"] = peak
+        merged.append(item)
+    return merged
+
+
 def deye_first_voltage_ts(inverter_id: int | None = None) -> float | None:
     """Oldest sample for one inverter. Uses the timestamp index."""
     iid = _scoped_inverter(inverter_id)

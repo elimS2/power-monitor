@@ -354,5 +354,69 @@ class FastIntervalTests(unittest.TestCase):
         self.assertEqual(fast_interval_sec(None), 0)
 
 
+class FastPageTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        self.now = 1_700_000_000.0
+        self.apt = database.apartment_inverter_id()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def _log(self, ts, load, volts, soc):
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_log(
+                       load_power_w, grid_v_l1, grid_v_l2, grid_v_l3, battery_soc, ts, inverter_id
+                   ) VALUES (?,?,?,?,?,?,?)""",
+                (load, volts, volts, volts, soc, ts, self.apt),
+            )
+
+    def _fast(self, ts, load, volts):
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO deye_fast(
+                       inverter_id, ts, grid_v_l1, grid_v_l2, grid_v_l3,
+                       grid_power_w, load_l1_w, load_l2_w, load_l3_w, load_power_w
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (self.apt, ts, volts, volts + 1, volts + 2, 0, 1, 2, 3, load),
+            )
+
+    def test_fresh_fast_row_changes_load_and_volts_not_soc(self):
+        self._log(self.now - 20, 100, 210, 91)
+        self._fast(self.now - 2, 4000, 230)
+        stored = database.recent_deye_log(1, self.apt)[0]
+        shown = database.overlay_fast_on_log_row(stored, self.apt, self.now)
+        self.assertEqual(shown["load_power_w"], 4000)
+        self.assertEqual(shown["grid_v_l1"], 230)
+        self.assertEqual(shown["grid_v_l2"], 231)
+        self.assertEqual(shown["grid_v_l3"], 232)
+        self.assertEqual(shown["battery_soc"], 91)
+        self.assertEqual(shown["ts"], stored["ts"])
+
+    def test_stale_fast_row_is_ignored(self):
+        self._log(self.now - 20, 100, 210, 91)
+        self._fast(self.now - 40, 4000, 230)
+        stored = database.recent_deye_log(1, self.apt)[0]
+        shown = database.overlay_fast_on_log_row(stored, self.apt, self.now)
+        self.assertEqual(shown["load_power_w"], 100)
+        self.assertEqual(shown["grid_v_l1"], 210)
+        self.assertEqual(shown["battery_soc"], 91)
+
+    def test_minute_maximum_replaces_load_and_keeps_voltage(self):
+        minute = int(self.now // 60) * 60
+        self._log(minute + 10, 50, 220, 90)
+        buckets = database.deye_voltage_buckets(minute, minute + 60, 60, self.apt)
+        for load in (100, 4000, 100):
+            self._fast(minute + 20, load, 180)
+        merged = database.apply_fast_minute_load(buckets, minute, minute + 60, 60, self.apt)
+        self.assertEqual(merged[0]["load_w"], 4000)
+        self.assertAlmostEqual(merged[0]["l1"], 220.0)
+
+
 if __name__ == "__main__":
     unittest.main()
