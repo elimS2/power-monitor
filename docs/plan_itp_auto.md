@@ -1,7 +1,7 @@
 # Automatic ITP control
 
 - Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (the heat journal) only. Part 1, the control loop, stays `LIVE` and frozen. Do not rebuild it.
-- Last updated: 2026-11-22T22:40:00Z
+- Last updated: 2026-11-22T23:02:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -932,6 +932,8 @@ Steps: add `journal` as in 2.5. Put `brk-journal-hit` on the heat lane in the se
 
 Verification: the heat track HTML contains `brk-journal-hit`. The lighting track does not. `#brk-journal-pop` is outside `#pm-breakers-board` and its class is `brk-journal-pop`, not `brk-help-pop`. A fixture at 09:15 and one at 18:00 produce `journal` oldest first, with `clock` `09:15` then `18:00`, and `journal_truncated` false. An empty day has `journal: []`, `journal_truncated` false, and the heat button is still present. A raised journal read still returns that empty payload and `_breaker_live_html` still renders the meter cards. `app.js` contains `brk-journal-hit`, fills the popover with text nodes, and does not contain `brk-journal-pin`. `tests/test_breakers.py` `test_bars_are_green_then_red_and_the_other_breaker_is_empty` and `test_page_script_does_not_reuse_the_fact_lane` today reject every `<button`. Update those two assertions so `brk-journal-hit` is the only new button. Any other `<button` in the bars HTML, on the lighting track, or in that script chunk still fails. `test_hidden_flag_removes_the_section` allows exactly one button, `brk-help`, since 2026-11-22T22:34:00Z. J3 makes that two: the info button and `brk-journal-hit`. The `Події` HTML does not contain `Обігрів увімкнено`. The info button still has `brk-help-pop` hidden. After a later deploy, the browser check is: tap the heat lane, read both sentences, tap `‹`, see that day, tap outside, the list closes, and a board refresh while the list is open does not close it.
 
+Landed 2026-11-22T23:02:00Z. The heat lane is the only new button. The list sits after `#pm-breakers-board` and is filled with text nodes. An empty day and a failed journal read still leave the meter cards. 116 tests passed. The browser tap is not done: this yes did not include deploy, and the running service is still the previous build. Proof `verifiedAtUtc=2026-11-22T23:02:12.921Z`. No further journal phase.
+
 Rollback: remove the button and the pop. Rows remain in the table.
 
 Deploy: no, unless the operator asks in the same yes.
@@ -983,4 +985,4 @@ Code and commits stay English. The journal sentences stay the Ukrainian in 2.5.
 
 Update this file and `plan_itp_auto_PROGRESS.md` at every gate, with a DateTime.
 
-Status of Part 2 is `REVIEWED / READY FOR LOCAL WORK`. Critic round 2 approved with 0 CRITICAL and 0 HIGH. Do not start J1 without an explicit yes.
+Status of Part 2 is `REVIEWED / READY FOR LOCAL WORK`. J1–J3 are in git and are not deployed. The next step is a deploy only if the operator asks. Do not change `ITP_AUTO_COMMANDS`.

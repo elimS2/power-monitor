@@ -1201,6 +1201,15 @@
       if (pop && open) {
         pop.hidden = false;
         btn.setAttribute('aria-expanded', 'true');
+        var journalPop = document.getElementById('brk-journal-pop');
+        var board = document.getElementById('pm-breakers-board');
+        if (journalPop) {
+          journalPop.hidden = true;
+          journalPop.replaceChildren();
+        }
+        if (board) board._journalOpen = false;
+        var hit = document.querySelector('.brk-journal-hit');
+        if (hit) hit.setAttribute('aria-expanded', 'false');
       }
       return;
     }
@@ -1213,6 +1222,17 @@
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
+    var journalPop = document.getElementById('brk-journal-pop');
+    if (journalPop && !journalPop.hidden) {
+      e.preventDefault();
+      journalPop.hidden = true;
+      journalPop.replaceChildren();
+      var board = document.getElementById('pm-breakers-board');
+      if (board) board._journalOpen = false;
+      var hit = document.querySelector('.brk-journal-hit');
+      if (hit) hit.setAttribute('aria-expanded', 'false');
+      return;
+    }
     var breakerPop = document.querySelector('.brk-help-pop:not([hidden])');
     if (breakerPop) {
       e.preventDefault();
@@ -1654,8 +1674,11 @@
           });
         });
         html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
-          '<div class="brk-lane-wrap">' + empty + '<div class="brk-lane">' + bars +
-          breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0]) + '</div></div>';
+          '<div class="brk-lane-wrap">' + empty +
+          (item[0] === 'itp'
+            ? '<div class="brk-heat-slot"><button type="button" class="brk-journal-hit" aria-expanded="false" aria-controls="brk-journal-pop" aria-label="Події обігріву за цю добу"><div class="brk-lane">' + bars + breakerHourLines() + '<i class="brk-now"></i></div></button>' + breakerTimerPins(data, item[0]) + '</div>'
+            : '<div class="brk-lane">' + bars + breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0])) +
+          '</div></div>';
       });
       html += breakerBoilerLane(data);
       html += breakerAlertLane(data, startMs, spanMs);
@@ -1684,7 +1707,53 @@
         e.preventDefault();
         loadBreakers(shiftBreakerDay(breakerDate, 1));
       });
+      fillHeatJournal(data);
     }
+    function fillHeatJournal(data) {
+      var pop = document.getElementById('brk-journal-pop');
+      var hit = document.querySelector('.brk-journal-hit');
+      if (!pop) return;
+      if (!breakerBoard._journalOpen) {
+        pop.hidden = true;
+        if (hit) hit.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      pop.replaceChildren();
+      var rows = (data && data.journal) || [];
+      if (!rows.length) {
+        var empty = document.createElement('p');
+        empty.textContent = 'За цю добу записів немає.';
+        pop.appendChild(empty);
+      } else {
+        rows.forEach(function(row) {
+          var line = document.createElement('p');
+          line.textContent = (row.clock || '') + ' ' + (row.text || '');
+          pop.appendChild(line);
+        });
+        if (data.journal_truncated) {
+          var cut = document.createElement('p');
+          cut.textContent = 'Старіші записи цієї доби не показано.';
+          pop.appendChild(cut);
+        }
+      }
+      pop.hidden = false;
+      if (hit) hit.setAttribute('aria-expanded', 'true');
+    }
+    document.addEventListener('click', function(e) {
+      var hit = e.target.closest && e.target.closest('.brk-journal-hit');
+      if (hit) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!breakerPayload) return;
+        breakerBoard._journalOpen = !breakerBoard._journalOpen;
+        fillHeatJournal(breakerPayload);
+        return;
+      }
+      if (e.target.closest && e.target.closest('#brk-journal-pop, #brk-prev, #brk-next')) return;
+      if (!breakerBoard._journalOpen) return;
+      breakerBoard._journalOpen = false;
+      fillHeatJournal(breakerPayload);
+    }, true);
     var breakerPayload = null;
     function loadBreakers(date) {
       breakerDate = date || kyivTodayBreaker();

@@ -1800,10 +1800,19 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
                     if width <= 0:
                         continue
                     bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
+        lane = f'<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div>'
+        pins = _timer_pins_html(payload, name)
+        if name == "itp":
+            lane = (
+                '<div class="brk-heat-slot">'
+                '<button type="button" class="brk-journal-hit" aria-expanded="false" '
+                'aria-controls="brk-journal-pop" aria-label="Події обігріву за цю добу">'
+                f"{lane}</button>{pins}</div>"
+            )
+            pins = ""
         tracks.append(
             f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-            f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div>'
-            f'{_timer_pins_html(payload, name)}</div></div>'
+            f'<div class="brk-lane-wrap">{empty}{lane}{pins}</div></div>'
         )
     tracks.append(_boiler_lane_html(payload, now_mark))
     tracks.append(_alert_lane_html(payload, now_mark))
@@ -2062,6 +2071,7 @@ def _breaker_section_html() -> str:
         "</span></span></summary>"
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
+        '<div id="brk-journal-pop" class="brk-journal-pop" hidden></div>'
         "</details>"
     )
 

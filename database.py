@@ -2895,6 +2895,26 @@ def mark_itp_journal_confirmed(state: str) -> None:
         db.execute("UPDATE itp_journal SET confirmed = 1 WHERE id = ?", (row["id"],))
 
 
+def _journal_payload(day: str) -> tuple[list[dict], bool]:
+    """Sentences for one chart day. A read error leaves the board usable."""
+    try:
+        from itp_auto import itp_journal_line
+
+        rows, truncated = itp_journal_for_day(day)
+        items = [
+            {
+                "ts": row["ts"],
+                "clock": datetime.fromtimestamp(float(row["ts"]), UA_TZ).strftime("%H:%M"),
+                "text": itp_journal_line(row["kind"], row["reason"], int(row["confirmed"] or 0)),
+            }
+            for row in rows
+        ]
+        return items, truncated
+    except Exception as exc:
+        log.info("itp-auto: journal %s", exc.__class__.__name__)
+        return [], False
+
+
 def read_breaker_board(day: str, now: float) -> dict:
     """One stored day for both breakers. Reads breaker_day only and does not write."""
     try:
@@ -2966,6 +2986,7 @@ def read_breaker_board(day: str, now: float) -> dict:
             boiler = parsed_boiler
     start, end = kyiv_day_bounds(day)
     window_end = now if day == today and start <= now <= end else end
+    journal, truncated = _journal_payload(day)
     return {
         "date": day,
         "today": day == today,
@@ -2979,4 +3000,6 @@ def read_breaker_board(day: str, now: float) -> dict:
         "charge": house_charge_segments(start, window_end),
         "timers": timers,
         "devices": devices,
+        "journal": journal,
+        "journal_truncated": truncated,
     }

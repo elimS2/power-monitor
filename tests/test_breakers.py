@@ -511,7 +511,10 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn('brk-hour-line" style="left:50.0000%"', html)
         self.assertIn("brk-key-now", html)
         self.assertIn("зараз</span>", html)
-        self.assertNotIn("<button", html.lower())
+        self.assertEqual(html.lower().count("<button"), 1)
+        self.assertIn("brk-journal-hit", html)
+        light = html.split(">Освітлення<", 1)[1].split(">Обігрів<", 1)[0]
+        self.assertNotIn("<button", light.lower())
 
     def test_plan_lane_uses_the_queue_snapshot(self):
         import json
@@ -644,8 +647,9 @@ class BreakerPageTests(unittest.TestCase):
 
         html = power_monitor._breaker_section_html()
         self.assertIn("Автомати підвалу", html)
-        self.assertEqual(html.lower().count("<button"), 1)
+        self.assertEqual(html.lower().count("<button"), 2)
         self.assertIn('class="brk-help"', html)
+        self.assertIn('class="brk-journal-hit"', html)
         self.assertNotIn("<form", html.lower())
         database.kv_set("breakers_board", "0")
         self.assertEqual(power_monitor._breaker_section_html(), "")
@@ -661,11 +665,51 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("breaker_details", roles["Лише графік"])
         self.assertIsNone(roles["Усі"])
 
+    def test_heat_lane_lists_the_day_and_events_stay_city_light(self):
+        import power_monitor
+
+        morning = datetime(2026, 11, 9, 9, 15, tzinfo=UA_TZ).timestamp()
+        evening = datetime(2026, 11, 9, 18, 0, tzinfo=UA_TZ).timestamp()
+        database.append_itp_journal(evening, "switch-on", "boiler", 0)
+        database.append_itp_journal(morning, "mode-auto", "admin", 1)
+        payload = database.read_breaker_board("2026-11-09", morning)
+        self.assertFalse(payload["journal_truncated"])
+        self.assertEqual([row["clock"] for row in payload["journal"]], ["09:15", "18:00"])
+        self.assertEqual(payload["journal"][0]["text"], "Керування стало автоматичним")
+        self.assertIn("ще не підтверджено", payload["journal"][1]["text"])
+        empty = database.read_breaker_board("2026-11-08", morning)
+        self.assertEqual(empty["journal"], [])
+        self.assertFalse(empty["journal_truncated"])
+        self.assertIn("brk-journal-hit", power_monitor._breaker_bars_html(empty, morning))
+        section = power_monitor._breaker_section_html()
+        self.assertLess(section.index('id="pm-breakers-board"'), section.index('id="brk-journal-pop"'))
+        self.assertIn('class="brk-journal-pop"', section)
+        self.assertNotIn("brk-journal-pop brk-help-pop", section)
+        self.assertIn('class="brk-help-pop" hidden', section)
+        self.assertNotIn("Обігрів увімкнено", power_monitor._build_update_fragments()["pm_ev_tbody"])
+
+        def boom(_day):
+            raise RuntimeError("disk")
+
+        original = database.itp_journal_for_day
+        database.itp_journal_for_day = boom
+        try:
+            failed = database.read_breaker_board("2026-11-09", morning)
+            live = power_monitor._breaker_live_html()
+        finally:
+            database.itp_journal_for_day = original
+        self.assertEqual(failed["journal"], [])
+        self.assertFalse(failed["journal_truncated"])
+        self.assertIn("Керування", live)
+
     def test_page_script_does_not_reuse_the_fact_lane(self):
         script = Path("static/app.js").read_text(encoding="utf-8")
         chunk = script[script.index("pm-breakers-board"):]
         self.assertNotIn("factOnSegments", chunk)
-        self.assertNotIn("<button", chunk)
+        self.assertEqual(chunk.lower().count("<button"), 1)
+        self.assertIn("brk-journal-hit", chunk)
+        self.assertIn("textContent", chunk)
+        self.assertNotIn("brk-journal-pin", chunk)
         self.assertIn("brk-batt", chunk)
         self.assertIn("не було світла", chunk)
         self.assertIn("brk-plan-ok", chunk)

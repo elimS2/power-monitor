@@ -342,6 +342,20 @@ details[open] summary::before { content: '▼ '; }
 .brk-track-name { color: var(--muted); font-size: 0.72rem; }
 .brk-lane-wrap { position: relative; }
 .brk-lane { position: relative; height: 16px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+.brk-journal-hit {
+  display: flex; align-items: center; width: 100%; min-height: 32px;
+  margin: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer;
+}
+.brk-journal-hit .brk-lane { flex: 1; }
+.brk-heat-slot { position: relative; }
+.brk-heat-slot > .brk-when-pin { top: 3px; pointer-events: none; }
+.brk-journal-pop {
+  margin-top: 0.45rem; background: #0f172a; color: #e2e8f0;
+  border: 1px solid #475569; border-radius: 8px; padding: 0.55rem 0.7rem;
+  font-size: 0.78rem; line-height: 1.45; text-align: left;
+}
+.brk-journal-pop p { margin: 0 0 0.35rem; }
+.brk-journal-pop p:last-child { margin-bottom: 0; }
 .brk-hour-line {
   position: absolute; top: 0; bottom: 0; width: 1px; z-index: 2; pointer-events: none;
   background: rgba(248,250,252,0.72);
