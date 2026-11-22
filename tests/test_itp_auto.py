@@ -368,7 +368,7 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(last["reason"], "boiler")
         self.assertEqual(last["boiler_source"], "default")
         text = format_itp_card(read_itp_auto())
-        self.assertIn("Автоматичне керування: вимкнено.", text)
+        self.assertIn("Керування: ручне.", text)
         self.assertIn("котельня", text)
         self.assertIn("Графік котельні не приходив, вікно 18:00–24:00.", text)
         self.assertTrue(any("boiler-default" in line and "commands-off" in line for line in caught.output))
@@ -384,7 +384,7 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(last["state"], "on")
         self.assertEqual(last["reason"], "light-on")
         text = format_itp_card(read_itp_auto())
-        self.assertIn("Автоматичне керування: вимкнено.", text)
+        self.assertIn("Керування: ручне.", text)
         self.assertIn("світло вже 15 хв", text)
 
     def test_tick_cannot_read_or_post(self):
@@ -428,7 +428,7 @@ class TickItpTests(unittest.TestCase):
         self.assertIsNone(doc["pending"])
         self.assertIsNone(doc["slot_spent"])
         card = itp_card_html()
-        self.assertIn("Автоматичне керування: увімкнено.", card)
+        self.assertIn("Керування: автоматичне.", card)
         self.assertIn("Команди ще вимкнені.", card)
         self.assertNotIn("в адмінці", card)
         self.assertNotIn("<button", card)
@@ -449,10 +449,10 @@ class TickItpTests(unittest.TestCase):
             "pause": {"reason": "manual", "at": _at(21, 5).timestamp()},
             "warn": {"kind": "rejected"},
         })
-        self.assertIn("Автоматичне керування: вимкнено о 21:05. Перемкнули вручну.", manual)
+        self.assertIn("Керування: ручне. О 21:05 перемкнули вручну.", manual)
         self.assertIn("Хмара не підтвердила команду.", manual)
         flap = format_itp_card({"enabled": False, "pause": {"reason": "flap"}})
-        self.assertEqual(flap, "Автоматичне керування: вимкнено. За годину вже 4 перемикання.")
+        self.assertEqual(flap, "Керування: ручне. За годину вже 4 перемикання.")
 
     def test_heat_card_has_the_line_and_the_light_card_does_not(self):
         from power_monitor import _breaker_lines_html
@@ -473,7 +473,7 @@ class TickItpTests(unittest.TestCase):
             }
         }, 1)
         self.assertEqual(html.count("brk-auto"), 1)
-        self.assertIn("Автоматичне керування: вимкнено.", html)
+        self.assertIn("Керування: ручне.", html)
         self.assertNotIn("<button", html)
         light = html.split('data-brk="svitlo"', 1)[1].split('data-brk="itp"', 1)[0]
         self.assertNotIn("Авто", light)
@@ -532,7 +532,7 @@ class AdminItpTests(unittest.TestCase):
             httpx.Client = real_client
         self.assertEqual(calls, [])
         self.assertTrue(armed["enabled"])
-        self.assertEqual(armed["line"], "Автоматичне керування: увімкнено. Команди ще вимкнені.")
+        self.assertEqual(armed["line"], "Керування: автоматичне. Команди ще вимкнені.")
         self.assertFalse(armed["commands_on"])
         stored = read_itp_auto()
         self.assertEqual(stored["applied"], "off")
@@ -550,13 +550,13 @@ class AdminItpTests(unittest.TestCase):
         mutate_itp_auto(mark_attempt)
         disarmed = set_itp_armed(False)
         self.assertFalse(disarmed["enabled"])
-        self.assertIn("Автоматичне керування: вимкнено.", disarmed["line"])
+        self.assertIn("Керування: ручне.", disarmed["line"])
         stored = read_itp_auto()
         self.assertEqual(stored["applied"], "off")
         self.assertEqual(stored["command_times"], [10])
         self.assertTrue(stored["timer_delete_attempted"])
         card = itp_card_html()
-        self.assertIn("Автоматичне керування: вимкнено.", card)
+        self.assertIn("Керування: ручне.", card)
         self.assertNotIn("<button", card)
 
     def test_arm_without_a_day_row_leaves_applied_empty(self):

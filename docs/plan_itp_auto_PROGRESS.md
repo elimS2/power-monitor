@@ -3,7 +3,7 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T21:06:00Z
+- Last updated: 2026-11-22T21:09:00Z
 - Current phase: 5 done. Code phases of this plan are complete.
 - Next allowed step: a deploy yes, with `ITP_AUTO_COMMANDS` left unset or `0`. Turning commands on is a later separate yes, after dry lines have been watched. Do not deploy or set the env in the same turn.
 - Commands: not implemented. `ITP_AUTO_COMMANDS` must stay off through deploy.
@@ -52,6 +52,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T21:00:00Z | Card wording | Operator: the line should read like automatic control on or off. `в адмінці` sounded like a way of switching the breaker. Card now says `Автоматичне керування: увімкнено` or `вимкнено`. |
 | 2026-11-22T21:00:00Z | Phase 5 yes | Operator: Agree & Continue. Prompt 2. |
 | 2026-11-22T21:06:00Z | Phase 5 | Command path landed behind `ITP_AUTO_COMMANDS`. Default stays off. Fake client: 100 tests OK across the three modules. No deploy. Proof `verifiedAtUtc=2026-11-22T21:06:20.892Z`. |
+| 2026-11-22T21:09:00Z | Shorter card | Operator: `Керування: автоматичне` or `Керування: ручне`. `tests.test_itp_auto` — 53 tests OK. Not deployed. Proof `verifiedAtUtc=2026-11-22T21:09:18.899Z`. |
 
 ## Decisions mirrored from the plan
 

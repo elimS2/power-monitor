@@ -25,8 +25,8 @@ FLAP_WINDOW_SEC = 3600
 FOLLOWUP_SEC = 60
 FOLLOWUP_WINDOW_SEC = 90
 KEY = "itp_auto"
-AUTO_OFF = "Автоматичне керування: вимкнено."
-AUTO_ON = "Автоматичне керування: увімкнено."
+AUTO_OFF = "Керування: ручне."
+AUTO_ON = "Керування: автоматичне."
 
 log = logging.getLogger("power_monitor")
 _doc_lock = threading.Lock()
@@ -281,9 +281,9 @@ def format_itp_card(doc: dict, commands_on: bool = False) -> str:
     """Ukrainian line about the program. The breaker state is a separate line."""
     pause = doc.get("pause") or {}
     if not doc.get("enabled") and pause.get("reason") == "manual" and pause.get("at"):
-        line = f"Автоматичне керування: вимкнено о {_hhmm(pause['at'])}. Перемкнули вручну."
+        line = f"{AUTO_OFF} О {_hhmm(pause['at'])} перемкнули вручну."
     elif not doc.get("enabled") and pause.get("reason") == "flap":
-        line = "Автоматичне керування: вимкнено. За годину вже 4 перемикання."
+        line = f"{AUTO_OFF} За годину вже 4 перемикання."
     elif doc.get("enabled") and not commands_on:
         line = _join(f"{AUTO_ON} Команди ще вимкнені.", _would(doc))
     elif doc.get("enabled") and doc.get("pending"):

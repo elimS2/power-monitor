@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T21:06:00Z
+- Last updated: 2026-11-22T21:09:00Z
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -419,12 +419,12 @@ Ukrainian, one sentence, no device id:
 
 | Document | Line |
 |---|---|
-| `enabled` false, no `pause` | `Автоматичне керування: вимкнено.` plus the would-be clause from `last` |
-| `pause.reason == manual` | `Автоматичне керування: вимкнено о HH:MM. Перемкнули вручну.` |
-| `pause.reason == flap` | `Автоматичне керування: вимкнено. За годину вже 4 перемикання.` |
-| `enabled` true, commands off | `Автоматичне керування: увімкнено. Команди ще вимкнені.` plus the would-be clause |
-| `enabled` true, commands on, `pending` | `Автоматичне керування: увімкнено. Команда ще не підтверджена.` |
-| `enabled` true, commands on, in sync | `Автоматичне керування: увімкнено.` plus why (`світло` or `котельня`) |
+| `enabled` false, no `pause` | `Керування: ручне.` plus the would-be clause from `last` |
+| `pause.reason == manual` | `Керування: ручне. О HH:MM перемкнули вручну.` |
+| `pause.reason == flap` | `Керування: ручне. За годину вже 4 перемикання.` |
+| `enabled` true, commands off | `Керування: автоматичне. Команди ще вимкнені.` plus the would-be clause |
+| `enabled` true, commands on, `pending` | `Керування: автоматичне. Команда ще не підтверджена.` |
+| `enabled` true, commands on, in sync | `Керування: автоматичне.` plus why (`світло` or `котельня`) |
 | `warn` set | append `Хмара не підтвердила команду.` |
 
 Would-be clause:
@@ -440,7 +440,7 @@ Would-be clause:
 
 The line is inside `_breaker_lines_html`, which `_breaker_live_html` already uses, so the 10-second fragment updates it. Do not duplicate it in the static shell.
 
-Phase 4 used one temporary armed sentence, `Авто увімкнено в адмінці, без команд.` On 2026-11-22T21:00:00Z the operator said that sounded like a way of switching the breaker. The line names the program instead: `Автоматичне керування: увімкнено` or `вимкнено`. Phase 5 uses the table above.
+Phase 4 used one temporary armed sentence, `Авто увімкнено в адмінці, без команд.` On 2026-11-22T21:00:00Z the operator said that sounded like a way of switching the breaker. The line names the program. On 2026-11-22T21:09:00Z the operator shortened it to `Керування: автоматичне` or `Керування: ручне`. Phase 5 uses the table above. Proof `verifiedAtUtc=2026-11-22T21:09:18.899Z`.
 
 The lighting card gets no such line.
 
@@ -621,7 +621,7 @@ Existing `breaker_day` rows stay. Arming reads the latest `itp` row and does not
 
 Rollback does not need a down migration. Delete the `kv` row only if a bad document must be forgotten. Disarm is enough for a normal rollback.
 
-The public dashboard keeps working when the document is missing or invalid JSON. Invalid JSON is treated as the default disabled document, and one error line is logged. The card then shows `Автоматичне керування: вимкнено.`
+The public dashboard keeps working when the document is missing or invalid JSON. Invalid JSON is treated as the default disabled document, and one error line is logged. The card then shows `Керування: ручне.`
 
 ## 9. Verification strategy
 
