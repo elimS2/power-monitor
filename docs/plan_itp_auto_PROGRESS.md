@@ -1,11 +1,11 @@
 # Progress — automatic ITP control
 
 - Plan: `power-monitor/docs/plan_itp_auto.md`
-- Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is done locally and is not on the site.
-- Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is implemented locally: one legend per lane, hidden until that lane or its info mark is opened.
-- Last updated: 2026-11-22T23:51:00Z
-- Current phase: L1 done locally. Do not deploy until a separate yes.
-- Next allowed step: deploy only if the operator asks. There is no L2.
+- Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
+- Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is live: one legend per lane, hidden until that lane or its info mark is opened.
+- Last updated: 2026-11-22T23:53:00Z
+- Current phase: L1 is on the site. There is no L2.
+- Next allowed step: none. A keyed click of the lanes was not driven.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`, `mutationKind=plan`. Earlier proof `2026-11-22T18:43:35.564Z` remains the Part 1 write.
@@ -76,6 +76,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | 2026-11-22T23:38:00Z | Critic round 2 | Same model, resumed. APPROVE. CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. L1 waits for an explicit yes. No code. |
 | 2026-11-22T23:46:00Z | Phase L1 yes | Operator: Agree & Continue. Prompt 2. Proof `verifiedAtUtc=2026-11-22T23:46:15.449Z`. Deploy was not included. |
 | 2026-11-22T23:51:00Z | Phase L1 | Shared legend removed. Each lane and its info mark open one pop. Heat keeps the day list under its colors. 127 tests OK, including the alert-day module. `node --check static/app.js` passed. Not deployed. The site stays at `c5bdc4b`. |
+| 2026-11-22T23:53:00Z | Deploy | Operator yes. Pull `c5bdc4b..f764d9b`, restart, active, HEAD `f764d9b`. Public script and stylesheet match. Keyed click not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No deploy tag, so this record commit must not be pulled by the poller. |
 
 ## Part 2 checklist
 
@@ -85,7 +86,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | J1 Table | done | 2026-11-22T22:34:00Z. Helpers only. The page does not read them. |
 | J2 Writers | done | 2026-11-22T22:40:00Z. Rows are written. The page does not show them. |
 | J3 Day list | live | 2026-11-22T23:04:00Z. Running commit `c5bdc4b`. |
-| L1 Per-lane legend | done locally | 2026-11-22T23:51:00Z. 127 tests OK. Not deployed. Site remains `c5bdc4b`. |
+| L1 Per-lane legend | live | 2026-11-22T23:53:00Z. Running commit `f764d9b`. |
 
 ## Decisions mirrored from the plan
 
