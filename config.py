@@ -4,6 +4,7 @@ Power Monitor — configuration and constants.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -113,6 +114,23 @@ DEYE_POLL_IP = os.getenv("DEYE_POLL_IP", "").strip()
 DEYE_POLL_PORT = int(os.getenv("DEYE_POLL_PORT", "0") or "0")
 DEYE_POLL_SERIAL = os.getenv("DEYE_POLL_SERIAL", "").strip()  # Required for Solarman (8899)
 DEYE_POLL_INTERVAL_SEC = int(os.getenv("DEYE_POLL_INTERVAL_SEC", "30") or "30")
+
+
+def fast_interval_sec(raw: str | None) -> int:
+    """0, 1, or 2. Anything else is off, and the warning is logged once."""
+    text = (raw if raw is not None else "0").strip()
+    if text in ("0", "1", "2"):
+        return int(text)
+    if not getattr(fast_interval_sec, "warned", False):
+        logging.getLogger(__name__).warning(
+            "DEYE_FAST_INTERVAL_SEC %s is not 0, 1, or 2; using 0", text,
+        )
+        fast_interval_sec.warned = True
+    return 0
+
+
+# 0 ships the fast loop off. 1 and 2 are the only live rates, and only after a separate yes.
+DEYE_FAST_INTERVAL_SEC = fast_interval_sec(os.getenv("DEYE_FAST_INTERVAL_SEC", "0"))
 
 # Basement breakers (Tuya cloud). Empty secret disables the poller.
 # Empty device id skips that one breaker. Never commit the values.

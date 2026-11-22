@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, logger serials, or API keys there. Disk is the source of truth for the reader.
-- Last updated: 2026-11-22T16:27:30Z
+- Last updated: 2026-11-22T16:42:30Z
 - Active skin: **Skin B** for the first time the fast loop is turned on (1-second read). **Skin A** (2 seconds) is only after a full day of 1-second rows shows the module rarely changes between seconds. The loop still ships **off** until a human sets `DEYE_FAST_INTERVAL_SEC=1`.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -351,6 +351,8 @@ Order rows by `ts`. A repeat is the next row whose eight fields (`grid_v_l1`, `g
 
 Gate: code merged or left local, as the operator says. Enabling `1` on the server is its own yes inside this gate, not implied by "continue". Enabling `2` is a later yes after the 24-hour count.
 
+Landed locally 2026-11-22T16:42:30Z. Not deployed. `DEYE_FAST_INTERVAL_SEC` defaults to 0, so the process does not start the fast task and does not call the fast read. The slow poll, once this commit is deployed, keeps one Solarman client and no longer opens a second one inside `read_deye_solarman`. A complete batch stays connected. An empty or broken batch drops that client. `tests.test_deye_fast`: 17 tests OK. Proof `verifiedAtUtc=2026-11-22T16:42:14.534Z`.
+
 Rollback: the two steps in the paragraph above. Env `0` and a restart stop fast writes. Revert the phase 3 commit if the slow poll must open and close its own client again.
 
 ### Phase 4 — show the fast sample
@@ -443,10 +445,11 @@ None that block phase 1. Fast rows are kept. There is no keep-days setting.
 - 2026-11-22T16:14:30Z — Phase 1 landed locally. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:11:21.429Z`. `decode_fast_block` and `save_deye_fast` only. A mistaken edit had dropped `charge_n` from `deye_recent_power`; that function was put back before the gate. `python -m unittest tests.test_deye_fast` passed, 6 tests. The same run plus the SOC and voltage bucket tests passed, 11 tests. No poll change, no page change, no deploy, no commit. Company KB searches at the start of this step still had no `power-monitor` hit. Disk stayed the source of truth.
 - 2026-11-22T16:18:30Z — Phase 2 landed locally. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:18:17.733Z`. `read_deye_blocks` is what the Solarman poll will use after a deploy. Port 502 is unchanged. `tests.test_deye_fast`: 12 tests OK. No `deye_fast` writer in the loop. No deploy, no commit.
 - 2026-11-22T16:27:30Z — Phase 2 deployed. Operator yes to deploy this phase only, not phase 3. Commit `d174ec2`, tag `#autodeploy`. Service `ActiveEnterTimestamp` 2026-11-22T16:26:24Z. First new polls 16:26:27Z: apartment battery 55.28 V / SOC 91, house battery 538.0 V / SOC 98. Counters unchanged from the previous row. `year_load_kwh` was already null. No battery-block fallback in the journal. Proof for the plan note `verifiedAtUtc=2026-11-22T16:27:09.991Z`.
+- 2026-11-22T16:42:30Z — Phase 3 landed locally, still off. Operator yes to write the loop, not to enable it and not to deploy. `DEYE_FAST_INTERVAL_SEC` default 0. `read_deye_solarman` no longer opens a socket. 17 tests OK. Proof `verifiedAtUtc=2026-11-22T16:42:14.534Z`.
 
 ## 12. Handoff
 
-Phase 2 is live as `d174ec2`. Do not start phase 3 until the operator says yes. The fast loop is still absent. Do not delete `deye_fast`.
+Phase 2 is live as `d174ec2`. Phase 3 is local only and still off. Do not set `DEYE_FAST_INTERVAL_SEC=1` and do not deploy phase 3 until the operator says yes. Do not delete `deye_fast`.
 
 Read this file and `plan_deye_fast_read_PROGRESS.md` before editing. Do not re-read the planning chat.
 

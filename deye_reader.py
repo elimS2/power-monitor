@@ -181,37 +181,48 @@ def _store_house_battery(data: dict, block) -> None:
     _apply_hv_battery(data, block[1:10])
 
 
-def _store_apartment_battery_singles(data: dict, read) -> None:
-    """Illegal-address fallback. Apartment scales only."""
-    temp, _raised = _attempt(read, 586, 1)
+def _store_apartment_battery_singles(data: dict, read) -> bool:
+    """Illegal-address fallback. Apartment scales only. False if a single read raised."""
+    ok = True
+    temp, raised = _attempt(read, 586, 1)
+    ok = ok and not raised
     if temp:
         decoded = decode_temp_c(temp[0])
         if decoded is not None:
             data["temp_batt_c"] = decoded
-    volts, _raised = _attempt(read, 587, 1)
+    volts, raised = _attempt(read, 587, 1)
+    ok = ok and not raised
     if volts:
         data["battery_voltage"] = volts[0] * 0.01
-    soc, _raised = _attempt(read, 588, 1)
+    soc, raised = _attempt(read, 588, 1)
+    ok = ok and not raised
     if soc:
         data["battery_soc"] = soc[0]
-    power, _raised = _attempt(read, 590, 1)
+    power, raised = _attempt(read, 590, 1)
+    ok = ok and not raised
     if power:
         data["battery_power_w"] = _to_signed16(power[0])
+    return ok
 
 
-def _store_house_battery_singles(data: dict, read) -> None:
+def _store_house_battery_singles(data: dict, read) -> bool:
     """Today's house sequence. Do not use the apartment 0.01 scale."""
-    temp, _raised = _attempt(read, 586, 1)
+    ok = True
+    temp, raised = _attempt(read, 586, 1)
+    ok = ok and not raised
     if temp:
         decoded = decode_temp_c(temp[0])
         if decoded is not None:
             data["temp_batt_c"] = decoded
-    soc, _raised = _attempt(read, 588, 1)
+    soc, raised = _attempt(read, 588, 1)
+    ok = ok and not raised
     if soc:
         data["battery_soc"] = soc[0]
-    block, _raised = _attempt(read, 587, 9)
+    block, raised = _attempt(read, 587, 9)
+    ok = ok and not raised
     if block:
         _apply_hv_battery(data, block)
+    return ok
 
 
 def _attempt(read, addr: int, quantity: int):
@@ -226,20 +237,36 @@ def _attempt(read, addr: int, quantity: int):
     return _words_or_none(raw, quantity), False
 
 
-def read_deye_blocks(read_holding_registers, hv: bool = False) -> dict:
+class SlowRead:
+    """data is the partial or full snapshot. complete is false when a block raised and was not recovered."""
+
+    def __init__(self, data: dict, complete: bool):
+        self.data = data
+        self.complete = complete
+
+
+def read_deye_slow(read_holding_registers, hv: bool = False) -> SlowRead:
     """Six holding-register reads. A failed block omits only its own keys."""
     data: dict = {}
-    energy, _raised = _attempt(read_holding_registers, 520, 9)
-    _store_energy_block(data, energy)
-    year, _raised = _attempt(read_holding_registers, 87, 2)
+    failed = False
+
+    def take(addr: int, qty: int):
+        nonlocal failed
+        words, raised = _attempt(read_holding_registers, addr, qty)
+        if raised:
+            failed = True
+        return words
+
+    _store_energy_block(data, take(520, 9))
+    year = take(87, 2)
     if year:
         scaled = _scaled_u32(year[0], year[1], 0.1, "year_load_kwh")
         if scaled is not None:
             data["year_load_kwh"] = scaled
-    month, _raised = _attempt(read_holding_registers, 66, 1)
+    month = take(66, 1)
     if month:
         data["month_load_kwh"] = month[0] * 0.1
-    temps, _raised = _attempt(read_holding_registers, 540, 2)
+    temps = take(540, 2)
     if temps:
         _store_temps(data, temps, None)
     battery_qty = 10 if hv else 5
@@ -251,44 +278,38 @@ def read_deye_blocks(read_holding_registers, hv: bool = False) -> dict:
             _store_apartment_battery(data, battery)
     elif raised:
         if hv:
-            _store_house_battery_singles(data, read_holding_registers)
+            recovered = _store_house_battery_singles(data, read_holding_registers)
         else:
-            _store_apartment_battery_singles(data, read_holding_registers)
-    fast, _raised = _attempt(read_holding_registers, 598, _FAST_BLOCK_LEN)
+            recovered = _store_apartment_battery_singles(data, read_holding_registers)
+        if not recovered:
+            failed = True
+    fast = take(598, _FAST_BLOCK_LEN)
     if fast:
         decoded = decode_fast_block(fast)
         if decoded:
             data.update(decoded)
-    return data
+    return SlowRead(data, not failed)
+
+
+def read_deye_blocks(read_holding_registers, hv: bool = False) -> dict:
+    """Six holding-register reads. A failed block omits only its own keys."""
+    return read_deye_slow(read_holding_registers, hv=hv).data
+
+
+def read_fast_sample(read_holding_registers):
+    """One 598×56 read. Returns (decoded or None, raised)."""
+    words, raised = _attempt(read_holding_registers, 598, _FAST_BLOCK_LEN)
+    if raised or not words:
+        return None, raised
+    return decode_fast_block(words), False
 
 
 def read_deye_solarman(
     host: str, port: int = 8899, serial: str = "", socket_timeout: float = 10,
     hv: bool = False,
 ) -> Optional[dict]:
-    """Read via Solarman V5 (port 8899). Requires serial number."""
-    try:
-        from pysolarmanv5 import PySolarmanV5
-    except ImportError:
-        print("Install: pip install pysolarmanv5", file=sys.stderr)
-        return None
-
-    if not host or not serial:
-        return None
-
-    try:
-        modbus = PySolarmanV5(
-            host, int(serial), port=port, mb_slave_id=1, socket_timeout=socket_timeout,
-        )
-    except Exception:
-        return None
-
-    data = {}
-    try:
-        data = read_deye_blocks(modbus.read_holding_registers, hv=hv)
-    finally:
-        modbus.disconnect()
-    return data if data else None
+    """Does not open a socket. The poller keeps the one Solarman client per inverter."""
+    return None
 
 
 def read_deye_modbus(host: str, port: int = 502, hv: bool = False) -> Optional[dict]:
@@ -368,7 +389,5 @@ def read_deye(
     p = port if port is not None else 502
     s = serial or ""
     if s and p == 8899:
-        return read_deye_solarman(
-            host=host, port=p, serial=s, socket_timeout=socket_timeout, hv=hv,
-        )
+        return None
     return read_deye_modbus(host=host, port=p, hv=hv)

@@ -42,6 +42,7 @@ from config import (
     DEYE_BATTERY_KWH,
     DEYE_POLL_IP,
     DEYE_POLL_INTERVAL_SEC,
+    DEYE_FAST_INTERVAL_SEC,
     TUYA_ACCESS_ID,
     TUYA_ACCESS_SECRET,
     TUYA_BREAKER_ITP,
@@ -107,6 +108,7 @@ from database import (
     backfill_schedule_actuals,
     carry_open_outage,
     save_deye_log,
+    save_deye_fast,
     weather_outdoor_samples,
     apartment_inverter_id,
     deye_recent_power,
@@ -400,31 +402,178 @@ async def setup_tg_bot():
 # ─── Background loop ─────────────────────────────────────────
 
 _inflight_polls: set[int] = set()
+_solarman_clients: dict[int, object] = {}
+_slow_tasks: dict[int, asyncio.Task] = {}
+_ceiling_logged_at: dict[int, float] = {}
+_FAST_SOCKET_TIMEOUT = 3
+
+
+def _claim_poll(iid: int) -> bool:
+    """Check and add with no await between them. False when another task already owns iid."""
+    if iid in _inflight_polls:
+        return False
+    _inflight_polls.add(iid)
+    return True
+
+
+async def run_fast_cycle(rows, interval, read, sleep, monotonic, inflight, overrun_log):
+    """One walk, then one sleep of the leftover time. Does not start a second walk."""
+    start = monotonic()
+    for row in rows:
+        iid = int(row["id"])
+        if iid in inflight:
+            continue
+        inflight.add(iid)
+        try:
+            await read(row)
+        finally:
+            inflight.discard(iid)
+    delay = interval - (monotonic() - start)
+    if delay < 0:
+        delay = 0
+        overrun_log()
+    await sleep(delay)
+    return delay
+
+
+async def _claim_when_free(iid: int) -> bool:
+    """Wait, then claim again. A claim that was true only before the await is not kept."""
+    while True:
+        if _claim_poll(iid):
+            return True
+        await asyncio.sleep(0.05)
+
+
+def _drop_solarman(iid: int) -> None:
+    client = _solarman_clients.pop(iid, None)
+    if client is None:
+        return
+    try:
+        client.disconnect()
+    except Exception as exc:
+        log.warning("Deye client close [%s]: %s", iid, exc.__class__.__name__)
+
+
+def _solarman_client(row: dict):
+    """Open the client only for the task that already owns this inverter."""
+    iid = int(row["id"])
+    client = _solarman_clients.get(iid)
+    if client is not None:
+        return client
+    from pysolarmanv5 import PySolarmanV5
+
+    client = PySolarmanV5(
+        row["host"],
+        int(row["serial"]),
+        port=int(row["port"] or 8899),
+        mb_slave_id=1,
+        socket_timeout=_FAST_SOCKET_TIMEOUT,
+    )
+    _solarman_clients[iid] = client
+    return client
+
+
+def _note_fast_ceiling(iid: int, title, watts) -> None:
+    if watts is None or watts <= 30000:
+        return
+    now = time.time()
+    if now - _ceiling_logged_at.get(iid, 0) < 3600:
+        return
+    _ceiling_logged_at[iid] = now
+    log.warning("Deye fast load ceiling [%s]: %s W", title, watts)
+
+
+def _read_fast_owned(row: dict):
+    from deye_reader import read_fast_sample
+
+    iid = int(row["id"])
+    try:
+        client = _solarman_client(row)
+        sample, raised = read_fast_sample(client.read_holding_registers)
+    except Exception:
+        _drop_solarman(iid)
+        raise
+    if raised:
+        _drop_solarman(iid)
+        return None
+    if not sample:
+        return None
+    save_deye_fast(
+        inverter_id=iid,
+        grid_v_l1=sample["grid_v_l1"],
+        grid_v_l2=sample["grid_v_l2"],
+        grid_v_l3=sample["grid_v_l3"],
+        grid_power_w=sample["grid_power_w"],
+        load_l1_w=sample["load_l1_w"],
+        load_l2_w=sample["load_l2_w"],
+        load_l3_w=sample["load_l3_w"],
+        load_power_w=sample["load_power_w"],
+    )
+    _note_fast_ceiling(iid, row.get("title"), sample.get("load_power_w"))
+    return sample
+
+
+def _read_slow_owned(row: dict):
+    from deye_reader import read_deye_slow
+
+    iid = int(row["id"])
+    try:
+        client = _solarman_client(row)
+        result = read_deye_slow(
+            client.read_holding_registers,
+            hv=row.get("title") == HOUSE_INVERTER_TITLE,
+        )
+    except Exception:
+        _drop_solarman(iid)
+        raise
+    if not result.data or not result.complete:
+        _drop_solarman(iid)
+    return result.data
+
+
+async def _fast_loop() -> None:
+    interval = DEYE_FAST_INTERVAL_SEC
+
+    def overrun() -> None:
+        log.warning("Deye fast cycle overran")
+
+    while True:
+        rows = [
+            row for row in enabled_inverter_targets()
+            if row.get("host") and row.get("serial")
+        ]
+
+        async def read(row: dict) -> None:
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda r=row: _read_fast_owned(r))
+            except Exception as exc:
+                log.warning(
+                    "Deye fast failed [%s]: %s",
+                    row.get("title"), exc.__class__.__name__,
+                )
+
+        try:
+            await run_fast_cycle(
+                rows, interval, read, asyncio.sleep, time.monotonic,
+                _inflight_polls, overrun,
+            )
+        except Exception as exc:
+            log.warning("Deye fast cycle: %s", exc.__class__.__name__)
+            await asyncio.sleep(interval)
 
 
 async def _poll_target(row: dict) -> None:
-    """Read one registry row. A failure leaves its host unchanged."""
+    """Read one registry row on the shared client. A failure leaves its host unchanged."""
     iid = int(row["id"])
-    if iid in _inflight_polls:
-        return
     if not row.get("host") or not row.get("serial"):
         log.warning("Deye poll skip [%s]: no host or serial", row.get("title"))
         return
-    _inflight_polls.add(iid)
+    owned = False
     try:
-        from deye_reader import read_deye
-
+        owned = await _claim_when_free(iid)
         loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(
-            None,
-            lambda: read_deye(
-                host=row["host"],
-                port=row["port"],
-                serial=row["serial"],
-                socket_timeout=10,
-                hv=row.get("title") == HOUSE_INVERTER_TITLE,
-            ),
-        )
+        data = await loop.run_in_executor(None, lambda: _read_slow_owned(row))
         if not data:
             deye_poll_log.warning("Deye poll failed [%s]", row["title"])
             log.warning("Deye poll failed [%s]", row["title"])
@@ -460,14 +609,15 @@ async def _poll_target(row: dict) -> None:
         log.info(msg)
         deye_poll_log.info(msg)
     except Exception as exc:
-        deye_poll_log.warning("Deye poll error [%s]: %s", row.get("title"), exc)
-        log.warning("Deye poll error [%s]: %s", row.get("title"), exc)
+        deye_poll_log.warning("Deye poll error [%s]: %s", row.get("title"), exc.__class__.__name__)
+        log.warning("Deye poll error [%s]: %s", row.get("title"), exc.__class__.__name__)
     finally:
-        _inflight_polls.discard(iid)
+        if owned:
+            _inflight_polls.discard(iid)
 
 
 async def _poll_due_targets() -> None:
-    """Apartment read is awaited. Every other enabled row runs beside it."""
+    """Apartment read is awaited. Every other enabled row runs beside it, one task at a time."""
     targets = enabled_inverter_targets()
     if not targets:
         return
@@ -476,8 +626,12 @@ async def _poll_due_targets() -> None:
     for row in targets:
         if row["id"] == apt_id:
             apartment = row
-        else:
-            asyncio.create_task(_poll_target(row))
+            continue
+        iid = int(row["id"])
+        running = _slow_tasks.get(iid)
+        if running is not None and not running.done():
+            continue
+        _slow_tasks[iid] = asyncio.create_task(_poll_target(row))
     if apartment is not None:
         await _poll_target(apartment)
 
@@ -606,6 +760,9 @@ async def lifespan(_app: FastAPI):
     await dtek.fetch_weather()
     await dtek.fetch_alert()
     task = asyncio.create_task(bg_loop())
+    fast_task = None
+    if DEYE_FAST_INTERVAL_SEC in (1, 2):
+        fast_task = asyncio.create_task(_fast_loop())
     await setup_tg_bot()
     if AVATAR_ON_START:
         if kv_get("voltage_anomaly") == "1" and has_grid_voltage_now(inverter_id=notify_grid_inverter_id()):
@@ -631,6 +788,8 @@ async def lifespan(_app: FastAPI):
         flush_access()
     except Exception:
         log.error("access flush on stop failed")
+    if fast_task is not None:
+        fast_task.cancel()
     task.cancel()
 
 

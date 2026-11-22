@@ -256,7 +256,102 @@ class SlowBlockTests(unittest.TestCase):
         solarman = inspect.getsource(read_deye_solarman)
         self.assertIn("587, 9", modbus)
         self.assertNotIn("read_deye_blocks", modbus)
-        self.assertIn("read_deye_blocks", solarman)
+        self.assertNotIn("PySolarmanV5", solarman)
+        self.assertIn("Does not open a socket", solarman)
+
+
+class FastLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_two_short_reads_sleep_the_leftover_once(self):
+        from power_monitor import run_fast_cycle
+
+        clock = {"t": 0.0}
+        sleeps = []
+        reads = []
+
+        def monotonic():
+            return clock["t"]
+
+        async def read(row):
+            reads.append(row["id"])
+            clock["t"] += 0.2
+
+        async def sleep(delay):
+            sleeps.append(delay)
+
+        delay = await run_fast_cycle(
+            [{"id": 1}, {"id": 2}], 1, read, sleep, monotonic, set(), lambda: None,
+        )
+        self.assertEqual(reads, [1, 2])
+        self.assertAlmostEqual(delay, 0.6)
+        self.assertEqual(sleeps, [0.6])
+
+    async def test_overrun_sleeps_zero_and_does_not_read_again(self):
+        from power_monitor import run_fast_cycle
+
+        clock = {"t": 0.0}
+        sleeps = []
+        reads = []
+        overruns = []
+
+        def monotonic():
+            return clock["t"]
+
+        async def read(row):
+            reads.append(row["id"])
+            clock["t"] += 0.6
+
+        async def sleep(delay):
+            sleeps.append(delay)
+
+        delay = await run_fast_cycle(
+            [{"id": 1}, {"id": 2}], 1, read, sleep, monotonic, set(), lambda: overruns.append(1),
+        )
+        self.assertEqual(reads, [1, 2])
+        self.assertEqual(delay, 0)
+        self.assertEqual(sleeps, [0])
+        self.assertEqual(overruns, [1])
+
+    async def test_held_id_is_skipped_and_a_free_id_is_read(self):
+        from power_monitor import run_fast_cycle
+
+        reads = []
+
+        async def read(row):
+            reads.append(row["id"])
+
+        await run_fast_cycle(
+            [{"id": 7}, {"id": 8}], 1, read, self._noop, lambda: 0, {7}, lambda: None,
+        )
+        self.assertEqual(reads, [8])
+
+    async def test_a_claim_taken_again_is_not_discarded(self):
+        import asyncio
+
+        import power_monitor
+
+        power_monitor._inflight_polls.clear()
+        power_monitor._inflight_polls.add(7)
+        waiting = asyncio.create_task(power_monitor._claim_when_free(7))
+        await asyncio.sleep(0.12)
+        waiting.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await waiting
+        self.assertEqual(power_monitor._inflight_polls, {7})
+        power_monitor._inflight_polls.clear()
+
+    async def _noop(self, _delay):
+        return None
+
+
+class FastIntervalTests(unittest.TestCase):
+    def test_only_zero_one_and_two_are_accepted(self):
+        from config import fast_interval_sec
+
+        self.assertEqual(fast_interval_sec("0"), 0)
+        self.assertEqual(fast_interval_sec("1"), 1)
+        self.assertEqual(fast_interval_sec("2"), 2)
+        self.assertEqual(fast_interval_sec("9"), 0)
+        self.assertEqual(fast_interval_sec(None), 0)
 
 
 if __name__ == "__main__":
