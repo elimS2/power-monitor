@@ -1,10 +1,11 @@
 # Automatic ITP control
 
-- Status: `REVIEWED / READY FOR LOCAL WORK`
+- Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (the heat journal) only. Part 1, the control loop, stays `LIVE` and frozen. Do not rebuild it.
+- Last updated: 2026-11-22T22:34:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T21:35:00Z
+- Part 2 proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`. The earlier proof `2026-11-22T21:53:10.797Z` still covers the first Part 2 draft.
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -715,4 +716,269 @@ Code, tests, and commit messages stay English. The card and admin sentences stay
 
 Update both this file and the progress file at every gate, with a DateTime.
 
-Known blockers: none. Status is `REVIEWED / READY FOR LOCAL WORK`. Phase 1 starts only after an explicit yes. Do not set `ITP_AUTO_COMMANDS=1` in that phase.
+Known blockers: none. Part 1 is already live. The next new work is Part 2 below. Do not restart Part 1.
+
+## Part 2 — Heat journal
+
+Status of this part: `REVIEWED / READY FOR LOCAL WORK`. Do not start J1 without an explicit yes.
+
+### 2.1 Goal and non-goals
+
+Goal: keep two facts, and show the whole selected day when the operator taps the `Обігрів` lane.
+
+- The program turned the heat breaker on or off.
+- Control changed between manual and automatic, and why.
+
+Non-goals:
+
+- Do not add these rows to the city-power table `power_events` or to the block titled `Події`. That block stays `Пропало` / `З'явилось` plus voltage, with the schedule column and the duration column.
+- Do not log a row on every minute decision, every status GET, a rejected POST, a timer delete, or a lighting-breaker action.
+- Do not send Telegram for these rows.
+- Do not backfill history from the service journal. The list starts empty.
+- Do not change `ITP_AUTO_COMMANDS`. It is already `1` in the server `.env` only. Do not copy that value into git.
+- Do not add a public switch button. Do not clear `LIGHT_SCHEDULE_PAUSED`. Do not POST to `svitlo`.
+- Do not draw marks on the lane. Class `brk-journal-pin` must not exist. The colored bar already shows on and off.
+- Do not make `Графік 5.1`, `Фактично`, `Заряд`, `Освітлення`, `Котельня`, or `Тривога` open this list. Only `Обігрів` does.
+
+### 2.2 Context harvest
+
+Repo Memory catalog at 2026-11-22T21:52:57Z has nine repos. `power-monitor` is absent. Disk is the source of truth. Company KB searches were run and did not return this repo. No ids from those searches are used as implementation paths. Do not copy unrelated tokens from those hits into this file.
+
+Self-check:
+
+- [x] knowledge search ran. No power-monitor path.
+- [x] ideas search ran. No power-monitor path. Idea 279 (one ledger, do not invent a second events table) is a KB product rule, not this SQLite app. Here a second table is required because `power_events` is the city-light timeline.
+- [x] code_directories search ran. No power-monitor path.
+- [x] code_files search ran. No power-monitor path.
+- [x] code_symbols search ran. No power-monitor path.
+- [x] jira and dialogs searches ran. No ticket and no dialog for this journal.
+- [x] Disk drill-down of the files below.
+- [x] 2026-11-22T22:05:52Z catalog again: nine repos, `power-monitor` absent, `git_only_repos` is only `lazy-ai`. `kb_rule('project_memory')` was not loaded. That rule is for the `knowledge_base` repo.
+
+Place revision, searches at 2026-11-22T22:05Z, topic "click the heat lane to show that day's journal":
+
+| Volume | Mode | Result |
+|---|---|---|
+| knowledge | semantic | 12 hits, none this repo. Top ids 1041, 1039, 1024, 1054, 1037, 1040 are the daily secretary briefing. |
+| ideas | semantic | 12 hits, none this repo. Top ids 293, 310, 368, 516, 321, 311 are other products. Do not copy them. |
+| code_directories | semantic | 10 hits, none this repo. Top paths are invoice `templates/admin` and knowledge-base `apps/web/src/app/(app)/admin`. |
+| code_files | hybrid | `total_fts_hits` 0, then semantic fallthrough. No `paintBreakers` and no `power-monitor` path. |
+| code_symbols | hybrid | No `paintBreakers`. Returned `_read`, `readJumpClip`, `read_widgets` in other repos. |
+| jira | fts | No ticket. Returned KB-336, KB-348, HEED-2, KB-13, KB-195, KB-325. |
+| dialogs | hybrid | `total_fts_hits` 0. Top ids 7858, 2016, 7377, 8231, 6383, 8142 are other products. |
+
+Disk drill-down for this revision: `static/app.js` `paintBreakers` (replaces `#pm-breakers-board`), `pmRefreshBreakers` (called when `#pm-breakers-live` changes, and every 60 seconds for today), `.brk-help` capture listener, `breakerTimerPins`. `power_monitor.py` `_breaker_bars_html` and `_breaker_section_html`. `database.py` `read_breaker_board`. `static/style.css`: `.brk-lane` is 16px with `overflow: hidden`. `.brk-when-pin` is an `<i>` on `.brk-lane-wrap`, `top: -4px`, `height: 26px`, `z-index: 4`. It is not a button.
+
+| Path | Why it matters | Touch |
+|---|---|---|
+| `power-monitor/database.py` `init_db`, `save_event`, `recent_events`, `read_breaker_board` | `power_events` is the city-light table. The board payload is the day the chart already loads. | Add `itp_journal`, `append_itp_journal`, and `itp_journal_for_day`. Put that day's rows on the payload. Do not change `save_event`. |
+| `power-monitor/power_monitor.py` `_build_update_fragments` around the `Події` table | Events block must stay untouched. | Do not append a journal list in the live fragment. |
+| `power-monitor/power_monitor.py` `_breaker_bars_html`, `_breaker_section_html` | First paint of the lanes, and the node `paintBreakers` does not replace. | Heat lane becomes the button. The day list sits after `#pm-breakers-board`. Do not move the help text. |
+| `power-monitor/static/app.js` `paintBreakers`, `pmRefreshBreakers` | The board the operator sees. `innerHTML` replace wipes anything inside the board. | Same heat-lane button. Refill the outside list when it is open. |
+| `power-monitor/static/style.css` `.brk-lane`, `.brk-when-pin`, `.brk-help-pop` | 16px bar, timer pins, the info panel. | Hit box on the heat lane only. New class `brk-journal-pop` in normal flow. Do not reuse `brk-help-pop`. |
+| `power-monitor/itp_auto.py` `mutate_itp_auto`, `apply_post_result` | Mode flips and post results already happen here. | Call the journal writer after a real transition. |
+| `power-monitor/tuya_breakers.py` `_confirm_itp_command`, `settle_itp_after_sample` | These two are the only places a pending command becomes a matched sample. | Call `mark_itp_journal_confirmed` from each, in its own try. Do not write the switch row from `_emit_post`. |
+| `power-monitor/api/admin.py` `set_itp_armed` | Arm and disarm already mutate `enabled`. | No extra route. The shared writer sees the flip. |
+| `power-monitor/tests/test_itp_auto.py`, `tests/test_breakers.py` | Temp sqlite pattern already exists. | Add journal tests. |
+
+### 2.3 Current reality
+
+The control loop is live. `ITP_AUTO_COMMANDS=1` is in the server `.env` only, since 2026-11-22T21:33:00Z. The heat card shows `Керування` as `ручне` (red, class `brk-mode-off`) or `автоматичне` (green, class `brk-mode-on`). A muted note under the meters says why.
+
+Service logs such as `itp-auto: post on` and `itp-auto: admin arm` are not stored in SQLite and disappear when the journal rotates. The dashboard cannot show them.
+
+`recent_events` reads `power_events`. The `Події` table labels are only `down`, `up`, and the voltage events. A new event name there would get a schedule cell and a duration cell that do not mean anything for the heat breaker.
+
+### 2.4 Skins
+
+Skin J-G, default since 2026-11-22T22:08:00Z. The same append-only table `itp_journal`. The `Обігрів` lane is one button. A tap opens the list of that selected day. No marks. No second list under the cards.
+
+Skin J-A. Marks on the `Обігрів` lane, one popover per mark or per cluster. Superseded 2026-11-22T22:08:00Z. The operator asked why the marks exist when a tap on the heat line can show the whole day. The colored bar already shows on and off.
+
+Skin J-B. Insert new event names into `power_events` and render them in `Події`. Rejected. It mixes the city-light timeline with the heat breaker and breaks the schedule and duration columns.
+
+Skin J-C. Append a JSON list onto the `itp_auto` kv document. Rejected. That document is the control state. An unbounded list races with the command lock and is the wrong place for history.
+
+Skin J-D. A text section `Журнал обігріву` under the cards. Superseded 2026-11-22T21:59:00Z. It repeats what the colored lane already shows and adds a second thing to read.
+
+Skin J-E. Tap anywhere on the time lanes, or tap one minute. Rejected. Six of the seven lanes are not this journal. A finger cannot hit one minute on a 16px bar. This skin is not "tap the heat lane". That is J-G.
+
+Switch: implement J-G only. There is no env flag. Removing the feature is removing the heat-lane button and the list, and leaving the table in place.
+
+### 2.5 Recommended architecture
+
+```sql
+CREATE TABLE IF NOT EXISTS itp_journal (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        REAL NOT NULL,
+    kind      TEXT NOT NULL,
+    reason    TEXT NOT NULL,
+    confirmed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_itp_journal_ts ON itp_journal(ts);
+```
+
+`kind` is `switch-on`, `switch-off`, `mode-auto`, or `mode-manual`.
+
+`reason` is `boiler`, `light-on`, `light-off`, `admin`, `hand`, or `flap`.
+
+`confirmed` on a switch row stays 0 until a sample matches `pending.state`. A POST body `success: true` is not that match. `apply_post_result` still sets `pending` on success and on transport, and it does not set `applied`. The card already says `Команда ще не підтверджена.` while `pending` is set. The journal uses the same meaning: the suffix `ще не підтверджено` stays until the match. A rejected POST writes no row. A 20-minute unconfirmed warn does not delete the row and does not set `confirmed=1`.
+
+Mode rows pass `confirmed=1`. They are a fact about the flag, not a cloud sample. `mutate_itp_auto` compares the document before and after `update`. `kv_set` runs first. Journal inserts run after that write, in this order, each in its own try. A journal error is logged and the saved document is still returned. Do not insert before `kv_set`.
+
+1. Switch row, only when `pending` goes from empty to a state. `confirmed=0`. Kind is `switch-on` or `switch-off` from that state. Reason is `last.reason` when it is `boiler`, `light-on`, or `light-off`. Otherwise store `admin`. `_emit_post` does not write a second switch row.
+2. Mode row, when `enabled` changed, after the switch row if both happened.
+
+The live pause reason is `manual` or `flap` (`itp_auto.py` `_manual_disarm` and `_disarm_flap`). The journal does not store `manual`. Map the document after the update:
+
+- `enabled` false to true: `mode-auto` / `admin`. `arm_itp` is this path.
+- `enabled` true to false and `pause.reason == "manual"`: `mode-manual` / `hand`.
+- `enabled` true to false and `pause.reason == "flap"`: `mode-manual` / `flap`. `_disarm_flap` can run inside `apply_post_result` on the fourth counted command, in the same update that sets `pending`. The switch row is inserted first, then this mode row. `itp_journal_for_day` orders by `ts ASC, id ASC`, so the switch sentence stays above the flap sentence.
+- `enabled` true to false otherwise: `mode-manual` / `admin`. `disarm_itp` leaves `pause` as it was. After an arm, `pause` is null, so an admin disarm is `admin`.
+- `enabled` unchanged: no mode row.
+
+Do not pass `pause.reason` straight into `append_itp_journal`. `manual` is not a journal reason. `itp_journal_line` never raises on a stored row.
+
+Confirm sets `confirmed=1` only when a pending command matches the sample, and only after that `kv_set`. Both match sites call `mark_itp_journal_confirmed(state)` from their own try. A raise there must not escape `settle_itp_after_sample`, because that function runs inside `poll_breakers` with no local try of its own.
+
+- `tuya_breakers.py` `_confirm_itp_command`, the `apply` callback, when `shown == pending.state`.
+- `tuya_breakers.py` `settle_itp_after_sample`, when `actual == pending.state`.
+
+The helper loads the newest row of that switch kind (`switch-on` for `on`, `switch-off` for `off`). If that row has `confirmed=0`, set it to 1. If that newest row is already 1, do nothing. Do not walk back to an older unconfirmed row. It does not touch mode rows. Clearing `pending` is not itself a confirm. `disarm_itp` clears `pending` and must leave `confirmed` alone. The 20-minute branch in `settle_itp_after_sample` clears `pending`, sets `warn.kind` to `unconfirmed`, and does not set `confirmed=1`.
+
+A journal insert runs after the control write, in its own short connection. On failure, log `itp-auto: journal <ExceptionName>` and continue. A journal error must not skip the switch, the confirm, or the quarter poll.
+
+Ukrainian, one line, no device id:
+
+| kind | reason | confirmed | Line |
+|---|---|---|---|
+| switch-on | boiler | 1 | Обігрів увімкнено автоматично, котельня |
+| switch-on | light-on | 1 | Обігрів увімкнено автоматично, світло вже 15 хв |
+| switch-on | admin | 1 | Обігрів увімкнено автоматично |
+| switch-off | light-off | 1 | Обігрів вимкнено автоматично, світла немає 15 хв |
+| switch-off | admin | 1 | Обігрів вимкнено автоматично |
+| switch-on or switch-off | any | 0 | the same line plus ` ще не підтверджено` |
+| mode-auto | admin | 1 | Керування стало автоматичним |
+| mode-manual | admin | 1 | Керування стало ручним |
+| mode-manual | hand | 1 | Керування стало ручним, перемкнули руками |
+| mode-manual | flap | 1 | Керування стало ручним, за годину вже 4 перемикання |
+
+One function, `itp_journal_line(kind, reason, confirmed)`, lives in `itp_auto.py` and returns the Ukrainian sentence. It does not include the clock and it does not import HTTP. `read_breaker_board` calls it. JavaScript does not keep a second copy of the sentences. A stored switch row whose reason is not in the table uses the `admin` sentence for that kind. The function does not raise on a stored row.
+
+`itp_journal_for_day(day)` returns `(rows, truncated)`. A row belongs to `day` when `kyiv_date_str(ts)` is that date. Use `config.UA_TZ`, the same clock as `kyiv_day_bounds`. Do not use `datetime.utcfromtimestamp` and do not slice on the UTC date. A row at 00:30 Europe/Kyiv belongs to that Kyiv chart day. `rows` is `ORDER BY ts ASC, id ASC`, at most 200. `truncated` is true only when older rows of that same Kyiv day were left out. The page then adds one last line, `Старіші записи цієї доби не показано.` A normal day stays under the cap because the flap guard stops the program at 4 switch commands an hour.
+
+`read_breaker_board` adds `journal` and `journal_truncated` for the requested day. `ep_breakers` already returns that dict as JSON, so `api/dashboard.py` needs no new route. Call `itp_journal_line` from inside `read_breaker_board`, the same way it already imports `tuya_breakers` inside the function. Do not import `itp_auto` at the top of `database.py`. The journal read has its own try. On failure, log `itp-auto: journal <ExceptionName>` and return `journal: []` with `journal_truncated: false`. Do not let that exception leave `read_breaker_board`. `_breaker_live_html` turns any exception from this function into an empty fragment, which blanks the meter cards. Each item is `{ts, clock, text}`. `clock` is `HH:MM` in Europe/Kyiv. `text` is `itp_journal_line`. The page prints `clock`, a space, then `text`, through DOM text nodes. Do not put `text` into `innerHTML`. Rows outside the selected day stay in the table and are not sent. `journal_truncated` true adds the cut line after the rows.
+
+The button. In `_breaker_bars_html` and in `paintBreakers`, the `itp` track is the only one with `<button type="button" class="brk-journal-hit">` wrapping `.brk-lane`. `aria-label` is `Події обігріву за цю добу`. `aria-controls` is `brk-journal-pop`. `Освітлення` and the other lanes stay plain divs. The visible `.brk-lane` stays 16px tall with `overflow: hidden`. The button is in normal flow: `display: flex; align-items: center; width: 100%; min-height: 32px`, transparent, `cursor: pointer`, no negative offset. The heat row grows. The button must not cover `Котельня`. The heat pin stays a sibling of the button, not a child of `.brk-lane`, because that lane clips overflow. Set the pin `top` so the 26px pin stays centered on the 16px bar inside the grown wrap. `pointer-events: none` on that pin, so a tap still hits the button. Lighting pins are unchanged. Do not add `brk-journal-pin`.
+
+The list. `#brk-journal-pop` is the next sibling of `#pm-breakers-board`, inside `#breaker_details`, hidden until a tap. It is in normal flow under the chart. Its class is `brk-journal-pop`, not `brk-help-pop`. Copy the dark colors from `.brk-help-pop`. Do not copy `position: absolute`. The help listener in `static/app.js` treats every `.brk-help-pop` as the info panel. `paintBreakers` sets `breakerBoard.innerHTML`, and `pmRefreshBreakers` runs when `#pm-breakers-live` changes and again every 60 seconds for today. A list inside the board would close on that replace.
+
+Open and close. One capture-phase click listener, the same pattern as `.brk-help`: `preventDefault` and `stopPropagation`. A tap on `.brk-journal-hit` toggles. A tap on `.brk-help` closes this list. A tap on this list closes `.brk-help-pop`. Esc closes this list first when it is open, then the help pop. A tap outside closes it, except `#brk-prev` and `#brk-next`. A module flag `journalOpen` survives the board replace. At the end of `paintBreakers`, if the flag is set, refill `#brk-journal-pop` from `data.journal` and set the new button's `aria-expanded` to true. If the flag is clear, the repaint leaves the list hidden. Before the first payload arrives, a tap does nothing.
+
+Order and the empty day. Sentences are oldest first, one paragraph each. An empty `journal` still leaves the heat lane clickable, because the colored bar is there. The list then says `За цю добу записів немає.` Changing day with `‹` `›` while the list is open keeps it open and shows that day.
+
+### 2.6 Phases
+
+Human gate after each phase. Do not start the next phase in the same turn. Do not deploy unless that same yes includes deploy. Do not put `#автооновити` in a commit unless the yes includes deploy.
+
+#### Phase J1 — table and helpers
+
+Goal: create the table and the read/write helpers. No page change. No new log line from the live loop.
+
+Touched: `database.py` (`init_db`), `tests/test_itp_auto.py`.
+
+Steps: `CREATE TABLE IF NOT EXISTS` inside `init_db`. `append_itp_journal(ts, kind, reason, confirmed=0)` and `itp_journal_for_day(day) -> (rows, truncated)`, ordered by `ts ASC, id ASC`, cap 200. Mode callers pass `confirmed=1`. Switch callers pass `confirmed=0`. Reject an unknown kind or reason without writing. `itp_journal_line` covers every row of the sentence table, including the unconfirmed suffix and the `admin` switch lines. A stored switch reason outside the table still returns the `admin` sentence and does not raise.
+
+Verification: temp sqlite. Two rows on the same Kyiv day come back oldest first with `truncated` false. A row whose UTC date is the previous day but whose Kyiv time is 00:30 is included. A row on the next Kyiv day is absent. Row 201 of one Kyiv day sets `truncated` true and the returned rows are the latest 200, still oldest first. An unknown kind raises and leaves the table unchanged. `power_events` stays empty.
+
+Landed 2026-11-22T22:34:00Z. `JournalStoreTests` passed. The table is created by `init_db` and nothing in the live loop calls it. `itp_journal_line` lives in `itp_auto.py` and is not wired to a writer yet. One pre-existing failure in `test_hidden_flag_removes_the_section` rejected every `<button`, including the info button that has been on the page since 2026-11-22. That assertion now allows exactly that one button. No deploy. Phase J2 has not started. Proof `verifiedAtUtc=2026-11-22T22:32:17.637Z`.
+
+Rollback: stop calling the helpers. The empty table may remain.
+
+Deploy: no.
+
+#### Phase J2 — write the rows
+
+Goal: the live transitions create rows. The page still does not show them.
+
+Touched: `itp_auto.py` (`mutate_itp_auto`), `tuya_breakers.py` (`_confirm_itp_command` and `settle_itp_after_sample`), tests.
+
+Steps: after `kv_set`, write the switch row and then the mode row as in 2.5. `_emit_post` does not insert a journal row. `mark_itp_journal_confirmed` runs from both match sites, each in its own try.
+
+Verification, temp sqlite, no network:
+
+- arm then disarm writes `mode-auto` then `mode-manual` / `admin`. A second arm while already armed writes nothing.
+- a disarm whose saved `pause.reason` is `manual` writes `mode-manual` / `hand`. The test must not store the journal reason `hand` in `pause`. A flap disarm writes `mode-manual` / `flap`.
+- `success` and `transport` each write one switch row with `confirmed=0`. `rejected` writes none. A matching confirm in `_confirm_itp_command` sets that row to 1. The same row is also set to 1 when only `settle_itp_after_sample` sees the match. `disarm_itp` clearing `pending` leaves `confirmed` at 0. The 20-minute unconfirmed branch leaves `confirmed` at 0.
+- an older transport row with `confirmed=0`, then a newer success row of the same kind with `confirmed=0`, then a match: only the newer row becomes 1. The older row stays 0.
+- the fourth counted command writes the switch row and then the flap mode row. `itp_journal_for_day` returns the switch sentence first.
+- a hold tick and a disabled tick write nothing.
+- a test that plants `enabled` through `mutate_itp_auto` is a real transition and does write a mode row. A fixture that must not write uses `kv_set` directly.
+- a raised insert is caught. The document update still sticks. A raised confirm update does not leave `settle_itp_after_sample`.
+
+Rollback: remove the journal calls in `mutate_itp_auto`, `_confirm_itp_command`, and `settle_itp_after_sample`. Existing rows stay. Each of those calls is already inside its own try, so a partial revert cannot throw out of the quarter poll.
+
+Deploy: no.
+
+#### Phase J3 — day list on the heat lane
+
+Goal: a tap on the `Обігрів` lane opens that day's sentences. The lane has no marks.
+
+Touched: `database.py` `read_breaker_board`, `power_monitor.py` `_breaker_bars_html` and `_breaker_section_html`, `static/app.js` `paintBreakers`, `static/style.css`. `api/dashboard.py` only if `GET /api/breakers` does not already return `read_breaker_board` unchanged. Tests.
+
+Steps: add `journal` as in 2.5. Put `brk-journal-hit` on the heat lane in the server HTML and in `paintBreakers`. Put `#brk-journal-pop` after `#pm-breakers-board`. Wire the toggle, the outside click, Esc, and the repaint refill. Do not edit the `Події` builder. Do not add an eighth lane. Do not add `brk-journal-pin`.
+
+Verification: the heat track HTML contains `brk-journal-hit`. The lighting track does not. `#brk-journal-pop` is outside `#pm-breakers-board` and its class is `brk-journal-pop`, not `brk-help-pop`. A fixture at 09:15 and one at 18:00 produce `journal` oldest first, with `clock` `09:15` then `18:00`, and `journal_truncated` false. An empty day has `journal: []`, `journal_truncated` false, and the heat button is still present. A raised journal read still returns that empty payload and `_breaker_live_html` still renders the meter cards. `app.js` contains `brk-journal-hit`, fills the popover with text nodes, and does not contain `brk-journal-pin`. `tests/test_breakers.py` `test_bars_are_green_then_red_and_the_other_breaker_is_empty` and `test_page_script_does_not_reuse_the_fact_lane` today reject every `<button`. Update those two assertions so `brk-journal-hit` is the only new button. Any other `<button` in the bars HTML, on the lighting track, or in that script chunk still fails. `test_hidden_flag_removes_the_section` allows exactly one button, `brk-help`, since 2026-11-22T22:34:00Z. J3 makes that two: the info button and `brk-journal-hit`. The `Події` HTML does not contain `Обігрів увімкнено`. The info button still has `brk-help-pop` hidden. After a later deploy, the browser check is: tap the heat lane, read both sentences, tap `‹`, see that day, tap outside, the list closes, and a board refresh while the list is open does not close it.
+
+Rollback: remove the button and the pop. Rows remain in the table.
+
+Deploy: no, unless the operator asks in the same yes.
+
+### 2.7 Data and compatibility
+
+No `ALTER` of `power_events`. `CREATE TABLE IF NOT EXISTS` runs from `init_db` on the next process start. Old servers gain an empty table. The control document `itp_auto` is unchanged.
+
+Rollback does not delete rows. A bad sentence is a render change, not a data migration.
+
+### 2.8 Verification and definition of done
+
+Local: `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule`.
+
+Done when J1–J3 have landed, a tap on the `Обігрів` lane lists that day's Ukrainian sentences from oldest to newest, an empty day says `За цю добу записів немає.`, and `Події` still shows only city light and voltage. Live commands stay as they are. Do not turn them off to test the list.
+
+### 2.9 Risks and decisions
+
+- A transport row can say the breaker switched before the confirm. The words `ще не підтверджено` are the honest state. Do not delete that row if the confirm disagrees. The mode row for a hand is a separate fact.
+- Writing the mode row inside `mutate_itp_auto` sees every enabled flip, including ones added later. That is the point. It must not write when `enabled` is unchanged.
+- The visible chart is `paintBreakers`. The heat-lane button must be in that function and in `_breaker_bars_html`. The list must stay outside `#pm-breakers-board`, or the next replace closes it.
+- A 16px bar is a small thumb target. The heat row grows to at least 32px in normal flow. A negative offset would cover `Котельня`. The other lanes stay 16px.
+- Timer pins on the heat lane are not buttons. `pointer-events: none` on those pins keeps the tap on the journal button. Lighting pins are unchanged.
+
+| When | Decision |
+|---|---|
+| 2026-11-22T21:52:00Z | Operator: record automatic heat on/off and manual/automatic mode changes. Suggested the `Події` block. |
+| 2026-11-22T21:53:00Z | Plan answer: a separate `itp_journal` list under the breaker cards. `Події` stays the city-light timeline. Skin J-A default. J-B and J-C rejected. |
+| 2026-11-22T21:53:10Z | self-review round 1. Findings: a journal error must not block a switch; no backfill; no device id in the sentence; `CREATE TABLE IF NOT EXISTS` is the only migration. All four are written into 2.5 and 2.7. No second round. 0 CRITICAL, 0 HIGH left in this draft. |
+| 2026-11-22T21:58:00Z | Operator: the journal should look light and easy. Pointed at the existing day lanes and asked whether a tap on the time bar should show the day. |
+| 2026-11-22T21:59:00Z | Supersedes the list under the cards. Marks on the `Обігрів` lane, popover on tap. A tap on empty lane is rejected. Proof `verifiedAtUtc=2026-11-22T21:59:06.870Z`. |
+| 2026-11-22T21:59:06Z | self-review round 2. HIGH if marks lived only in server HTML, because `paintBreakers` replaces the board. Fixed in 2.5. Cluster rule added. 0 CRITICAL, 0 HIGH left. |
+| 2026-11-22T22:04:00Z | Operator: do not use marks. A tap on the `Обігрів` line should show the whole day. |
+| 2026-11-22T22:08:00Z | Skin J-G replaces J-A. One button, the heat lane. The list is that day, oldest first. Empty day still opens and says there are no rows. Proof `verifiedAtUtc=2026-11-22T22:04:58.446Z`. |
+| 2026-11-22T22:08:00Z | self-review round 3. HIGH if the list lived inside `#pm-breakers-board`: `paintBreakers` and `pmRefreshBreakers` would close it. HIGH if the reader kept only the newest 20: the morning of a long day would disappear. Both fixed in 2.5. The heat row grows in normal flow to at least 32px. It does not use a negative offset, because that would cover `Котельня`. `‹` `›` do not count as an outside tap. 0 CRITICAL, 0 HIGH left in that draft. |
+| 2026-11-22T22:12:00Z | Lead review, before the critic. Proof `verifiedAtUtc=2026-11-22T22:10:44.991Z`. The live pause string is `manual`, not `hand`. A direct store of `manual` would be rejected and the hand row would vanish. Map `manual` to journal reason `hand`. Confirm is two sites: `_confirm_itp_command` and `settle_itp_after_sample`. `disarm_itp` and the 20-minute warn must not set `confirmed=1`. Day membership is `kyiv_date_str`, not the UTC date. Payload field `journal_truncated`. Popover text uses DOM text nodes. Review harvest at 22:11Z still has no `power-monitor` path: knowledge 1041, ideas 310, code_directories `assets/AdminComponents/BookeeperDashboard`, code_files `total_fts_hits` 0, code_symbols `read_widgets`, jira KB-336, dialogs 2953. Status `REVIEW IN PROGRESS`. |
+| 2026-11-22T22:18:00Z | Critic round 1, model `grok-4.7-xhigh-fast`, CHANGES REQUIRED, CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2. Both HIGH accepted. A success POST is `confirmed=0` until a sample matches, and the match updates only the newest row of that kind when that row is still 0. Switch row is written inside `mutate_itp_auto` before the mode row. `brk-journal-pop` is its own in-flow panel. Journal read failures stay inside `read_breaker_board`. The two button bans in `tests/test_breakers.py` allow only `brk-journal-hit`. |
+| 2026-11-22T22:22:00Z | Critic round 2, same model `grok-4.7-xhigh-fast`, resumed, APPROVE, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. The eight round-1 fixes are in Part 2. Status `REVIEWED / READY FOR LOCAL WORK`. Local work starts at J1 only after an explicit yes. |
+
+Open questions: none. The selected day already has `‹` `›`.
+
+### 2.10 Handoff
+
+Start at Phase J1 only after an explicit yes. Read this Part 2 and the progress file. Active journal skin is J-G. Do not implement J-A marks. Do not reopen Part 1. Do not edit `plan_breakers.md`. Do not set or clear `ITP_AUTO_COMMANDS` in git or on the server as part of these phases.
+
+If the company KB MCP is down, do not block J1. The harvest in 2.2 is the record. Do not write this repo into that KB.
+
+Code and commits stay English. The journal sentences stay the Ukrainian in 2.5.
+
+Update this file and `plan_itp_auto_PROGRESS.md` at every gate, with a DateTime.
+
+Status of Part 2 is `REVIEWED / READY FOR LOCAL WORK`. Critic round 2 approved with 0 CRITICAL and 0 HIGH. Do not start J1 without an explicit yes.

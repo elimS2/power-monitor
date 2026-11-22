@@ -273,6 +273,15 @@ def init_db():
                 updated_at        REAL NOT NULL,
                 PRIMARY KEY (device, day)
             );
+
+            CREATE TABLE IF NOT EXISTS itp_journal (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts        REAL NOT NULL,
+                kind      TEXT NOT NULL,
+                reason    TEXT NOT NULL,
+                confirmed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_itp_journal_ts ON itp_journal(ts);
         """)
         # Existing installs created schedule_history before queue/emergency existed.
         # CREATE TABLE IF NOT EXISTS does not add columns, so ALTER fills old rows
@@ -2820,6 +2829,50 @@ def house_charge_segments(start: float, end: float) -> list[dict]:
         else:
             segments.append({"start": ts, "end": piece_end, "soc": level})
     return segments
+
+
+_JOURNAL_KINDS = frozenset({"switch-on", "switch-off", "mode-auto", "mode-manual"})
+_JOURNAL_REASONS = frozenset({"boiler", "light-on", "light-off", "admin", "hand", "flap"})
+_JOURNAL_DAY_CAP = 200
+
+
+def append_itp_journal(ts: float, kind: str, reason: str, confirmed: int = 0) -> None:
+    """Append one heat-journal row. An unknown kind or reason writes nothing."""
+    if kind not in _JOURNAL_KINDS or reason not in _JOURNAL_REASONS:
+        raise ValueError("unknown journal kind or reason")
+    with _conn() as db:
+        db.execute(
+            "INSERT INTO itp_journal (ts, kind, reason, confirmed) VALUES (?, ?, ?, ?)",
+            (float(ts), kind, reason, 1 if confirmed else 0),
+        )
+
+
+def itp_journal_for_day(day: str) -> tuple[list[dict], bool]:
+    """Rows for one Kyiv date, oldest first. The cap keeps the latest 200."""
+    start, end = kyiv_day_bounds(day)
+    with _conn() as db:
+        found = db.execute(
+            """
+            SELECT id, ts, kind, reason, confirmed
+            FROM itp_journal
+            WHERE ts >= ? AND ts < ?
+            ORDER BY ts ASC, id ASC
+            """,
+            (start, end),
+        ).fetchall()
+    truncated = len(found) > _JOURNAL_DAY_CAP
+    kept = found[-_JOURNAL_DAY_CAP:] if truncated else found
+    rows = [
+        {
+            "id": row["id"],
+            "ts": row["ts"],
+            "kind": row["kind"],
+            "reason": row["reason"],
+            "confirmed": row["confirmed"],
+        }
+        for row in kept
+    ]
+    return rows, truncated
 
 
 def read_breaker_board(day: str, now: float) -> dict:

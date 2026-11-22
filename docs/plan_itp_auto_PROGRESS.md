@@ -1,14 +1,14 @@
 # Progress — automatic ITP control
 
 - Plan: `power-monitor/docs/plan_itp_auto.md`
-- Status: `REVIEWED / READY FOR LOCAL WORK`
-- Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T21:35:00Z
-- Current phase: 5 done and deployed. Commands are on, server `.env` only.
-- Next allowed step: leave the loop armed. Rollback is `ITP_AUTO_COMMANDS=0`, disarm, restart.
+- Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (heat journal). Part 1 control loop stays `LIVE`.
+- Active skin: control Skin A (edge). Journal skin J-G: tap the heat lane, show that day. J-A marks superseded. J-B, J-C, J-D, and J-E rejected.
+- Last updated: 2026-11-22T22:34:00Z
+- Current phase: Phase J1 landed. Do not start Phase J2 until an explicit yes.
+- Next allowed step: Phase J2 only, after an explicit yes. Do not deploy. Do not change `ITP_AUTO_COMMANDS`.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
-Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic ITP control logic`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T18:43:35.564Z`, `mutationKind=plan`.
+Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`, `mutationKind=plan`. Earlier proof `2026-11-22T18:43:35.564Z` remains the Part 1 write.
 
 ## Phase checklist
 
@@ -58,6 +58,23 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T21:28:00Z | Meter row | Operator: put the mode in the meter list. `ручне` is red, `автоматичне` is green. Deploy with this commit. Proof `verifiedAtUtc=2026-11-22T21:28:08.851Z`. |
 | 2026-11-22T21:32:00Z | Commands yes | Operator: do not wait. Turn cloud commands on now. |
 | 2026-11-22T21:33:00Z | Commands on | `ITP_AUTO_COMMANDS=1` written only in the server `.env`. Service restarted. Heat breaker was already on, and the boiler window also wants it on, so the card note became `Котельня.` The sentence about commands being off disappeared. Proof `verifiedAtUtc=2026-11-22T21:35:19.505Z`. |
+| 2026-11-22T21:52:00Z | Journal request | Operator: record automatic heat on/off and manual/automatic mode changes. Suggested the `Події` block. Asked to update this plan with prompt 6. |
+| 2026-11-22T21:53:00Z | Part 2 draft | Skin J-A: table `itp_journal`, list under the breaker cards. `Події` stays city light. Self-review round 1, 0 CRITICAL, 0 HIGH. Status `DRAFT READY FOR REVIEW`. No code. Proof `verifiedAtUtc=2026-11-22T21:53:10.797Z`. |
+| 2026-11-22T21:59:00Z | Journal place | Operator asked for a light UI on the existing day lanes. Default was marks on `Обігрів`. Empty-lane tap rejected. Self-review round 2 fixed the `paintBreakers` wipe. Still `DRAFT READY FOR REVIEW`. No code. Proof `verifiedAtUtc=2026-11-22T21:59:06.870Z`. Superseded 2026-11-22T22:08:00Z. |
+| 2026-11-22T22:08:00Z | Journal place | Operator: a tap on the `Обігрів` line shows the whole day. Marks removed. Skin J-G. List lives outside `#pm-breakers-board`. Self-review round 3, 0 CRITICAL, 0 HIGH. Still `DRAFT READY FOR REVIEW`. No code. Proof `verifiedAtUtc=2026-11-22T22:04:58.446Z`. |
+| 2026-11-22T22:12:00Z | Plan review | Lead, before the critic. Proof `verifiedAtUtc=2026-11-22T22:10:44.991Z`. Map live `pause.reason=manual` to journal `hand`. Confirm both `_confirm_itp_command` and `settle_itp_after_sample`. Day key is Kyiv, not UTC. `journal_truncated` is on the payload. Status `REVIEW IN PROGRESS`. No code. |
+| 2026-11-22T22:18:00Z | Critic round 1 | `grok-4.7-xhigh-fast`. CHANGES REQUIRED. CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2. Fixes are in the plan. Re-review not back. No code. |
+| 2026-11-22T22:22:00Z | Critic round 2 | Same model, resumed. APPROVE. CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. J1 waits for an explicit yes. No code. |
+| 2026-11-22T22:34:00Z | Phase J1 | Operator yes, prompt 2. Table `itp_journal`, `append_itp_journal`, `itp_journal_for_day`, and `itp_journal_line`. No page and no live writer. `JournalStoreTests` passed with the breaker and lighting suites after the info-button assertion was narrowed to the one existing `brk-help`. No deploy. Proof `verifiedAtUtc=2026-11-22T22:32:17.637Z`. J2 not started. |
+
+## Part 2 checklist
+
+| Phase | State | Note |
+|---|---|---|
+| Plan | reviewed | 2026-11-22T22:22:00Z. Critic round 2 APPROVE, 0 CRITICAL, 0 HIGH. J1 waits for an explicit yes. |
+| J1 Table | done | 2026-11-22T22:34:00Z. Helpers only. The page does not read them. |
+| J2 Writers | not started | Mode flip and switch row. |
+| J3 Day list | not started | Tap `Обігрів`, show that day. No marks. Deploy only with a yes. |
 
 ## Decisions mirrored from the plan
 

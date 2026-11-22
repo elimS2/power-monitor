@@ -642,9 +642,11 @@ class BreakerPageTests(unittest.TestCase):
     def test_hidden_flag_removes_the_section(self):
         import power_monitor
 
-        self.assertIn("Автомати підвалу", power_monitor._breaker_section_html())
-        self.assertNotIn("<button", power_monitor._breaker_section_html().lower())
-        self.assertNotIn("<form", power_monitor._breaker_section_html().lower())
+        html = power_monitor._breaker_section_html()
+        self.assertIn("Автомати підвалу", html)
+        self.assertEqual(html.lower().count("<button"), 1)
+        self.assertIn('class="brk-help"', html)
+        self.assertNotIn("<form", html.lower())
         database.kv_set("breakers_board", "0")
         self.assertEqual(power_monitor._breaker_section_html(), "")
         self.assertEqual(power_monitor._breaker_live_html(), "")

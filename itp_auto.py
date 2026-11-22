@@ -465,6 +465,40 @@ def _manual_disarm(doc: dict, actual: str, now: float, commands_on: bool) -> boo
     return True
 
 
+_SWITCH_ON = {
+    "boiler": "Обігрів увімкнено автоматично, котельня",
+    "light-on": "Обігрів увімкнено автоматично, світло вже 15 хв",
+    "admin": "Обігрів увімкнено автоматично",
+}
+_SWITCH_OFF = {
+    "light-off": "Обігрів вимкнено автоматично, світла немає 15 хв",
+    "admin": "Обігрів вимкнено автоматично",
+}
+_MODE_LINE = {
+    ("mode-auto", "admin"): "Керування стало автоматичним",
+    ("mode-manual", "admin"): "Керування стало ручним",
+    ("mode-manual", "hand"): "Керування стало ручним, перемкнули руками",
+    ("mode-manual", "flap"): "Керування стало ручним, за годину вже 4 перемикання",
+}
+
+
+def itp_journal_line(kind: str, reason: str, confirmed: int = 1) -> str:
+    """Ukrainian sentence for one stored journal row. Does not raise."""
+    if kind == "switch-on":
+        text = _SWITCH_ON.get(reason, _SWITCH_ON["admin"])
+    elif kind == "switch-off":
+        text = _SWITCH_OFF.get(reason, _SWITCH_OFF["admin"])
+    elif kind == "mode-auto":
+        text = _MODE_LINE.get((kind, reason), _MODE_LINE[("mode-auto", "admin")])
+    elif kind == "mode-manual":
+        text = _MODE_LINE.get((kind, reason), _MODE_LINE[("mode-manual", "admin")])
+    else:
+        text = ""
+    if kind in ("switch-on", "switch-off") and not confirmed:
+        text += " ще не підтверджено"
+    return text
+
+
 def _clock_minutes(text) -> int | None:
     if not isinstance(text, str) or ":" not in text:
         return None

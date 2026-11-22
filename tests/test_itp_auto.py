@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import database
@@ -22,6 +22,7 @@ from itp_auto import (
     disarm_itp,
     empty_itp_auto,
     format_itp_card,
+    itp_journal_line,
     itp_meter_html,
     mutate_itp_auto,
     read_itp_auto,
@@ -825,6 +826,91 @@ class CloudItpTests(unittest.TestCase):
         self._run(retried, moment, now + 200)
         self.assertEqual(len([url for url in self._urls(retried) if "/timer/" in url]), 1)
         self.assertIsNotNone(read_itp_auto()["timers_cleared_at"])
+
+
+class JournalStoreTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def test_same_kyiv_day_is_oldest_first(self):
+        morning = datetime(2026, 11, 23, 9, 15, tzinfo=UA_TZ).timestamp()
+        evening = datetime(2026, 11, 23, 18, 0, tzinfo=UA_TZ).timestamp()
+        database.append_itp_journal(evening, "switch-on", "boiler", confirmed=0)
+        database.append_itp_journal(morning, "switch-off", "light-off", confirmed=0)
+        rows, truncated = database.itp_journal_for_day("2026-11-23")
+        self.assertFalse(truncated)
+        self.assertEqual([row["ts"] for row in rows], [morning, evening])
+        self.assertEqual(database._conn().execute("SELECT COUNT(*) FROM power_events").fetchone()[0], 0)
+
+    def test_kyiv_half_hour_after_midnight_is_not_the_utc_date(self):
+        moment = datetime(2026, 11, 23, 0, 30, tzinfo=UA_TZ)
+        database.append_itp_journal(moment.timestamp(), "mode-auto", "admin", confirmed=1)
+        self.assertNotEqual(moment.astimezone(timezone.utc).date(), moment.date())
+        rows, truncated = database.itp_journal_for_day("2026-11-23")
+        self.assertFalse(truncated)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(database.itp_journal_for_day("2026-11-22")[0], [])
+
+    def test_the_next_kyiv_day_stays_out(self):
+        moment = datetime(2026, 11, 24, 0, 0, tzinfo=UA_TZ).timestamp()
+        database.append_itp_journal(moment, "mode-manual", "admin", confirmed=1)
+        self.assertEqual(database.itp_journal_for_day("2026-11-23")[0], [])
+
+    def test_cap_keeps_the_latest_two_hundred_oldest_first(self):
+        start = datetime(2026, 11, 23, tzinfo=UA_TZ).timestamp()
+        for index in range(201):
+            database.append_itp_journal(start + index, "switch-on", "boiler", confirmed=0)
+        rows, truncated = database.itp_journal_for_day("2026-11-23")
+        self.assertTrue(truncated)
+        self.assertEqual(len(rows), 200)
+        self.assertEqual(rows[0]["ts"], start + 1)
+        self.assertEqual(rows[-1]["ts"], start + 200)
+
+    def test_unknown_kind_writes_nothing(self):
+        with self.assertRaises(ValueError):
+            database.append_itp_journal(1_700_000_000, "nope", "boiler")
+        with self.assertRaises(ValueError):
+            database.append_itp_journal(1_700_000_000, "switch-on", "nope")
+        self.assertEqual(
+            database._conn().execute("SELECT COUNT(*) FROM itp_journal").fetchone()[0],
+            0,
+        )
+
+    def test_lines_cover_the_table_and_do_not_raise(self):
+        self.assertEqual(
+            itp_journal_line("switch-on", "boiler", 1),
+            "Обігрів увімкнено автоматично, котельня",
+        )
+        self.assertEqual(
+            itp_journal_line("switch-on", "light-on", 0),
+            "Обігрів увімкнено автоматично, світло вже 15 хв ще не підтверджено",
+        )
+        self.assertEqual(
+            itp_journal_line("switch-off", "light-off", 1),
+            "Обігрів вимкнено автоматично, світла немає 15 хв",
+        )
+        self.assertEqual(
+            itp_journal_line("switch-on", "admin", 1),
+            "Обігрів увімкнено автоматично",
+        )
+        self.assertEqual(
+            itp_journal_line("switch-off", "admin", 0),
+            "Обігрів вимкнено автоматично ще не підтверджено",
+        )
+        self.assertEqual(itp_journal_line("switch-on", "hand", 1), "Обігрів увімкнено автоматично")
+        self.assertEqual(itp_journal_line("mode-auto", "admin", 1), "Керування стало автоматичним")
+        self.assertEqual(itp_journal_line("mode-manual", "hand", 1), "Керування стало ручним, перемкнули руками")
+        self.assertEqual(
+            itp_journal_line("mode-manual", "flap", 0),
+            "Керування стало ручним, за годину вже 4 перемикання",
+        )
 
 
 if __name__ == "__main__":
