@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T20:07:00Z
+- Last updated: 2026-11-22T20:31:00Z
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -528,6 +528,8 @@ Verification: the same unittest. Grep `itp_auto.py` for `httpx` and confirm it i
 Rollback: revert this phase's functions. Phase 1 tests still pass.
 
 Deploy: no.
+
+Landed 2026-11-22T20:31:00Z. `python -m unittest tests.test_itp_auto` passed, 36 tests. No HTTP. `httpx` is not imported. The follow-up window uses the same 60 and 90 seconds as `BREAKER_TIMER_FOLLOWUP_SEC` and `BREAKER_TIMER_FOLLOWUP_WINDOW_SEC`; the numbers live in this module so the file does not import the Tuya client. The document lock is also here, separate from `_breaker_lock`. Phase 5 must release the breaker lock before `mutate_itp_auto`. Phase 3 has not started. Proof `verifiedAtUtc=2026-11-22T20:30:42.938Z`.
 
 ### Phase 3 — local tick and card line
 
