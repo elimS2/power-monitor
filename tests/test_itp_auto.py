@@ -18,8 +18,13 @@ from itp_auto import (
     desired_itp,
     disarm_itp,
     empty_itp_auto,
+    format_itp_card,
+    itp_card_html,
     mutate_itp_auto,
+    read_itp_auto,
+    reset_itp_tick_clock,
     step_itp,
+    tick_itp_decision,
 )
 from tuya_breakers import BREAKER_TIMER_FOLLOWUP_SEC, BREAKER_TIMER_FOLLOWUP_WINDOW_SEC
 
@@ -300,6 +305,165 @@ class MutateItpTests(unittest.TestCase):
         self.assertFalse(stored["enabled"])
         self.assertTrue(stored["timer_delete_attempted"])
         self.assertEqual(stored["command_times"], [10])
+
+
+class TickItpTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        reset_itp_tick_clock()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+        reset_itp_tick_clock()
+
+    def _beat(self, ts: float) -> None:
+        with database._conn() as db:
+            db.execute(
+                "INSERT INTO heartbeats(plug204, plug175, ts) VALUES(1, 1, ?)",
+                (ts,),
+            )
+
+    def _event(self, event: str, ts: float) -> None:
+        with database._conn() as db:
+            db.execute("INSERT INTO power_events(event, ts) VALUES(?, ?)", (event, ts))
+
+    def test_stale_heartbeat_stores_hold(self):
+        now = _at(10, 0)
+        unix = now.timestamp()
+        self._beat(unix - 301)
+        self._event("up", unix - 20 * 60)
+        with self.assertLogs("power_monitor", level="INFO") as caught:
+            action = tick_itp_decision(now, unix)
+        self.assertEqual(action, "none")
+        last = read_itp_auto()["last"]
+        self.assertEqual(last["state"], "hold")
+        self.assertEqual(last["reason"], "unknown")
+        self.assertTrue(any("hold unknown" in line for line in caught.output))
+        self.assertIn("немає свіжого факту світла", format_itp_card(read_itp_auto()))
+
+    def test_missing_boiler_at_18_stores_default_on(self):
+        now = _at(18, 0)
+        unix = now.timestamp()
+        self._beat(unix - 301)
+        with self.assertLogs("power_monitor", level="INFO") as caught:
+            action = tick_itp_decision(now, unix)
+        self.assertEqual(action, "none")
+        last = read_itp_auto()["last"]
+        self.assertEqual(last["state"], "on")
+        self.assertEqual(last["reason"], "boiler")
+        self.assertEqual(last["boiler_source"], "default")
+        text = format_itp_card(read_itp_auto())
+        self.assertIn("Авто вимкнено.", text)
+        self.assertIn("котельня", text)
+        self.assertIn("Графік котельні не приходив, вікно 18:00–24:00.", text)
+        self.assertTrue(any("boiler-default" in line and "commands-off" in line for line in caught.output))
+
+    def test_light_up_for_16_minutes_stores_on(self):
+        now = _at(10, 0)
+        unix = now.timestamp()
+        self._beat(unix)
+        self._event("up", unix - 16 * 60)
+        action = tick_itp_decision(now, unix)
+        self.assertEqual(action, "none")
+        last = read_itp_auto()["last"]
+        self.assertEqual(last["state"], "on")
+        self.assertEqual(last["reason"], "light-on")
+        text = format_itp_card(read_itp_auto())
+        self.assertIn("Авто вимкнено.", text)
+        self.assertIn("світло вже 15 хв", text)
+
+    def test_tick_cannot_read_or_post(self):
+        import httpx
+
+        now = _at(10, 0)
+        unix = now.timestamp()
+        self._beat(unix)
+        self._event("down", unix - 20 * 60)
+
+        def plant(doc):
+            doc.clear()
+            doc.update(_ready())
+
+        mutate_itp_auto(plant)
+        reset_itp_tick_clock()
+        calls = []
+        real_client = httpx.Client
+        real_async = httpx.AsyncClient
+
+        def client(*args, **kwargs):
+            calls.append("client")
+            return real_client(*args, **kwargs)
+
+        def async_client(*args, **kwargs):
+            calls.append("async")
+            return real_async(*args, **kwargs)
+
+        httpx.Client = client
+        httpx.AsyncClient = async_client
+        try:
+            action = tick_itp_decision(now, unix)
+        finally:
+            httpx.Client = real_client
+            httpx.AsyncClient = real_async
+        self.assertEqual(action, "none")
+        self.assertEqual(calls, [])
+        doc = read_itp_auto()
+        self.assertTrue(doc["enabled"])
+        self.assertEqual(doc["last"]["state"], "off")
+        self.assertIsNone(doc["pending"])
+        self.assertIsNone(doc["slot_spent"])
+        self.assertIn("команди ще вимкнені", itp_card_html())
+        self.assertNotIn("<button", itp_card_html())
+
+    def test_second_tick_inside_a_minute_keeps_the_previous_decision(self):
+        now = _at(10, 0)
+        unix = now.timestamp()
+        self._beat(unix)
+        self._event("up", unix - 16 * 60)
+        tick_itp_decision(now, unix)
+        self._event("down", unix - 20 * 60)
+        tick_itp_decision(now, unix + 30)
+        self.assertEqual(read_itp_auto()["last"]["reason"], "light-on")
+
+    def test_card_names_a_hand_and_a_flap(self):
+        manual = format_itp_card({
+            "enabled": False,
+            "pause": {"reason": "manual", "at": _at(21, 5).timestamp()},
+            "warn": {"kind": "rejected"},
+        })
+        self.assertIn("Авто вимкнено о 21:05: перемкнули вручну.", manual)
+        self.assertIn("Хмара не підтвердила команду.", manual)
+        flap = format_itp_card({"enabled": False, "pause": {"reason": "flap"}})
+        self.assertEqual(flap, "Авто вимкнено: за годину вже 4 перемикання.")
+
+    def test_heat_card_has_the_line_and_the_light_card_does_not(self):
+        from power_monitor import _breaker_lines_html
+
+        html = _breaker_lines_html({
+            "devices": {
+                "svitlo": {
+                    "ready": True, "switch": 1, "energy_today_kwh": 1,
+                    "since_charge_kwh": 0, "since_charge_sec": 0, "updated_at": 1,
+                    "phases": {}, "spans": [],
+                },
+                "itp": {
+                    "ready": True, "switch": 0, "energy_today_kwh": 0,
+                    "since_charge_kwh": 0, "since_charge_sec": 0, "updated_at": 1,
+                    "phases": {"a": {"p": 0}, "b": {"p": 0}, "c": {"p": 0}},
+                    "spans": [],
+                },
+            }
+        }, 1)
+        self.assertEqual(html.count("brk-auto"), 1)
+        self.assertIn("Авто вимкнено.", html)
+        self.assertNotIn("<button", html)
+        light = html.split('data-brk="svitlo"', 1)[1].split('data-brk="itp"', 1)[0]
+        self.assertNotIn("Авто", light)
+        self.assertNotIn("brk-auto", light)
 
 
 if __name__ == "__main__":

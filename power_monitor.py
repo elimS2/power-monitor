@@ -74,6 +74,7 @@ from tuya_breakers import (
     run_deye_then_breakers,
     sync_breaker_timers_http,
 )
+from itp_auto import itp_card_html, tick_itp_decision
 from database import (
     api_key_config_list,
     api_key_get_plain,
@@ -711,6 +712,10 @@ async def bg_loop():
                 if not poll_is_enabled(breaker_cfg):
                     return
                 now = time.time()
+                try:
+                    tick_itp_decision(datetime.now(UA_TZ), now)
+                except Exception as exc:
+                    log.error("itp-auto: %s", exc.__class__.__name__)
                 if not breaker_timers_synced:
                     breaker_timers_synced = True
                     await sync_breaker_timers_http(breaker_cfg, _breaker_tokens, now)
@@ -1622,7 +1627,7 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             cards.append(
                 f'<article class="brk-card brk-dark">{_breaker_icon(kind)}'
                 f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
-                f'<div class="brk-state">ще немає знімка</div></article>'
+                f'<div class="brk-state">ще немає знімка</div>{_itp_auto_html(name)}</article>'
             )
             continue
         phases = device.get("phases")
@@ -1646,6 +1651,7 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             f'<div class="brk-hero">{_breaker_icon(kind)}</div>'
             f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
             f'<div class="brk-state">{"Увімкнено" if on else "Вимкнено"}</div>'
+            f'{_itp_auto_html(name)}'
             '<dl class="brk-meters">'
             f'<div><dt>Напруга</dt><dd>{_breaker_meter(phases, "v", 0, "В")}</dd></div>'
             f'<div><dt>Струм</dt><dd>{_breaker_meter(phases, "i", 1, "А")}</dd></div>'
@@ -1656,6 +1662,12 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             f'{fault}<div class="brk-age">{age}</div></article>'
         )
     return '<div class="brk-cards">' + "".join(cards) + "</div>" + _breaker_timers_html(now)
+
+
+def _itp_auto_html(name: str) -> str:
+    if name != "itp":
+        return ""
+    return itp_card_html()
 
 
 def _breaker_timers_html(now: float | None) -> str:

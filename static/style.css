@@ -247,7 +247,7 @@ details[open] summary::before { content: '▼ '; }
 .sb-table th.sb-now-hour { color: #e2e8f0; font-weight: 700; }
 .sb-bar-on { background: #22c55e; }
 .sb-bar-actual { background: #f87171; }
-.brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers-empty { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
+.brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers-empty, .brk-auto { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
 .brk-when-cards { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.35rem 0 0.55rem; }
 .brk-when {
   min-width: 8.6rem; background: var(--card); border: 1px solid var(--border); border-radius: 14px;

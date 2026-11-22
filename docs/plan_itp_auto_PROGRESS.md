@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T20:31:00Z
-- Current phase: 2 done. Waiting for an explicit yes before Phase 3.
-- Next allowed step: Phase 3 only after an explicit operator yes. Do not start it in the same turn.
+- Last updated: 2026-11-22T20:45:00Z
+- Current phase: 3 done. Waiting for an explicit yes before Phase 4.
+- Next allowed step: Phase 4 only after an explicit operator yes. Do not start it in the same turn.
 - Commands: not implemented. `ITP_AUTO_COMMANDS` must stay off through deploy.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic ITP control logic`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T18:43:35.564Z`, `mutationKind=plan`.
@@ -17,7 +17,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | Plan | reviewed | 2026-11-22T19:32:00Z. Critic APPROVE, 0 CRITICAL, 0 HIGH. |
 | 1 Pure desired state | done | 2026-11-22T20:07:00Z. `itp_auto.desired_itp` and 15 tests. No network, no sqlite. |
 | 2 Pure step | done | 2026-11-22T20:31:00Z. `step_itp`, flap guard, follow-up window, arm/disarm, temp sqlite. No HTTP. |
-| 3 Local tick and card line | not started | Commands hard-off. |
+| 3 Local tick and card line | done | 2026-11-22T20:45:00Z. Minute decision and heat-card line. Commands hard-off. |
 | 4 Admin arm | not started | Arm does not POST. |
 | 5 Command path | not started | Env default remains `0`. Turning it on is a later yes. |
 
@@ -43,6 +43,10 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T20:07:00Z | Phase 1 | `desired_itp` landed. `python -m unittest tests.test_itp_auto` — 15 tests OK. No deploy. Phase 2 not started. |
 | 2026-11-22T20:28:00Z | Phase 2 yes | Operator: Agree & Continue. Prompt 2. |
 | 2026-11-22T20:31:00Z | Phase 2 | `step_itp` and the kv document landed. Same unittest — 36 tests OK. No HTTP, no deploy. Phase 3 not started. Proof `verifiedAtUtc=2026-11-22T20:30:42.938Z`. |
+| 2026-11-22T20:41:00Z | Context | Company KB still does not index power-monitor. The five-volume search from the earlier session was not repeated: it returned unrelated credentials. Disk plan and code are the source. |
+| 2026-11-22T20:41:00Z | Phase 3 yes | Operator: Agree & Continue. Prompt 2. |
+| 2026-11-22T20:44:00Z | Stale lane count | `test_bars_are_green_then_red_and_the_other_breaker_is_empty` already failed on `main` before this phase: 161 hour marks, test expected 138. The alert lane was already drawn. Expected count is now 23×7. The chart was not changed. |
+| 2026-11-22T20:45:00Z | Phase 3 | Local minute tick and the heat-card line landed. Commands stay hard-off. Three unittest modules — 90 tests OK. No deploy. Phase 4 not started. Proof `verifiedAtUtc=2026-11-22T20:45:01.057Z`. |
 
 ## Decisions mirrored from the plan
 
