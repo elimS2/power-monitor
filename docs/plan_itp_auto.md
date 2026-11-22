@@ -1,7 +1,7 @@
 # Automatic ITP control
 
-- Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (the heat journal) only. Part 1, the control loop, stays `LIVE` and frozen. Do not rebuild it.
-- Last updated: 2026-11-22T23:05:00Z
+- Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE` at `c5bdc4b`. Part 3 phase L1 is done locally and is not on the site. Deploy waits for a separate yes.
+- Last updated: 2026-11-22T23:51:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -985,4 +985,182 @@ Code and commits stay English. The journal sentences stay the Ukrainian in 2.5.
 
 Update this file and `plan_itp_auto_PROGRESS.md` at every gate, with a DateTime.
 
-Status of Part 2 is `REVIEWED / READY FOR LOCAL WORK`. J1–J3 are in git and are not deployed. The next step is a deploy only if the operator asks. Do not change `ITP_AUTO_COMMANDS`.
+Status of Part 2 is live at `c5bdc4b`. Part 3 phase L1 is done locally. The site stays on `c5bdc4b` until a deploy yes.
+
+## Part 3 — One legend per lane
+
+Status of this part: phase L1 is done locally. Do not deploy it without an explicit yes. Parts 1 and 2 stay as they are.
+
+Proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `verifiedAtUtc=2026-11-22T23:13:52.524Z`.
+
+### 3.1 Goal and non-goals
+
+Goal: the shared color key under the seven lanes is hidden until a lane is opened. Each lane explains only its own colors. A small info mark beside the lane opens that same explanation. The heat lane still lists the day's journal under its colors.
+
+Non-goals:
+
+- Do not change how the heat breaker is switched. `ITP_AUTO_COMMANDS` stays as it is.
+- Do not draw `brk-journal-pin` marks.
+- Do not change the separate legend inside the Тривоги block. `paintAlertDay` in `static/app.js` keeps its own three words.
+- Do not add a public on/off button.
+- Do not write this part into the company knowledge base.
+
+### 3.2 Context harvest
+
+Catalog still has nine repos. `power-monitor` is not one of them. Disk is the source of truth.
+
+Searches at 2026-11-22T23:14Z, topic "per-lane legend hidden until click":
+
+| Volume | Mode | Result |
+|---|---|---|
+| knowledge | semantic | No power-monitor path. Top ids 994, 667, 455, 1047, 1035, 850, 885, 1007 are other products. |
+| ideas | semantic | No power-monitor path. Top ids 516, 101, 352, 135, 335, 333, 244, 490. |
+| code_directories | semantic | No power-monitor path. Top dir `assets/AdminComponents/BookeeperDashboard`. |
+| code_files | hybrid | `total_fts_hits` 0. No `paintBreakers`. |
+| code_symbols | hybrid | Empty. `fallback_applied=or_like`. |
+| jira | fts | No ticket for this chart. Returned REFUND-11, KBNPPTX-451, KB-294, KB-385, RLT-40. |
+| dialogs | hybrid | `total_fts_hits` 0. Top id 7830 is a different calendar legend. |
+
+Disk drill-down: the shared key is the `.brk-legend` block at the end of `_breaker_bars_html` in `power_monitor.py` and the same block inside `paintBreakers` in `static/app.js`. `paintBreakers` replaces `#pm-breakers-board`, so a legend that exists only in the server HTML comes back on the next load. The heat lane is already `brk-journal-hit` and fills `#brk-journal-pop` outside that board. The section info button is `.brk-help`. The charge color is `soc_color` in `voltage_chart.py`, stops at 0, 25, 50, 75, 90, and 100. The alert-day legend is a different chart.
+
+Self-check:
+
+- [x] knowledge, ideas, code_directories, code_files, code_symbols
+- [x] jira and dialogs
+- [x] at least three disk paths: `power_monitor.py`, `static/app.js`, `static/style.css`, `voltage_chart.py`
+- [x] `kb_rule('project_memory')` not loaded. That rule is for the knowledge_base repo.
+
+### 3.3 Current reality
+
+Under the seven lanes, one legend lists every color at once: light on with grid, light on from the battery, off, the 5.1 plan, the fact, the boiler, the three alert colors, and the now mark. `Заряд` is not in that list. Its bar is a gradient from `soc_color`.
+
+Only `Обігрів` is a button. Its popover is the journal for the selected day. The other six lanes are not buttons. The section `i` explains the meter cards, not one lane.
+
+### 3.4 Skins
+
+Skin L-A, default. Remove the shared `.brk-legend` from both painters. Every lane is a button, and a small `i` beside the name is the same button. One popover shows that lane's colors. For `Обігрів`, the journal list stays under those colors.
+
+Skin L-B. Leave the shared legend on the page and also add per-lane pops. Rejected. The operator asked for the legend to stay hidden until a lane is opened.
+
+Skin L-C. Only the `i` opens the legend. The lane itself stays inert, except the heat journal. Rejected. The lane and the `i` do the same thing.
+
+Switch: implement L-A only. There is no env flag. Removing it puts the shared legend back and restores `brk-journal-hit` as the only lane button.
+
+### 3.5 Recommended architecture
+
+One popover, `#brk-lane-pop`, class `brk-lane-pop`, the next sibling of `#pm-breakers-board`. It replaces `#brk-journal-pop`. Do not keep both, or two panels can open at once. It uses text nodes, not `innerHTML`, for the words. Named color swatches use the existing `.brk-key` classes. Pop rows may keep `brk-legend-item`. The charge swatches do not use a class per stop: `soc_color` in `voltage_chart.py` and `socColor` in `static/app.js` return a hex. Draw those six as inline backgrounds.
+
+The seven lanes are not built in one loop. On the server, `Графік 5.1`, `Фактично`, `Заряд`, `Котельня`, and `Тривога` all go through `_lane_html`. `Освітлення` and `Обігрів` are the loop in `_breaker_bars_html`. In `static/app.js`, the first five go through `breakerLane`. The last two are the `svitlo` / `itp` branch inside `paintBreakers`. Both builders must emit the buttons. Editing only the heat branch leaves five lanes without a legend.
+
+Every lane from those builders:
+
+- The bar is `<button type="button" class="brk-lane-hit" data-lane="...">`. The visible bar stays 16px. The button is at least 32px tall, in normal flow, with no negative offset. `aria-controls` is `brk-lane-pop`.
+- The name and the info mark share one wrapper, and that wrapper is the first grid cell: `<button type="button" class="brk-lane-info" data-lane="...">i</button>`. The glyph is small. The hit box is 32 by 32. It is not `.brk-help`. Do not add a third grid child. A third child drops the bar onto the next row.
+- `data-lane` is `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, or `alert`.
+
+The label column stays aligned with the hour pad. Today `.brk-track` and `.brk-chart:not(.alert-day) > .brk-hours` are both `5.2rem` plus `1fr`, and the pad is `.brk-hours-pad`. A 32px box beside `Графік 5.1` is wider than `5.2rem`, and the default grid minimum would grow only the lane labels. Widen the label column and the hour pad by the same amount: one custom property, `calc(5.2rem + 32px + 0.25rem)`, on `.brk-track`, on `.brk-chart:not(.alert-day) > .brk-hours`, and on the pad. The name and the button sit in that first cell, flex, no wrap, button `flex: 0 0 32px`. Do not change `.alert-day .brk-hours`. Under 640px the track is already one column and the pad is hidden; the name and the `i` stay together above the bar.
+
+`brk-journal-hit` goes away. The heat bar uses `brk-lane-hit` with `data-lane="heat"`. The capture listener that today matches `.brk-journal-hit` matches `.brk-lane-hit` and `.brk-lane-info` instead.
+
+Timer pins exist only on `Освітлення` and `Обігрів`. They are `<i class="brk-when-pin">`, not buttons. Each pin is a sibling of the lane button, outside `.brk-lane`, because that lane is `overflow: hidden`. Set `pointer-events: none` on `.brk-when-pin` for both lanes, not only on `.brk-heat-slot > .brk-when-pin`. Use the heat pin top, `top: 3px`, for both, so the 26px pin stays on the 16px bar inside the 32px hit. The light pin today is `top: -4px` and would sit in the gap above the taller hit. Hour lines and `.brk-now` already ignore the pointer.
+
+Opening. Store the open lane id on `#pm-breakers-board` as `_laneOpen`: `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, `alert`, or `""`. A boolean cannot choose the words once seven lanes share one pop, and `querySelector('.brk-lane-hit')` would mark the first bar. A click on `.brk-lane-hit` or `.brk-lane-info` toggles that `data-lane`. The same lane's `i` and bar are one control. A second click on either clears the id. Opening another lane replaces the id. Set `aria-expanded="true"` on both buttons whose `data-lane` is that id, and `false` on the others.
+
+One fill, not the journal-only `fillHeatJournal`. It `replaceChildren()` once, then writes that lane's color lines with text nodes and `.brk-key` swatches. For `heat` only, append the journal in the same pass, still with text nodes, oldest first. Do not call a journal-only fill for any other lane. Do not `replaceChildren()` again after the colors are in. `paintBreakers` assigns `breakerBoard.innerHTML` and then, if `_laneOpen` is set, calls this same fill. A 60-second refresh or `‹` / `›` must not wipe the color lines and must not show the heat journal under another lane. If the open lane is `heat`, those arrows keep the id and refill the journal for the new day. The color words do not change with the day.
+
+The help listener near `static/app.js` 1204, the Esc listener near 1225, and the outside-click guard near 1752 still name `#brk-journal-pop`, `_journalOpen`, and `.brk-journal-hit`. Point all three at `#brk-lane-pop` and `_laneOpen`. Opening `.brk-help` clears the lane id, empties the pop, and sets `aria-expanded="false"` on the lane buttons. Esc does that first, before the meter help, then returns. A click inside `#brk-lane-pop` does not close it. `#brk-prev` and `#brk-next` do not close it either.
+
+Words, Ukrainian, only the colors that lane paints. Every lane includes «зараз» with `brk-key-now`, because `_lane_html`, `breakerLane`, and the light and heat branches already draw `.brk-now`. Charge is one of those lanes.
+
+| Lane | Lines |
+|---|---|
+| plan | green key «графік: є світло»; gray key «немає»; the now mark «зараз» |
+| fact | «фактично: було»; «фактично: не було»; «зараз» |
+| charge | «Колір — заряд батареї будинку.» Then six inline swatches from `soc_color` / `socColor` at 0, 25, 50, 75, 90, and 100, labeled with those percents. Then «зараз». Do not call the swatches separate modes. Do not add a seventh stop or a class per stop. |
+| light | «увімкнено, було світло»; «увімкнено, не було світла»; «вимкнено»; «зараз» |
+| heat | the same three light lines and «зараз», then the journal already specified in 2.5, oldest first. An empty day still says `За цю добу записів немає.` A truncated day still ends with `Старіші записи цієї доби не показано.` |
+| boiler | «котельня»; «зараз» |
+| alert | «без тривоги»; «жовта»; «червона»; «зараз» |
+
+`paintAlertDay` is not one of these seven lanes. Leave its function and its legend. That function still contains one `<div class="brk-legend">` with «без тривоги», «жовта», and «червона». `tests/test_alert_level.py` keeps that legend. Its slice `script[script.index("pm-breakers-board"):]` only checks that `breakerBoilerLane` comes before `breakerAlertLane`. Do not add a ban on `class="brk-legend"` to that full slice.
+
+The breaker-script slice used by `tests/test_breakers.py` starts at `pm-breakers-board` and ends before `function paintAlertDay`. Require `class="brk-legend"` to be absent only in that slice. The first `pm-breakers-board` in `static/app.js` is near line 1205, and `paintAlertDay` is later in the same file, so a slice that runs to the end of the file still contains the Тривоги legend.
+
+Rendered checks, all in `tests/test_breakers.py` unless named otherwise:
+
+- `_breaker_bars_html` has no `class="brk-legend"`, no `brk-journal-hit`, exactly seven `brk-lane-hit`, and exactly seven `brk-lane-info`. `Освітлення` is one of those buttons. `test_bars_are_green_then_red_and_the_other_breaker_is_empty` drops the exact count of one `<button`, the ban on a button in the lighting track, and the requirement that «увімкнено, було світло», `brk-key-now`, and `зараз</span>` appear in the server bars HTML. Those phrases move to the script that fills the pop. The bar-class order, `brk-batt`, the fact classes, and the 23×7 hour lines stay.
+- `test_hidden_flag_removes_the_section` counts fifteen `<button` in the rendered section: one `brk-help` plus the fourteen lane buttons. The hidden flag still returns an empty section.
+- `test_page_script_does_not_reuse_the_fact_lane` uses the slice that ends before `function paintAlertDay`. That slice contains `brk-lane-hit`, `brk-lane-info`, and `textContent`. It does not contain `brk-journal-hit`, `brk-journal-pin`, or `class="brk-legend"`. Do not require seven copies of `<button`, and do not keep the old count of one. `brk-legend-item` may remain on pop rows. The existing checks that are not the shared legend stay: no `factOnSegments`, lane order, `brk-batt`, the boiler class, hour marks, no `brk-plan-maybe`, one `/api/breakers` route, no poller POST, and the fragment still updates `pm_breakers` without `breaker_sample`.
+- `test_heat_lane_lists_the_day_and_events_stay_city_light` looks for `data-lane="heat"` and `#brk-lane-pop` after `#pm-breakers-board`. The class is `brk-lane-pop`, not `brk-journal-pop brk-help-pop`. The heat phrase «увімкнено, було світло» is asserted in the script slice, not in the bars HTML. Journal clocks `09:15` then `18:00`, the empty day, the failed journal read, and the absence of `Обігрів увімкнено` from the `Події` fragment stay.
+
+### 3.6 Phase
+
+One phase. Server HTML and `paintBreakers` change together. A human gate after it. Do not deploy unless that same yes includes deploy. Do not put `#автооновити` in a commit unless the yes includes deploy.
+
+#### Phase L1 — per-lane legend
+
+Goal: the shared legend is gone. Each lane, and the `i` beside it, opens only that lane's colors. Heat still lists the day under its colors.
+
+Touched: `power_monitor.py` `_lane_html`, the light/heat branch of `_breaker_bars_html`, and the pop in `_breaker_section_html`. `static/app.js` `breakerLane`, the light/heat branch of `paintBreakers`, the fill that replaces `fillHeatJournal`, the `.brk-help` listener, the Esc listener, and the outside-click guard. `static/style.css` for the label column, the lane hit, the pop, and `.brk-when-pin`. `tests/test_breakers.py`. Do not edit `paintAlertDay`. Do not edit `tests/test_alert_level.py` except to keep its boiler-before-alert order green. Do not edit the `Події` builder.
+
+Steps: delete both shared `.brk-legend` blocks on this chart, the one at the end of `_breaker_bars_html` and the one at the end of `paintBreakers`. Leave the legend inside `paintAlertDay`. Add the buttons through `_lane_html` and `breakerLane`, and through the light/heat branches, as in 3.5. Replace `#brk-journal-pop` with `#brk-lane-pop`. Replace the boolean `_journalOpen` and `fillHeatJournal` with the lane id and the one fill in 3.5. Widen the label column and the hour pad together. Set `pointer-events: none` and `top: 3px` on `.brk-when-pin`. Update the four breaker tests named in 3.5. Do not edit `paintAlertDay`. Do not edit the `Події` builder.
+
+Verification: `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule`. The negative checks in 3.5 are part of that run. No network.
+
+Rollback: restore the shared legend and `brk-journal-hit`. Journal rows stay.
+
+Deploy: no, unless the operator asks in the same yes.
+
+### 3.7 Data and compatibility
+
+No table and no `kv` change. The journal read from Part 2 is unchanged. A bad sentence is a render change.
+
+Old pages that still have the shared legend in a cached `app.js` are replaced by the `?v=` commit query already on the script tag. No second cache key.
+
+### 3.8 Verification and definition of done
+
+Local tests in L1 are green.
+
+Done when the chart shows no shared legend, each of the seven lanes opens only its own colors from the bar and from the `i`, the heat pop still lists the day, the Тривоги block keeps its own legend, and `Події` is unchanged. Live commands stay as they are.
+
+After a deploy the operator asks for: open the dashboard, confirm the shared key is absent and the hour numbers still line up with the bars, open `Фактично` from the bar and from the `i`, open `Заряд` and see six stops plus «зараз», open `Обігрів` and read both the colors and the day list, press Esc, and check that a board refresh while a lane is open refills that lane's colors. A refresh with `Фактично` open must not show the heat journal.
+
+### 3.9 Risks and decisions
+
+- `paintBreakers` will put the shared legend back if only the server HTML changes.
+- An info button with class `brk-help` toggles the meter help instead of the lane.
+- Two popovers, journal and legend, can both stay open. One pop avoids that.
+- Five lanes never pass through the light/heat loop. `_lane_html` and `breakerLane` are the other builders.
+- A timer pin on the light lane swallows the tap unless its pointer events are off. The same pin sits above the bar unless its top matches the heat pin.
+- The script builds buttons from templates. Count fourteen buttons on the rendered chart, not fourteen copies in the source.
+- A script slice from `pm-breakers-board` to the end of `app.js` still contains the Тривоги legend. End that slice before `function paintAlertDay`.
+- `fillHeatJournal` writes only the journal and `replaceChildren()` on every paint. The shared fill must write colors first and append the journal only for `heat`.
+- Help, Esc, and the outside click still name `#brk-journal-pop`. After the id changes they must name `#brk-lane-pop`, or Esc closes the meter help first and a click inside the new pop counts as outside.
+- Three live tests still require one heat button and the shared legend. Updating only `test_hidden_flag_removes_the_section` leaves `Освітлення` inert.
+- A 32px info button in a `5.2rem` column grows the labels without the hour pad. Widen both by the same amount, and keep the name and the button in one cell.
+- Growing every lane button to 32px makes the chart taller. That is the thumb target. Do not cover the next lane with a negative offset.
+- The charge legend is a scale of inline `soc_color` stops plus «зараз». Six labeled swatches are enough. Do not invent extra colors.
+
+| When | Decision |
+|---|---|
+| 2026-11-22T23:13:00Z | Operator: hide the legend until a lane is clicked. Each lane has its own legend. A small info mark beside the lane opens the same text as the lane. |
+| 2026-11-22T23:16:00Z | Skin L-A. Shared legend removed. One pop. Heat keeps the journal under its colors. `paintAlertDay` stays. Proof `verifiedAtUtc=2026-11-22T23:13:52.524Z`. |
+| 2026-11-22T23:16:00Z | self-review round 1. HIGH if the legend lived only in server HTML, because `paintBreakers` replaces the board. HIGH if the info button used `.brk-help`. HIGH if the journal pop and a legend pop could both be open. All three are written into 3.5. Charge is described as `soc_color`, not as a new scale. 0 CRITICAL, 0 HIGH left in that draft. |
+| 2026-11-22T23:25:00Z | Lead review, before the critic. Proof `verifiedAtUtc=2026-11-22T23:13:52.524Z`. Five lanes are built by `_lane_html` and `breakerLane`, not by the light/heat loop. The script test must not expect seven copies of a template. Timer pins on the light lane need `pointer-events: none`. Charge swatches are inline hex from `soc_color`. Status of Part 3 is `REVIEW IN PROGRESS`. |
+| 2026-11-22T23:33:00Z | Critic round 1, `grok-4.7-xhigh-fast`, agent `2e6f8a2c-c7b6-484b-85e7-18b5763ebb4d`. CHANGES REQUIRED. CRITICAL 0, HIGH 3, MEDIUM 2, LOW 1. The breaker-script slice now ends before `paintAlertDay`. One fill keeps the lane id and appends the journal only for heat. Help, Esc, and the outside click name `#brk-lane-pop`. Four breaker tests are named. The label column and the hour pad widen together. Charge includes «зараз». Both pins use `top: 3px` and `pointer-events: none`. Status stays `REVIEW IN PROGRESS` until round 2. |
+| 2026-11-22T23:38:00Z | Critic round 2, same model, resumed. APPROVE. CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. L1 waits for an explicit yes. No code. |
+| 2026-11-22T23:46:00Z | Operator yes for Phase L1. Prompt 2. Proof `verifiedAtUtc=2026-11-22T23:46:15.449Z`. Deploy was not in that yes. |
+| 2026-11-22T23:51:00Z | Phase L1 landed locally. Both painters drop the shared legend. One pop, lane id on the board, heat journal appended after that lane's colors. Label column and hour pad share `--brk-label`. 127 tests OK. Not deployed. |
+
+Open questions: none.
+
+### 3.10 Handoff
+
+Phase L1 landed locally at 2026-11-22T23:51:00Z. The shared legend is gone from both painters. Each lane and the `i` beside its name open `#brk-lane-pop`. Heat still lists the day under its colors. `paintAlertDay` was not edited. `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule tests.test_alert_level` — 127 tests OK. `node --check static/app.js` passed. The keyed browser click waits for a deploy yes. Do not put `#автооновити` in the commit.
+
+Code and commits stay English. The legend words stay the Ukrainian in 3.5.
+
+Update this file and `plan_itp_auto_PROGRESS.md` at the gate, with a DateTime.
+
+Status of Part 3 phase L1 is local, not live. The running site stays at `c5bdc4b` until a deploy yes.
+

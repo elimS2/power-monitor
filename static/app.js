@@ -1186,6 +1186,20 @@
     vchartReload();
   });
 
+  function closeBreakerLane() {
+    var board = document.getElementById('pm-breakers-board');
+    var pop = document.getElementById('brk-lane-pop');
+    if (board) board._laneOpen = '';
+    if (pop) {
+      pop.hidden = true;
+      pop.replaceChildren();
+    }
+    if (!board) return;
+    board.querySelectorAll('.brk-lane-hit, .brk-lane-info').forEach(function(btn) {
+      btn.setAttribute('aria-expanded', 'false');
+    });
+  }
+
   document.addEventListener('click', function(e) {
     var btn = e.target.closest && e.target.closest('.brk-help');
     var pops = document.querySelectorAll('.brk-help-pop');
@@ -1201,15 +1215,7 @@
       if (pop && open) {
         pop.hidden = false;
         btn.setAttribute('aria-expanded', 'true');
-        var journalPop = document.getElementById('brk-journal-pop');
-        var board = document.getElementById('pm-breakers-board');
-        if (journalPop) {
-          journalPop.hidden = true;
-          journalPop.replaceChildren();
-        }
-        if (board) board._journalOpen = false;
-        var hit = document.querySelector('.brk-journal-hit');
-        if (hit) hit.setAttribute('aria-expanded', 'false');
+        closeBreakerLane();
       }
       return;
     }
@@ -1222,15 +1228,10 @@
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
-    var journalPop = document.getElementById('brk-journal-pop');
-    if (journalPop && !journalPop.hidden) {
+    var lanePop = document.getElementById('brk-lane-pop');
+    if (lanePop && !lanePop.hidden) {
       e.preventDefault();
-      journalPop.hidden = true;
-      journalPop.replaceChildren();
-      var board = document.getElementById('pm-breakers-board');
-      if (board) board._journalOpen = false;
-      var hit = document.querySelector('.brk-journal-hit');
-      if (hit) hit.setAttribute('aria-expanded', 'false');
+      closeBreakerLane();
       return;
     }
     var breakerPop = document.querySelector('.brk-help-pop:not([hidden])');
@@ -1510,17 +1511,25 @@
       }
       return html;
     }
-    function breakerLane(title, bars, empty) {
-      return '<div class="brk-track"><span class="brk-track-name">' + title + '</span>' +
-        '<div class="brk-lane-wrap">' + (empty || '') + '<div class="brk-lane">' + bars +
-        breakerHourLines() + '<i class="brk-now"></i></div></div></div>';
+    function breakerLane(title, bars, empty, lane, pins) {
+      var hitLabel = lane === 'heat' ? 'Події обігріву за цю добу' : title;
+      var bar = '<button type="button" class="brk-lane-hit" data-lane="' + lane +
+        '" aria-expanded="false" aria-controls="brk-lane-pop" aria-label="' + hitLabel +
+        '"><div class="brk-lane">' + bars + breakerHourLines() + '<i class="brk-now"></i></div></button>';
+      var body = (lane === 'light' || lane === 'heat')
+        ? '<div class="brk-lane-slot">' + bar + (pins || '') + '</div>'
+        : bar;
+      return '<div class="brk-track"><span class="brk-name-cell"><span class="brk-track-name">' + title +
+        '</span><button type="button" class="brk-lane-info" data-lane="' + lane +
+        '" aria-expanded="false" aria-controls="brk-lane-pop" aria-label="Пояснення: ' + title +
+        '">i</button></span><div class="brk-lane-wrap">' + (empty || '') + body + '</div></div>';
     }
     function breakerPlanLane(data) {
       var queue = data.schedule_queue || '5.1';
       var title = 'Графік ' + queue;
       var grid = data.schedule;
       if (!grid || grid.length !== 48) {
-        return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає знімка</div>');
+        return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає знімка</div>', 'plan');
       }
       var bars = '';
       var index = 0;
@@ -1533,13 +1542,13 @@
         bars += '<i class="brk-bar brk-plan-' + status + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
         index = end;
       }
-      return breakerLane(title, bars, '');
+      return breakerLane(title, bars, '', 'plan');
     }
     function breakerBoilerLane(data) {
       var title = 'Котельня';
       var intervals = data.boiler;
       if (!intervals || !intervals.length) {
-        return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>');
+        return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>', 'boiler');
       }
       var bars = '';
       intervals.forEach(function(pair) {
@@ -1552,14 +1561,14 @@
         if (width <= 0) return;
         bars += '<i class="brk-bar brk-boiler" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
       });
-      if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>');
-      return breakerLane(title, bars, '');
+      if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': немає графіка</div>', 'boiler');
+      return breakerLane(title, bars, '', 'boiler');
     }
     function breakerAlertLane(data, startMs, spanMs) {
       var title = 'Тривога';
       var segments = data.alerts || [];
       if (!segments.length) {
-        return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>');
+        return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>', 'alert');
       }
       var bars = '';
       segments.forEach(function(segment) {
@@ -1571,8 +1580,8 @@
         var kind = segment.level === 'yellow' ? 'brk-alert-yellow' : (segment.level === 'red' ? 'brk-alert-red' : 'brk-alert-off');
         bars += '<i class="brk-bar ' + kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
       });
-      if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>');
-      return breakerLane(title, bars, '');
+      if (!bars) return breakerLane(title, '', '<div class="brk-empty">' + title + ': ще немає</div>', 'alert');
+      return breakerLane(title, bars, '', 'alert');
     }
     function socColor(percent) {
       var stops = [[0, [127, 29, 29]], [25, [220, 38, 38]], [50, [234, 88, 12]], [75, [250, 204, 21]], [90, [132, 204, 22]], [100, [34, 197, 94]]];
@@ -1594,7 +1603,7 @@
     function breakerChargeLane(data, startMs, spanMs) {
       var title = 'Заряд';
       var segments = data.charge || [];
-      if (!segments.length) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>');
+      if (!segments.length) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>', 'charge');
       var bars = '';
       segments.forEach(function(segment) {
         var left = (segment.start * 1000 - startMs) / spanMs * 100;
@@ -1605,8 +1614,8 @@
         bars += '<i class="brk-bar brk-charge" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) +
           '%;background:' + socColor(segment.soc) + '"></i>';
       });
-      if (!bars) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>');
-      return breakerLane(title, bars, '');
+      if (!bars) return breakerLane(title, '', '<div class="brk-empty">Заряд: ще немає</div>', 'charge');
+      return breakerLane(title, bars, '', 'charge');
     }
     function breakerFactLane(data, startMs, spanMs) {
       var title = 'Фактично';
@@ -1615,7 +1624,7 @@
       var horizon = end;
       if (data.today) horizon = Math.min(end, Date.now() / 1000);
       else if (Date.now() / 1000 < start) horizon = start;
-      if (horizon <= start) return breakerLane(title, '', '<div class="brk-empty">Фактично: ще немає</div>');
+      if (horizon <= start) return breakerLane(title, '', '<div class="brk-empty">Фактично: ще немає</div>', 'fact');
       var downs = data.grid_down || [];
       var cuts = [start, horizon];
       downs.forEach(function(gap) {
@@ -1640,7 +1649,7 @@
         bars += '<i class="brk-bar ' + (dark ? 'brk-fact-off' : 'brk-fact-on') +
           '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
       }
-      return breakerLane(title, bars, '');
+      return breakerLane(title, bars, '', 'fact');
     }
     function paintBreakers(data) {
       var startMs = (data.start || 0) * 1000;
@@ -1673,28 +1682,11 @@
             bars += '<i class="brk-bar ' + piece.kind + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%"></i>';
           });
         });
-        html += '<div class="brk-track"><span class="brk-track-name">' + item[1] + '</span>' +
-          '<div class="brk-lane-wrap">' + empty +
-          (item[0] === 'itp'
-            ? '<div class="brk-heat-slot"><button type="button" class="brk-journal-hit" aria-expanded="false" aria-controls="brk-journal-pop" aria-label="Події обігріву за цю добу"><div class="brk-lane">' + bars + breakerHourLines() + '<i class="brk-now"></i></div></button>' + breakerTimerPins(data, item[0]) + '</div>'
-            : '<div class="brk-lane">' + bars + breakerHourLines() + '<i class="brk-now"></i></div>' + breakerTimerPins(data, item[0])) +
-          '</div></div>';
+        html += breakerLane(item[1], bars, empty, item[0] === 'itp' ? 'heat' : 'light', breakerTimerPins(data, item[0]));
       });
       html += breakerBoilerLane(data);
       html += breakerAlertLane(data, startMs, spanMs);
-      html += '</div><div class="brk-legend">' +
-        '<span class="brk-legend-item"><i class="brk-key brk-on"></i> увімкнено, було світло</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-batt"></i> увімкнено, не було світла</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-off"></i> вимкнено</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-plan-ok"></i> графік: є світло</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-plan-off"></i> немає</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> фактично: було</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> фактично: не було</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-red"></i> червона</span> ' +
-        '<span class="brk-legend-item"><i class="brk-key brk-key-now"></i> зараз</span></div></div>';
+      html += '</div></div>';
       breakerBoard.innerHTML = html;
       paintBreakerNow(data);
       var prev = document.getElementById('brk-prev');
@@ -1707,52 +1699,88 @@
         e.preventDefault();
         loadBreakers(shiftBreakerDay(breakerDate, 1));
       });
-      fillHeatJournal(data);
+      fillLanePop(data);
     }
-    function fillHeatJournal(data) {
-      var pop = document.getElementById('brk-journal-pop');
-      var hit = document.querySelector('.brk-journal-hit');
-      if (!pop) return;
-      if (!breakerBoard._journalOpen) {
-        pop.hidden = true;
-        if (hit) hit.setAttribute('aria-expanded', 'false');
-        return;
-      }
-      pop.replaceChildren();
+    var LANE_LINES = {
+      plan: [['brk-plan-ok', 'графік: є світло'], ['brk-plan-off', 'немає'], ['brk-key-now', 'зараз']],
+      fact: [['brk-fact-on', 'фактично: було'], ['brk-fact-off', 'фактично: не було'], ['brk-key-now', 'зараз']],
+      light: [['brk-on', 'увімкнено, було світло'], ['brk-batt', 'увімкнено, не було світла'], ['brk-off', 'вимкнено'], ['brk-key-now', 'зараз']],
+      boiler: [['brk-boiler', 'котельня'], ['brk-key-now', 'зараз']],
+      alert: [['brk-alert-off', 'без тривоги'], ['brk-alert-yellow', 'жовта'], ['brk-alert-red', 'червона'], ['brk-key-now', 'зараз']]
+    };
+    function addLegendLine(pop, keyClass, text, color) {
+      var line = document.createElement('p');
+      line.className = 'brk-legend-item';
+      var swatch = document.createElement('i');
+      swatch.className = 'brk-key' + (keyClass ? ' ' + keyClass : '');
+      if (color) swatch.style.background = color;
+      line.appendChild(swatch);
+      line.appendChild(document.createTextNode(' ' + text));
+      pop.appendChild(line);
+    }
+    function appendHeatJournal(pop, data) {
       var rows = (data && data.journal) || [];
       if (!rows.length) {
         var empty = document.createElement('p');
         empty.textContent = 'За цю добу записів немає.';
         pop.appendChild(empty);
-      } else {
-        rows.forEach(function(row) {
-          var line = document.createElement('p');
-          line.textContent = (row.clock || '') + ' ' + (row.text || '');
-          pop.appendChild(line);
+        return;
+      }
+      rows.forEach(function(row) {
+        var line = document.createElement('p');
+        line.textContent = (row.clock || '') + ' ' + (row.text || '');
+        pop.appendChild(line);
+      });
+      if (data.journal_truncated) {
+        var cut = document.createElement('p');
+        cut.textContent = 'Старіші записи цієї доби не показано.';
+        pop.appendChild(cut);
+      }
+    }
+    function fillLanePop(data) {
+      var pop = document.getElementById('brk-lane-pop');
+      if (!pop) return;
+      var lane = breakerBoard._laneOpen || '';
+      breakerBoard.querySelectorAll('.brk-lane-hit, .brk-lane-info').forEach(function(btn) {
+        btn.setAttribute('aria-expanded', btn.getAttribute('data-lane') === lane && lane ? 'true' : 'false');
+      });
+      if (!lane) {
+        pop.hidden = true;
+        pop.replaceChildren();
+        return;
+      }
+      pop.replaceChildren();
+      if (lane === 'charge') {
+        var note = document.createElement('p');
+        note.textContent = 'Колір — заряд батареї будинку.';
+        pop.appendChild(note);
+        [0, 25, 50, 75, 90, 100].forEach(function(stop) {
+          addLegendLine(pop, '', stop + '%', socColor(stop));
         });
-        if (data.journal_truncated) {
-          var cut = document.createElement('p');
-          cut.textContent = 'Старіші записи цієї доби не показано.';
-          pop.appendChild(cut);
-        }
+        addLegendLine(pop, 'brk-key-now', 'зараз');
+      } else {
+        (LANE_LINES[lane === 'heat' ? 'light' : lane] || []).forEach(function(row) {
+          addLegendLine(pop, row[0], row[1]);
+        });
+        if (lane === 'heat') appendHeatJournal(pop, data);
       }
       pop.hidden = false;
-      if (hit) hit.setAttribute('aria-expanded', 'true');
     }
     document.addEventListener('click', function(e) {
-      var hit = e.target.closest && e.target.closest('.brk-journal-hit');
-      if (hit) {
+      var hit = e.target.closest && e.target.closest('.brk-lane-hit, .brk-lane-info');
+      if (hit && breakerBoard.contains(hit)) {
         e.preventDefault();
         e.stopPropagation();
         if (!breakerPayload) return;
-        breakerBoard._journalOpen = !breakerBoard._journalOpen;
-        fillHeatJournal(breakerPayload);
+        var lane = hit.getAttribute('data-lane') || '';
+        breakerBoard._laneOpen = breakerBoard._laneOpen === lane ? '' : lane;
+        fillLanePop(breakerPayload);
         return;
       }
-      if (e.target.closest && e.target.closest('#brk-journal-pop, #brk-prev, #brk-next')) return;
-      if (!breakerBoard._journalOpen) return;
-      breakerBoard._journalOpen = false;
-      fillHeatJournal(breakerPayload);
+      if (e.target.closest && e.target.closest('#brk-lane-pop, #brk-prev, #brk-next')) return;
+      if (!breakerBoard._laneOpen) return;
+      breakerBoard._laneOpen = '';
+      fillLanePop(breakerPayload);
     }, true);
     var breakerPayload = null;
     function loadBreakers(date) {

@@ -1,11 +1,11 @@
 # Progress — automatic ITP control
 
 - Plan: `power-monitor/docs/plan_itp_auto.md`
-- Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (heat journal). Part 1 control loop stays `LIVE`.
-- Active skin: control Skin A (edge). Journal skin J-G: tap the heat lane, show that day. J-A marks superseded. J-B, J-C, J-D, and J-E rejected.
-- Last updated: 2026-11-22T23:05:00Z
-- Current phase: Phase J3 is live at `c5bdc4b`.
-- Next allowed step: none. Do not change `ITP_AUTO_COMMANDS`.
+- Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is done locally and is not on the site.
+- Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is implemented locally: one legend per lane, hidden until that lane or its info mark is opened.
+- Last updated: 2026-11-22T23:51:00Z
+- Current phase: L1 done locally. Do not deploy until a separate yes.
+- Next allowed step: deploy only if the operator asks. There is no L2.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`, `mutationKind=plan`. Earlier proof `2026-11-22T18:43:35.564Z` remains the Part 1 write.
@@ -69,6 +69,13 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | 2026-11-22T22:40:00Z | Phase J2 | Operator yes, prompt 2. `mutate_itp_auto` writes a switch row at `confirmed=0`, then a mode row when `enabled` changes. Confirm is `mark_itp_journal_confirmed` from `_confirm_itp_command` and `settle_itp_after_sample`. A journal error does not undo the document. 115 tests OK. No deploy. Proof `verifiedAtUtc=2026-11-22T22:37:09.536Z`. J3 not started. |
 | 2026-11-22T23:02:00Z | Phase J3 | Operator yes, prompt 2. The heat lane opens that day's sentences. No marks. The list is outside the board and uses text nodes. 116 tests OK. Browser tap waits for a deploy. Proof `verifiedAtUtc=2026-11-22T23:02:12.921Z`. |
 | 2026-11-22T23:04:00Z | Deploy | Operator: deploy. `git pull` from `21c8ab0` to `c5bdc4b`, service restarted, status active. Public script has the heat-lane button and the empty-day sentence. Public stylesheet has the list panel. No mark class. Table `itp_journal` exists. The keyed click was not driven. Proof `verifiedAtUtc=2026-11-22T23:05:22.381Z`. |
+| 2026-11-22T23:16:00Z | Part 3 draft | Operator: hide the shared legend until a lane click. Each lane has its own legend, and a small info mark opens the same text. Skin L-A. Self-review round 1, 0 CRITICAL, 0 HIGH. Status `DRAFT READY FOR REVIEW`. No code. Proof `verifiedAtUtc=2026-11-22T23:13:52.524Z`. |
+| 2026-11-22T23:25:00Z | Plan review | Lead, before the critic. Five lanes go through `_lane_html` and `breakerLane`. Script tests count rendered buttons, not template copies. Status `REVIEW IN PROGRESS`. No code. |
+| 2026-11-22T23:32:00Z | Critic round 1 | `grok-4.7-xhigh-fast`. CHANGES REQUIRED. CRITICAL 0, HIGH 3, MEDIUM 2, LOW 1. No code. |
+| 2026-11-22T23:33:00Z | Critic fixes | Slice ends before `paintAlertDay`. One fill, lane id, help/Esc/outside click, four named tests, shared label width, charge «зараз», pin top. Round 2 not back. No code. |
+| 2026-11-22T23:38:00Z | Critic round 2 | Same model, resumed. APPROVE. CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. L1 waits for an explicit yes. No code. |
+| 2026-11-22T23:46:00Z | Phase L1 yes | Operator: Agree & Continue. Prompt 2. Proof `verifiedAtUtc=2026-11-22T23:46:15.449Z`. Deploy was not included. |
+| 2026-11-22T23:51:00Z | Phase L1 | Shared legend removed. Each lane and its info mark open one pop. Heat keeps the day list under its colors. 127 tests OK, including the alert-day module. `node --check static/app.js` passed. Not deployed. The site stays at `c5bdc4b`. |
 
 ## Part 2 checklist
 
@@ -78,6 +85,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | J1 Table | done | 2026-11-22T22:34:00Z. Helpers only. The page does not read them. |
 | J2 Writers | done | 2026-11-22T22:40:00Z. Rows are written. The page does not show them. |
 | J3 Day list | live | 2026-11-22T23:04:00Z. Running commit `c5bdc4b`. |
+| L1 Per-lane legend | done locally | 2026-11-22T23:51:00Z. 127 tests OK. Not deployed. Site remains `c5bdc4b`. |
 
 ## Decisions mirrored from the plan
 

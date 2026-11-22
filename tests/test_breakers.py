@@ -488,8 +488,6 @@ class BreakerPageTests(unittest.TestCase):
         payload = read_breaker_board("2026-11-09", now)
         html = power_monitor._breaker_bars_html(payload)
         self.assertLess(html.index("brk-on"), html.index("brk-off"))
-        self.assertIn("увімкнено, було світло", html)
-        self.assertIn("увімкнено, не було світла", html)
         with database._conn() as db:
             db.execute(
                 "INSERT INTO power_events(event, ts) VALUES('down', ?)",
@@ -509,12 +507,16 @@ class BreakerPageTests(unittest.TestCase):
         self.assertIn("Котельня: немає графіка", html)
         self.assertEqual(html.count("brk-hour-line"), 23 * 7)
         self.assertIn('brk-hour-line" style="left:50.0000%"', html)
-        self.assertIn("brk-key-now", html)
-        self.assertIn("зараз</span>", html)
-        self.assertEqual(html.lower().count("<button"), 1)
-        self.assertIn("brk-journal-hit", html)
+        self.assertNotIn('class="brk-legend"', html)
+        self.assertNotIn("brk-journal-hit", html)
+        self.assertNotIn("увімкнено, було світло", html)
+        self.assertNotIn("brk-key-now", html)
+        self.assertNotIn("зараз</span>", html)
+        self.assertEqual(html.count("brk-lane-hit"), 7)
+        self.assertEqual(html.count("brk-lane-info"), 7)
         light = html.split(">Освітлення<", 1)[1].split(">Обігрів<", 1)[0]
-        self.assertNotIn("<button", light.lower())
+        self.assertIn('data-lane="light"', light)
+        self.assertIn("<button", light.lower())
 
     def test_plan_lane_uses_the_queue_snapshot(self):
         import json
@@ -647,9 +649,11 @@ class BreakerPageTests(unittest.TestCase):
 
         html = power_monitor._breaker_section_html()
         self.assertIn("Автомати підвалу", html)
-        self.assertEqual(html.lower().count("<button"), 2)
+        self.assertEqual(html.lower().count("<button"), 15)
         self.assertIn('class="brk-help"', html)
-        self.assertIn('class="brk-journal-hit"', html)
+        self.assertEqual(html.count("brk-lane-hit"), 7)
+        self.assertEqual(html.count("brk-lane-info"), 7)
+        self.assertNotIn('class="brk-journal-hit"', html)
         self.assertNotIn("<form", html.lower())
         database.kv_set("breakers_board", "0")
         self.assertEqual(power_monitor._breaker_section_html(), "")
@@ -680,11 +684,11 @@ class BreakerPageTests(unittest.TestCase):
         empty = database.read_breaker_board("2026-11-08", morning)
         self.assertEqual(empty["journal"], [])
         self.assertFalse(empty["journal_truncated"])
-        self.assertIn("brk-journal-hit", power_monitor._breaker_bars_html(empty, morning))
+        self.assertIn('data-lane="heat"', power_monitor._breaker_bars_html(empty, morning))
         section = power_monitor._breaker_section_html()
-        self.assertLess(section.index('id="pm-breakers-board"'), section.index('id="brk-journal-pop"'))
-        self.assertIn('class="brk-journal-pop"', section)
-        self.assertNotIn("brk-journal-pop brk-help-pop", section)
+        self.assertLess(section.index('id="pm-breakers-board"'), section.index('id="brk-lane-pop"'))
+        self.assertIn('class="brk-lane-pop"', section)
+        self.assertNotIn("brk-lane-pop brk-help-pop", section)
         self.assertIn('class="brk-help-pop" hidden', section)
         self.assertNotIn("Обігрів увімкнено", power_monitor._build_update_fragments()["pm_ev_tbody"])
 
@@ -704,12 +708,15 @@ class BreakerPageTests(unittest.TestCase):
 
     def test_page_script_does_not_reuse_the_fact_lane(self):
         script = Path("static/app.js").read_text(encoding="utf-8")
-        chunk = script[script.index("pm-breakers-board"):]
+        chunk = script[script.index("pm-breakers-board"):script.index("function paintAlertDay")]
         self.assertNotIn("factOnSegments", chunk)
-        self.assertEqual(chunk.lower().count("<button"), 1)
-        self.assertIn("brk-journal-hit", chunk)
+        self.assertIn("brk-lane-hit", chunk)
+        self.assertIn("brk-lane-info", chunk)
         self.assertIn("textContent", chunk)
+        self.assertIn("увімкнено, було світло", chunk)
+        self.assertNotIn("brk-journal-hit", chunk)
         self.assertNotIn("brk-journal-pin", chunk)
+        self.assertNotIn('class="brk-legend"', chunk)
         self.assertIn("brk-batt", chunk)
         self.assertIn("не було світла", chunk)
         self.assertIn("brk-plan-ok", chunk)

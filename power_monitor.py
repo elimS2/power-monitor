@@ -1800,39 +1800,15 @@ def _breaker_bars_html(payload: dict, now: float | None = None) -> str:
                     if width <= 0:
                         continue
                     bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
-        lane = f'<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div>'
-        pins = _timer_pins_html(payload, name)
-        if name == "itp":
-            lane = (
-                '<div class="brk-heat-slot">'
-                '<button type="button" class="brk-journal-hit" aria-expanded="false" '
-                'aria-controls="brk-journal-pop" aria-label="Події обігріву за цю добу">'
-                f"{lane}</button>{pins}</div>"
-            )
-            pins = ""
+        lane_id = "heat" if name == "itp" else "light"
         tracks.append(
-            f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-            f'<div class="brk-lane-wrap">{empty}{lane}{pins}</div></div>'
+            _lane_html(title, bars, now_mark, empty, lane_id, _timer_pins_html(payload, name))
         )
     tracks.append(_boiler_lane_html(payload, now_mark))
     tracks.append(_alert_lane_html(payload, now_mark))
     return (
         '<div class="brk-chart"><div class="brk-hours">' + hours + "</div>"
-        f'<div class="brk-plot">{"".join(tracks)}</div>'
-        '<div class="brk-legend">'
-        '<span class="brk-legend-item"><i class="brk-key brk-on"></i> увімкнено, було світло</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-batt"></i> увімкнено, не було світла</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-off"></i> вимкнено</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-plan-ok"></i> графік: є світло</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-plan-off"></i> немає</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-on"></i> фактично: було</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-fact-off"></i> фактично: не було</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-boiler"></i> котельня</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-off"></i> без тривоги</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-yellow"></i> жовта</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-alert-red"></i> червона</span> '
-        '<span class="brk-legend-item"><i class="brk-key brk-key-now"></i> зараз</span>'
-        '</div></div>'
+        f'<div class="brk-plot">{"".join(tracks)}</div></div>'
     )
 
 
@@ -1853,7 +1829,7 @@ def _fact_lane_html(payload: dict, now_mark: str, start: float, end: float, now:
     horizon = _fact_horizon(payload, start, end, now)
     span = end - start or 1
     if horizon <= start:
-        return _lane_html(title, [], now_mark, '<div class="brk-empty">Фактично: ще немає</div>')
+        return _lane_html(title, [], now_mark, '<div class="brk-empty">Фактично: ще немає</div>', "fact")
     downs = []
     for pair in payload.get("grid_down") or []:
         if isinstance(pair, (list, tuple)) and len(pair) == 2:
@@ -1875,7 +1851,7 @@ def _fact_lane_html(payload: dict, now_mark: str, start: float, end: float, now:
         left_pct = (left - start) / span * 100
         width = (right - left) / span * 100
         bars.append(f'<i class="brk-bar {kind}" style="left:{left_pct:.2f}%;width:{width:.2f}%"></i>')
-    return _lane_html(title, bars, now_mark, "")
+    return _lane_html(title, bars, now_mark, "", "fact")
 
 
 def _charge_lane_html(payload: dict, now_mark: str, start: float, end: float) -> str:
@@ -1899,7 +1875,7 @@ def _charge_lane_html(payload: dict, now_mark: str, start: float, end: float) ->
             f'<i class="brk-bar brk-charge" style="left:{left_pct:.2f}%;width:{width:.2f}%;background:{color}"></i>'
         )
     empty = "" if bars else '<div class="brk-empty">Заряд: ще немає</div>'
-    return _lane_html(title, bars, now_mark, empty)
+    return _lane_html(title, bars, now_mark, empty, "charge")
 
 
 def _timer_pins_html(payload: dict, device: str) -> str:
@@ -1954,10 +1930,32 @@ def _hour_lines_html() -> str:
     )
 
 
-def _lane_html(title: str, bars: list[str], now_mark: str, empty: str) -> str:
+def _lane_html(
+    title: str,
+    bars: list[str],
+    now_mark: str,
+    empty: str,
+    lane: str,
+    pins: str = "",
+) -> str:
+    """One chart row. The name and the info mark share the label cell. Pins sit beside the hit, outside the clipped bar."""
+    label = "Події обігріву за цю добу" if lane == "heat" else title
+    bar = (
+        f'<button type="button" class="brk-lane-hit" data-lane="{lane}" '
+        'aria-expanded="false" aria-controls="brk-lane-pop" '
+        f'aria-label="{label}">'
+        f'<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div>'
+        "</button>"
+    )
+    if lane in {"light", "heat"}:
+        bar = f'<div class="brk-lane-slot">{bar}{pins}</div>'
     return (
-        f'<div class="brk-track"><span class="brk-track-name">{title}</span>'
-        f'<div class="brk-lane-wrap">{empty}<div class="brk-lane">{"".join(bars)}{_hour_lines_html()}{now_mark}</div></div></div>'
+        '<div class="brk-track">'
+        f'<span class="brk-name-cell"><span class="brk-track-name">{title}</span>'
+        f'<button type="button" class="brk-lane-info" data-lane="{lane}" '
+        'aria-expanded="false" aria-controls="brk-lane-pop" '
+        f'aria-label="Пояснення: {title}">i</button></span>'
+        f'<div class="brk-lane-wrap">{empty}{bar}</div></div>'
     )
 
 
@@ -1967,7 +1965,7 @@ def _plan_lane_html(payload: dict, now_mark: str) -> str:
     title = f"Графік {queue}"
     grid = payload.get("schedule")
     if not isinstance(grid, list) or len(grid) != 48:
-        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає знімка</div>')
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає знімка</div>', "plan")
     bars = []
     index = 0
     while index < 48:
@@ -1981,7 +1979,7 @@ def _plan_lane_html(payload: dict, now_mark: str) -> str:
             f'<i class="brk-bar brk-plan-{status}" style="left:{left:.2f}%;width:{width:.2f}%"></i>'
         )
         index = end_i
-    return _lane_html(title, bars, now_mark, "")
+    return _lane_html(title, bars, now_mark, "", "plan")
 
 
 def _boiler_lane_html(payload: dict, now_mark: str) -> str:
@@ -1989,7 +1987,7 @@ def _boiler_lane_html(payload: dict, now_mark: str) -> str:
     title = "Котельня"
     intervals = payload.get("boiler")
     if not isinstance(intervals, list) or not intervals:
-        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>')
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>', "boiler")
     bars = []
     for pair in intervals:
         if not isinstance(pair, (list, tuple)) or len(pair) != 2:
@@ -2004,8 +2002,8 @@ def _boiler_lane_html(payload: dict, now_mark: str) -> str:
             continue
         bars.append(f'<i class="brk-bar brk-boiler" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
     if not bars:
-        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>')
-    return _lane_html(title, bars, now_mark, "")
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: немає графіка</div>', "boiler")
+    return _lane_html(title, bars, now_mark, "", "boiler")
 
 
 def _alert_lane_html(payload: dict, now_mark: str) -> str:
@@ -2013,7 +2011,7 @@ def _alert_lane_html(payload: dict, now_mark: str) -> str:
     title = "Тривога"
     segments = payload.get("alerts")
     if not isinstance(segments, list) or not segments:
-        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>')
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>', "alert")
     start = float(payload.get("start") or 0)
     end = float(payload.get("end") or start)
     span = end - start or 1
@@ -2041,8 +2039,8 @@ def _alert_lane_html(payload: dict, now_mark: str) -> str:
             continue
         bars.append(f'<i class="brk-bar {kind}" style="left:{left:.2f}%;width:{width:.2f}%"></i>')
     if not bars:
-        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>')
-    return _lane_html(title, bars, now_mark, "")
+        return _lane_html(title, [], now_mark, f'<div class="brk-empty">{title}: ще немає</div>', "alert")
+    return _lane_html(title, bars, now_mark, "", "alert")
 
 
 def _breaker_section_html() -> str:
@@ -2071,7 +2069,7 @@ def _breaker_section_html() -> str:
         "</span></span></summary>"
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
-        '<div id="brk-journal-pop" class="brk-journal-pop" hidden></div>'
+        '<div id="brk-lane-pop" class="brk-lane-pop" hidden></div>'
         "</details>"
     )
 
