@@ -1,11 +1,11 @@
 # Deye fast register read
 
-- Status: `PHASE 4 LOCAL, NOT DEPLOYED`
+- Status: `PHASE 4 LIVE`
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, logger serials, or API keys there. Disk is the source of truth for the reader.
-- Last updated: 2026-11-22T17:16:00Z
-- Active skin: **Skin B** is live at 1 second since 2026-11-22T17:07:53Z. **Skin A** (2 seconds) waits for the 24-hour count. The shipped default stays 0. Phase 4 is local and is not on the server yet.
+- Last updated: 2026-11-22T17:48:00Z
+- Active skin: **Skin B** is live at 1 second since 2026-11-22T17:07:53Z. **Skin A** (2 seconds) waits for the 24-hour count. The shipped default stays 0. Phase 4 has been on the server since 2026-11-22T17:46:43Z.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
 Companion: `power-monitor/docs/plan_deye_fast_read_PROGRESS.md`
@@ -242,7 +242,7 @@ Each `save_deye_fast` uses a new `_conn()`, the same way `save_deye_log` does. D
 
 ### 6.5 Page (phase 4 only)
 
-The page reads `deye_fast` only for this live overlay and for the load-chart minute maximum. Production still shows the slow row until phase 4 is deployed.
+The page reads `deye_fast` only for this live overlay and for the load-chart minute maximum. That page has been on the server since 2026-11-22T17:46:43Z.
 
 Live meters, both the apartment panel and the house panel: copy the newest `deye_log` row and overlay only the three voltages and the four load watts from the newest `deye_fast` row when that row is younger than 15 seconds. Newest means `ORDER BY ts DESC LIMIT 1` for that `inverter_id`. `LIMIT 1` without that order returns an old row, the 15-second check fails, and the page never shows the fast sample. Pass that copy to the meters and to `_battery_panel`. SOC, temperatures, battery power, and kWh counters stay the `deye_log` values on that copy.
 
@@ -374,7 +374,7 @@ Gate: no enable of a faster interval than what phase 3 left running.
 
 Rollback: stop reading `deye_fast` in the panel. Leave the table.
 
-Landed locally 2026-11-22T17:16:00Z. Not deployed. The server is still `0672b4a` with `DEYE_FAST_INTERVAL_SEC=1`. `latest_deye_fast` is `ORDER BY ts DESC LIMIT 1` and is ignored after 15 seconds. The overlay copies the slow row and replaces only the three voltages and the four load watts. Age stays on the slow timestamp. History tables, grid import and export totals, `/api/status`, and the voltage-status helpers still read `deye_log`. The load chart overwrites `load_w` with `MAX(load_power_w)` for the same minute buckets. `tests.test_deye_fast`: 20 tests OK. Proof `verifiedAtUtc=2026-11-22T17:15:01.664Z`.
+Landed locally 2026-11-22T17:16:00Z. Deployed 2026-11-22T17:46:43Z as `b182b3f` by a manual pull and restart. `DEYE_FAST_INTERVAL_SEC` stayed 1. The restart left a gap of about 2.7 seconds in `deye_fast`. About 30 seconds later the open page showed the fast load: apartment 1325 W against a slow row of 1322 W, house 3765 W against a slow row of 3969 W. SOC stayed 86 and 95 from the slow rows. Grid volts were already 0 on both, so the meters showed 0. No fast-read failure in the journal. `latest_deye_fast` is `ORDER BY ts DESC LIMIT 1` and is ignored after 15 seconds. The overlay copies the slow row and replaces only the three voltages and the four load watts. Age stays on the slow timestamp. History tables, grid import and export totals, `/api/status`, and the voltage-status helpers still read `deye_log`. The load chart overwrites `load_w` with `MAX(load_power_w)` for the same minute buckets. `tests.test_deye_fast`: 20 tests OK. Local proof `verifiedAtUtc=2026-11-22T17:15:01.664Z`. Deploy proof `verifiedAtUtc=2026-11-22T17:47:33.522Z`.
 
 ## 8. Data and compatibility
 
@@ -451,10 +451,11 @@ None that block phase 1. Fast rows are kept. There is no keep-days setting.
 - 2026-11-22T17:06:00Z — Phase 3 deployed off. Operator yes to publish the shared client and leave the one-second rate at 0. Server restart 2026-11-22T17:05:23Z, commit `0672b4a`. Env `DEYE_FAST_INTERVAL_SEC` unset. First polls 17:05:25Z kept apartment 54.31 V / SOC 91 and house 535.1 V / SOC 98. `deye_fast` count 0. No fast-task log. Grid volts were already 0. Proof `verifiedAtUtc=2026-11-22T17:06:00.739Z`.
 - 2026-11-22T17:10:40Z — One-second smoke passed. Operator yes to enable 1, not 2. Server env `DEYE_FAST_INTERVAL_SEC=1`, restart 2026-11-22T17:07:53Z. Over the next minutes each inverter stored 53–54 rows in the two full minutes, max gap 3.74 s, no gap over 15 s. `deye_log` about two rows a minute. Nine overrun warnings, zero fast-read failures, zero block fallbacks. Left at 1 second. Proof `verifiedAtUtc=2026-11-22T17:10:41.809Z`.
 - 2026-11-22T17:16:00Z — Phase 4 landed locally and was not deployed. Operator yes via Agree & Continue. Live meters and both text summaries overlay a fresh fast row onto a copy of the newest slow row. History and energy totals stay on `deye_log`. Load chart uses the fast minute maximum. Rate stays 1 second. No restart. 20 tests OK. Proof `verifiedAtUtc=2026-11-22T17:15:01.664Z`.
+- 2026-11-22T17:48:00Z — Phase 4 deployed. Operator yes via Agree & Continue. Manual `git pull --ff-only` and `systemctl restart` at 2026-11-22T17:46:43Z, commit `b182b3f`. No `#autodeploy` tag, so this note must not restart the service again. Interval stayed 1. Page load matched the fast rows (apartment 1325 W, house 3765 W) while SOC stayed on the slow rows (86 and 95). Restart gap about 2.7 s. Grid was already at 0 V. Proof `verifiedAtUtc=2026-11-22T17:47:33.522Z`.
 
 ## 12. Handoff
 
-Phase 4 is local only. The server is still `0672b4a`, sampling at 1 second since 2026-11-22T17:07:53Z. Do not restart it to publish the page unless the next yes says deploy. A restart gaps the 24-hour record by a few seconds. Do not set 2 until the 24-hour count. Do not delete `deye_fast`. Do not put `#autodeploy` on a commit that also changes the interval.
+Phase 4 is live as `b182b3f` since 2026-11-22T17:46:43Z. Sampling stays at 1 second, from 2026-11-22T17:07:53Z. Do not set 2 until a qualifying hour is counted on each inverter after a full day. Do not delete `deye_fast`. Do not put `#autodeploy` on a commit that also changes the interval.
 
 Read this file and `plan_deye_fast_read_PROGRESS.md` before editing. Do not re-read the planning chat.
 

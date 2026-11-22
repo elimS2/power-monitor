@@ -2,10 +2,10 @@
 
 Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
-- Status: `PHASE 4 LOCAL, NOT DEPLOYED`
-- Active skin: B, live at 1 second since 2026-11-22T17:07:53Z. A (2 seconds) only after the 24-hour count. Do not change the rate while publishing the page.
-- Current phase: 4 written locally 2026-11-22T17:16:00Z. The open site still runs phase 3 (`0672b4a`) and does not draw the one-second row yet.
-- Last updated: 2026-11-22T17:16:00Z
+- Status: `PHASE 4 LIVE`
+- Active skin: B, live at 1 second since 2026-11-22T17:07:53Z. A (2 seconds) only after the 24-hour count.
+- Current phase: 4 live on the site since 2026-11-22T17:46:43Z, commit `b182b3f`.
+- Last updated: 2026-11-22T17:48:00Z
 
 ## Done
 
@@ -30,6 +30,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 - 2026-11-22T17:06:00Z — Phase 3 deployed off. Restart 2026-11-22T17:05:23Z, `0672b4a`. Fast table empty. Apartment 54.31 V / SOC 91, house 535.1 V / SOC 98. Proof `verifiedAtUtc=2026-11-22T17:06:00.739Z`.
 - 2026-11-22T17:10:40Z — One-second smoke passed and left on. Restart 2026-11-22T17:07:53Z with `DEYE_FAST_INTERVAL_SEC=1`. Full minutes had 53–54 fast rows per inverter. Max gap 3.74 s. Slow log stayed near two rows a minute. Nine overruns, no read failures. Not moved to 2 seconds. Proof `verifiedAtUtc=2026-11-22T17:10:41.809Z`.
 - 2026-11-22T17:16:00Z — Phase 4 implemented locally. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T17:15:01.664Z`. Fresh fast row (15 seconds) overlays load and three voltages onto a copy of the slow row. SOC and the age label stay. A fast row older than 15 seconds is ignored. Load chart takes the minute maximum and leaves the voltage series. 20 tests OK. Server not restarted. Rate still 1.
+- 2026-11-22T17:48:00Z — Phase 4 deployed. Operator yes via Agree & Continue. Restart 2026-11-22T17:46:43Z, `b182b3f`. Interval stayed 1. Open page showed fast load 1325 W and 3765 W; slow rows were 1322 W and 3969 W. SOC stayed 86 and 95. Gap about 2.7 s. Proof `verifiedAtUtc=2026-11-22T17:47:33.522Z`.
 - Source proof for the phase 2 plan update: composer `1ccc9355-92e4-47a9-90a2-abd5600f6e11`, `verifiedAtUtc=2026-11-22T16:18:17.733Z`.
 
 ## Phase status
@@ -39,7 +40,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 | 1 Decode and table | done locally 2026-11-22T16:14:30Z | Decoder and table only. Poller unchanged. Not deployed. |
 | 2 Batched slow read | live `d174ec2` 2026-11-22T16:26:24Z | Six-block Solarman reader. First rows match the previous shape. |
 | 3 Fast loop | live at 1 second since 2026-11-22T17:07:53Z | Smoke passed: 53–54 rows in each full minute. 2 seconds waits for the day count. |
-| 4 Page | local 2026-11-22T17:16:00Z, not deployed | Live overlay and load-chart maximum. Site still shows the slow row. |
+| 4 Page | live `b182b3f` 2026-11-22T17:46:43Z | Open page uses the fast load. SOC stays on the slow row. Rate still 1 second. |
 
 ## Do not touch
 
@@ -50,4 +51,4 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
 ## Next
 
-Leave the rate at 1 second. The page code is local. Deploy is a separate yes, and that restart will punch a few seconds out of the 24-hour record. After 24 hours, count a qualifying hour on each inverter before anyone sets 2.
+Leave the rate at 1 second. The page is live. After 24 hours from 2026-11-22T17:07:53Z, count a qualifying hour on each inverter before anyone sets 2. Do not restart the service for this note.
