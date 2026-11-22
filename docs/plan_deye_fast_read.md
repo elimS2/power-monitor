@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, logger serials, or API keys there. Disk is the source of truth for the reader.
-- Last updated: 2026-11-22T16:18:30Z
+- Last updated: 2026-11-22T16:27:30Z
 - Active skin: **Skin B** for the first time the fast loop is turned on (1-second read). **Skin A** (2 seconds) is only after a full day of 1-second rows shows the module rarely changes between seconds. The loop still ships **off** until a human sets `DEYE_FAST_INTERVAL_SEC=1`.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -311,7 +311,13 @@ This phase changes live behavior only after deploy. The gate asks before deploy.
 
 Gate: tests pass. Deploy is a separate yes.
 
-Landed locally 2026-11-22T16:18:30Z. `read_deye_solarman` now calls `read_deye_blocks`: the six reads in section 6.2, with the apartment and house battery fallbacks. `read_deye_modbus` is still the old per-register loop. Nothing writes `deye_fast` from the poller. Not deployed. Not committed. The 100000 total-grid guard is still in the decoder. A real 16-bit pair cannot reach it before the `0xFFFFFFFF` drop, same as the old loop.
+Landed locally 2026-11-22T16:18:30Z. Deployed 2026-11-22T16:26:24Z as commit `d174ec2` with `#autodeploy`. The service restarted and the first new polls were 16:26:27Z. `read_deye_modbus` is still the old per-register loop. Nothing writes `deye_fast` from the poller. The 100000 total-grid guard is still in the decoder. A real 16-bit pair cannot reach it before the `0xFFFFFFFF` drop, same as the old loop.
+
+First rows after the restart, compared with the row just before it:
+
+- Apartment: grid about 234/236/227 V, battery 55.28 V, SOC 91, day load 51.6 kWh, total load 2907.44 kWh. Same shape as the previous row. Load moved from 2317 W to 2297 W.
+- House: grid about 236/233/233 V, battery 538.0 V then 537.9 V, SOC 98, day load 93.7 kWh, total load 850.26 kWh. Same shape. Load was 4612 W on the first new row and 13349 W on the next, and grid power moved with it, so that is the building, not a scale error.
+- `year_load_kwh` was already null before the restart and stayed null. No `Deye block` fallback line in the journal after the restart.
 
 Rollback: restore `read_deye_solarman` to the per-register loop. No table change.
 
@@ -436,10 +442,11 @@ None that block phase 1. Fast rows are kept. There is no keep-days setting.
 - 2026-11-22T15:41:00Z — Plan review, confirmation (`grok-4.7-xhigh-fast`): APPROVE, CRITICAL 0, HIGH 0. Status `REVIEWED / READY FOR LOCAL WORK`. No code. Phase 1 waits for an explicit yes.
 - 2026-11-22T16:14:30Z — Phase 1 landed locally. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:11:21.429Z`. `decode_fast_block` and `save_deye_fast` only. A mistaken edit had dropped `charge_n` from `deye_recent_power`; that function was put back before the gate. `python -m unittest tests.test_deye_fast` passed, 6 tests. The same run plus the SOC and voltage bucket tests passed, 11 tests. No poll change, no page change, no deploy, no commit. Company KB searches at the start of this step still had no `power-monitor` hit. Disk stayed the source of truth.
 - 2026-11-22T16:18:30Z — Phase 2 landed locally. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:18:17.733Z`. `read_deye_blocks` is what the Solarman poll will use after a deploy. Port 502 is unchanged. `tests.test_deye_fast`: 12 tests OK. No `deye_fast` writer in the loop. No deploy, no commit.
+- 2026-11-22T16:27:30Z — Phase 2 deployed. Operator yes to deploy this phase only, not phase 3. Commit `d174ec2`, tag `#autodeploy`. Service `ActiveEnterTimestamp` 2026-11-22T16:26:24Z. First new polls 16:26:27Z: apartment battery 55.28 V / SOC 91, house battery 538.0 V / SOC 98. Counters unchanged from the previous row. `year_load_kwh` was already null. No battery-block fallback in the journal. Proof for the plan note `verifiedAtUtc=2026-11-22T16:27:09.991Z`.
 
 ## 12. Handoff
 
-Phase 2 is done locally. Do not deploy it and do not start phase 3 until the operator says yes. Deploy of phase 2 is its own yes. First live rate is still Skin B, and the loop stays off. Do not delete `deye_fast`.
+Phase 2 is live as `d174ec2`. Do not start phase 3 until the operator says yes. The fast loop is still absent. Do not delete `deye_fast`.
 
 Read this file and `plan_deye_fast_read_PROGRESS.md` before editing. Do not re-read the planning chat.
 

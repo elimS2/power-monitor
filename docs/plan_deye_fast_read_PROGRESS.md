@@ -4,8 +4,8 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: B for the first enable (1 second). A (2 seconds) only after the 24-hour count in phase 3. Loop is off until `DEYE_FAST_INTERVAL_SEC=1`.
-- Current phase: 2 done locally. Not deployed. Phase 3 has not started.
-- Last updated: 2026-11-22T16:18:30Z
+- Current phase: 2 live as `d174ec2`. Phase 3 has not started.
+- Last updated: 2026-11-22T16:27:30Z
 
 ## Done
 
@@ -25,6 +25,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 - 2026-11-22T15:41:00Z — Confirmation, same model, resumed: APPROVE, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. Phase 1 still needs an explicit yes.
 - 2026-11-22T16:14:30Z — Phase 1 implemented. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:11:21.429Z`. Decoder, table, insert, and `tests/test_deye_fast.py`. `cleanup_old` unchanged. `deye_recent_power` was briefly shortened by a bad edit and restored in the same step; the SOC tests then passed. No deploy, no commit. `config.py`, `detection.py`, and `power_monitor.py` were already dirty with a voltage-alert change and were not part of this phase.
 - 2026-11-22T16:18:30Z — Phase 2 implemented. Operator yes via Agree & Continue. Proof `verifiedAtUtc=2026-11-22T16:18:17.733Z`. Solarman slow read is six blocks. Modbus TCP port 502 stays the old loop. 12 tests OK. No deploy, no commit. Company KB still has no `power-monitor` (searches at the start of the step, no repo hit).
+- 2026-11-22T16:27:30Z — Phase 2 deployed, commit `d174ec2`, `#autodeploy`. Restart 2026-11-22T16:26:24Z. First new rows match the previous ones: apartment 55.28 V / SOC 91, house 538.0 V / SOC 98. Counters did not jump. Year load was already null. No fallback warning. Phase 3 not started. Proof `verifiedAtUtc=2026-11-22T16:27:09.991Z`.
 - Source proof for the phase 2 plan update: composer `1ccc9355-92e4-47a9-90a2-abd5600f6e11`, `verifiedAtUtc=2026-11-22T16:18:17.733Z`.
 
 ## Phase status
@@ -32,7 +33,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 | Phase | Status | Note |
 |---|---|---|
 | 1 Decode and table | done locally 2026-11-22T16:14:30Z | Decoder and table only. Poller unchanged. Not deployed. |
-| 2 Batched slow read | done locally 2026-11-22T16:18:30Z | Six-block Solarman reader. Not deployed. |
+| 2 Batched slow read | live `d174ec2` 2026-11-22T16:26:24Z | Six-block Solarman reader. First rows match the previous shape. |
 | 3 Fast loop | not started | Ships with interval 0. Enable is a separate yes. |
 | 4 Page | not started | After phase 3. |
 
@@ -45,4 +46,4 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
 ## Next
 
-Deploy of phase 2 is a separate yes. Phase 3 only after an explicit yes. Do not enable the fast loop.
+Phase 3 only after an explicit yes. The fast loop is not in the running code. Do not enable a one-second poll.
