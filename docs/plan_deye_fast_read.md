@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, logger serials, or API keys there. Disk is the source of truth for the reader.
-- Last updated: 2026-11-22T17:06:00Z
+- Last updated: 2026-11-22T17:10:40Z
 - Active skin: **Skin B** for the first time the fast loop is turned on (1-second read). **Skin A** (2 seconds) is only after a full day of 1-second rows shows the module rarely changes between seconds. The loop still ships **off** until a human sets `DEYE_FAST_INTERVAL_SEC=1`.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 
@@ -447,10 +447,11 @@ None that block phase 1. Fast rows are kept. There is no keep-days setting.
 - 2026-11-22T16:27:30Z — Phase 2 deployed. Operator yes to deploy this phase only, not phase 3. Commit `d174ec2`, tag `#autodeploy`. Service `ActiveEnterTimestamp` 2026-11-22T16:26:24Z. First new polls 16:26:27Z: apartment battery 55.28 V / SOC 91, house battery 538.0 V / SOC 98. Counters unchanged from the previous row. `year_load_kwh` was already null. No battery-block fallback in the journal. Proof for the plan note `verifiedAtUtc=2026-11-22T16:27:09.991Z`.
 - 2026-11-22T16:42:30Z — Phase 3 landed locally, still off. Operator yes to write the loop, not to enable it and not to deploy. `DEYE_FAST_INTERVAL_SEC` default 0. `read_deye_solarman` no longer opens a socket. 17 tests OK. Proof `verifiedAtUtc=2026-11-22T16:42:14.534Z`.
 - 2026-11-22T17:06:00Z — Phase 3 deployed off. Operator yes to publish the shared client and leave the one-second rate at 0. Server restart 2026-11-22T17:05:23Z, commit `0672b4a`. Env `DEYE_FAST_INTERVAL_SEC` unset. First polls 17:05:25Z kept apartment 54.31 V / SOC 91 and house 535.1 V / SOC 98. `deye_fast` count 0. No fast-task log. Grid volts were already 0. Proof `verifiedAtUtc=2026-11-22T17:06:00.739Z`.
+- 2026-11-22T17:10:40Z — One-second smoke passed. Operator yes to enable 1, not 2. Server env `DEYE_FAST_INTERVAL_SEC=1`, restart 2026-11-22T17:07:53Z. Over the next minutes each inverter stored 53–54 rows in the two full minutes, max gap 3.74 s, no gap over 15 s. `deye_log` about two rows a minute. Nine overrun warnings, zero fast-read failures, zero block fallbacks. Left at 1 second. Proof `verifiedAtUtc=2026-11-22T17:10:41.809Z`.
 
 ## 12. Handoff
 
-Phase 3 is live as `0672b4a` and still off. Do not set `DEYE_FAST_INTERVAL_SEC=1` until the operator says yes. Do not delete `deye_fast`.
+Phase 3 is live as `0672b4a`. One-second sampling was enabled at 2026-11-22T17:07:53Z by setting `DEYE_FAST_INTERVAL_SEC=1` on the server and restarting. It stays at 1. Do not set 2 until the 24-hour count. Do not delete `deye_fast`.
 
 Read this file and `plan_deye_fast_read_PROGRESS.md` before editing. Do not re-read the planning chat.
 

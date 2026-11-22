@@ -4,8 +4,8 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: B for the first enable (1 second). A (2 seconds) only after the 24-hour count in phase 3. Loop is off until `DEYE_FAST_INTERVAL_SEC=1`.
-- Current phase: 3 live and off (`0672b4a`). One-second rate is not enabled.
-- Last updated: 2026-11-22T17:06:00Z
+- Current phase: 3 live at 1 second since 2026-11-22T17:07:53Z. Do not move to 2 seconds yet.
+- Last updated: 2026-11-22T17:10:40Z
 
 ## Done
 
@@ -28,6 +28,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 - 2026-11-22T16:27:30Z — Phase 2 deployed, commit `d174ec2`, `#autodeploy`. Restart 2026-11-22T16:26:24Z. First new rows match the previous ones: apartment 55.28 V / SOC 91, house 538.0 V / SOC 98. Counters did not jump. Year load was already null. No fallback warning. Phase 3 not started. Proof `verifiedAtUtc=2026-11-22T16:27:09.991Z`.
 - 2026-11-22T16:42:30Z — Phase 3 implemented locally and left off. Default `DEYE_FAST_INTERVAL_SEC=0`. No fast task, no fast read, no deploy. 17 tests OK. Proof `verifiedAtUtc=2026-11-22T16:42:14.534Z`.
 - 2026-11-22T17:06:00Z — Phase 3 deployed off. Restart 2026-11-22T17:05:23Z, `0672b4a`. Fast table empty. Apartment 54.31 V / SOC 91, house 535.1 V / SOC 98. Proof `verifiedAtUtc=2026-11-22T17:06:00.739Z`.
+- 2026-11-22T17:10:40Z — One-second smoke passed and left on. Restart 2026-11-22T17:07:53Z with `DEYE_FAST_INTERVAL_SEC=1`. Full minutes had 53–54 fast rows per inverter. Max gap 3.74 s. Slow log stayed near two rows a minute. Nine overruns, no read failures. Not moved to 2 seconds. Proof `verifiedAtUtc=2026-11-22T17:10:41.809Z`.
 - Source proof for the phase 2 plan update: composer `1ccc9355-92e4-47a9-90a2-abd5600f6e11`, `verifiedAtUtc=2026-11-22T16:18:17.733Z`.
 
 ## Phase status
@@ -36,7 +37,7 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 |---|---|---|
 | 1 Decode and table | done locally 2026-11-22T16:14:30Z | Decoder and table only. Poller unchanged. Not deployed. |
 | 2 Batched slow read | live `d174ec2` 2026-11-22T16:26:24Z | Six-block Solarman reader. First rows match the previous shape. |
-| 3 Fast loop | live `0672b4a` 2026-11-22T17:05:23Z, off | Interval unset, so 0. Fast table empty. Slow rows kept their scales. |
+| 3 Fast loop | live at 1 second since 2026-11-22T17:07:53Z | Smoke passed: 53–54 rows in each full minute. 2 seconds waits for the day count. |
 | 4 Page | not started | After phase 3. |
 
 ## Do not touch
@@ -48,4 +49,4 @@ Companion to `power-monitor/docs/plan_deye_fast_read.md`.
 
 ## Next
 
-Do not set `DEYE_FAST_INTERVAL_SEC=1` until an explicit yes. That yes is the two-minute smoke, not the move to 2 seconds.
+Leave the rate at 1 second. After 24 hours, count a qualifying hour on each inverter before anyone sets 2. Phase 4 waits for a separate yes.
