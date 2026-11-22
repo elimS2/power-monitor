@@ -951,6 +951,8 @@ def settle_itp_after_sample(actual: str, now: float) -> None:
     """Quarter sample backup. The breaker lock is already released by the caller."""
     from itp_auto import mutate_itp_auto
 
+    matched = {"state": None}
+
     def update(doc):
         pending = doc.get("pending") or None
         if pending:
@@ -958,6 +960,7 @@ def settle_itp_after_sample(actual: str, now: float) -> None:
                 doc["applied"] = actual
                 doc["pending"] = None
                 doc["warn"] = None
+                matched["state"] = actual
                 log.info("itp-auto: confirmed %s", actual)
                 return
             sent = pending.get("sent_at")
@@ -976,6 +979,11 @@ def settle_itp_after_sample(actual: str, now: float) -> None:
         doc.update(new)
 
     mutate_itp_auto(update)
+    if matched["state"] in ("on", "off"):
+        try:
+            database.mark_itp_journal_confirmed(matched["state"])
+        except Exception as exc:
+            log.info("itp-auto: journal %s", exc.__class__.__name__)
 
 
 async def quarter_post_itp(client, cfg: BreakerPollConfig, cache: TokenCache, device_id: str, actual: str, now: float) -> None:
@@ -1024,6 +1032,8 @@ async def _confirm_itp_command(client, cfg, cache, device_id: str, now: float) -
         log.info("itp-auto: confirm failed code %s", exc.code)
         return
 
+    matched = {"state": None}
+
     def apply(doc):
         current = doc.get("pending") or {}
         if current.get("sent_at") != sent:
@@ -1032,9 +1042,15 @@ async def _confirm_itp_command(client, cfg, cache, device_id: str, now: float) -
             doc["applied"] = shown
             doc["pending"] = None
             doc["warn"] = None
+            matched["state"] = shown
             log.info("itp-auto: confirmed %s", shown)
 
     mutate_itp_auto(apply)
+    if matched["state"] in ("on", "off"):
+        try:
+            database.mark_itp_journal_confirmed(matched["state"])
+        except Exception as exc:
+            log.info("itp-auto: journal %s", exc.__class__.__name__)
 
 
 async def _clear_itp_timers_once(client, cfg, cache, device_id: str, now: float) -> None:

@@ -1,7 +1,7 @@
 # Automatic ITP control
 
 - Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (the heat journal) only. Part 1, the control loop, stays `LIVE` and frozen. Do not rebuild it.
-- Last updated: 2026-11-22T22:34:00Z
+- Last updated: 2026-11-22T22:40:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -915,6 +915,8 @@ Verification, temp sqlite, no network:
 - a hold tick and a disabled tick write nothing.
 - a test that plants `enabled` through `mutate_itp_auto` is a real transition and does write a mode row. A fixture that must not write uses `kv_set` directly.
 - a raised insert is caught. The document update still sticks. A raised confirm update does not leave `settle_itp_after_sample`.
+
+Landed 2026-11-22T22:40:00Z. `JournalWriteTests` and the three modules passed, 115 tests. A switch row is written after `kv_set` with `confirmed=0`. A mode row follows only when `enabled` changed. `manual` in the document becomes `hand` in the journal. Both match sites call `mark_itp_journal_confirmed`, and a failure there does not leave `settle_itp_after_sample`. The page still does not read the table. No deploy, so the running service is unchanged. Phase J3 has not started. Proof `verifiedAtUtc=2026-11-22T22:37:09.536Z`.
 
 Rollback: remove the journal calls in `mutate_itp_auto`, `_confirm_itp_command`, and `settle_itp_after_sample`. Existing rows stay. Each of those calls is already inside its own try, so a partial revert cannot throw out of the quarter poll.
 

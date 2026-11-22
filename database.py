@@ -2875,6 +2875,26 @@ def itp_journal_for_day(day: str) -> tuple[list[dict], bool]:
     return rows, truncated
 
 
+def mark_itp_journal_confirmed(state: str) -> None:
+    """Confirm only the newest switch row of this kind, and only when it is still open."""
+    kind = {"on": "switch-on", "off": "switch-off"}.get(state)
+    if kind is None:
+        return
+    with _conn() as db:
+        row = db.execute(
+            """
+            SELECT id, confirmed FROM itp_journal
+            WHERE kind = ?
+            ORDER BY ts DESC, id DESC
+            LIMIT 1
+            """,
+            (kind,),
+        ).fetchone()
+        if row is None or row["confirmed"]:
+            return
+        db.execute("UPDATE itp_journal SET confirmed = 1 WHERE id = ?", (row["id"],))
+
+
 def read_breaker_board(day: str, now: float) -> dict:
     """One stored day for both breakers. Reads breaker_day only and does not write."""
     try:

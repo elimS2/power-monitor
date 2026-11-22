@@ -913,5 +913,199 @@ class JournalStoreTests(unittest.TestCase):
         )
 
 
+class JournalWriteTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        reset_itp_tick_clock()
+        self.moment = datetime.now(UA_TZ)
+        self.now = self.moment.timestamp()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+        reset_itp_tick_clock()
+
+    def _rows(self):
+        day = self.moment.strftime("%Y-%m-%d")
+        return database.itp_journal_for_day(day)[0]
+
+    def _save(self, doc: dict) -> None:
+        database.kv_set("itp_auto", json.dumps(doc))
+
+    def _armed(self) -> dict:
+        doc = empty_itp_auto()
+        doc["enabled"] = True
+        doc["last"] = {"state": "on", "reason": "boiler", "boiler_source": "row", "at": self.now}
+        return doc
+
+    def test_arm_and_disarm_write_mode_rows(self):
+        from api.admin import set_itp_armed
+
+        set_itp_armed(True)
+        set_itp_armed(True)
+        self.assertEqual([(row["kind"], row["reason"]) for row in self._rows()], [("mode-auto", "admin")])
+        set_itp_armed(False)
+        rows = self._rows()
+        self.assertEqual(rows[-1]["kind"], "mode-manual")
+        self.assertEqual(rows[-1]["reason"], "admin")
+        self.assertIsNone(read_itp_auto()["pause"])
+
+    def test_a_hand_disarm_maps_manual_to_hand(self):
+        doc = self._armed()
+        doc["applied"] = "on"
+        doc["timers_cleared_at"] = self.now
+        self._save(doc)
+
+        def update(current):
+            new, _action = step_itp(
+                current,
+                {"state": "on", "reason": "boiler", "boiler_source": "row"},
+                "off",
+                self.now,
+                True,
+                "edge",
+            )
+            current.clear()
+            current.update(new)
+
+        mutate_itp_auto(update)
+        saved = read_itp_auto()
+        self.assertEqual(saved["pause"]["reason"], "manual")
+        self.assertEqual(self._rows()[-1]["reason"], "hand")
+        self.assertNotIn("hand", json.dumps(saved["pause"]))
+
+    def test_success_and_transport_stay_unconfirmed_until_a_sample_matches(self):
+        from tuya_breakers import TokenCache, _confirm_itp_command, settle_itp_after_sample
+
+        self._save(self._armed())
+
+        def post(outcome):
+            def update(doc):
+                fresh = apply_post_result(doc, "on", self.now, outcome)
+                doc.clear()
+                doc.update(fresh)
+
+            mutate_itp_auto(update)
+
+        post("rejected")
+        self.assertEqual(self._rows(), [])
+        post("transport")
+        self.assertEqual(self._rows()[0]["confirmed"], 0)
+        settle_itp_after_sample("off", self.now + 20 * 60 + 1)
+        self.assertEqual(self._rows()[0]["confirmed"], 0)
+        self.assertEqual(read_itp_auto()["warn"]["kind"], "unconfirmed")
+
+        self.now += 30
+        post("success")
+        self.assertEqual([row["confirmed"] for row in self._rows()], [0, 0])
+        cloud = _Cloud(switch_on=True)
+        cache = TokenCache()
+        cache.token = "token"
+        cache.refresh_at = self.now + 10_000
+        cfg = BreakerPollConfig("access", "secret", (("itp", "heat1"),))
+        asyncio.run(_confirm_itp_command(cloud, cfg, cache, "heat1", self.now + 60))
+        confirmed = [row["confirmed"] for row in self._rows()]
+        self.assertEqual(confirmed, [0, 1])
+
+        self._save(self._armed())
+        self.now += 100
+        post("success")
+        settle_itp_after_sample("on", self.now)
+        self.assertEqual(self._rows()[-1]["confirmed"], 1)
+
+    def test_disarm_does_not_confirm_an_open_switch(self):
+        self._save(self._armed())
+
+        def update(doc):
+            fresh = apply_post_result(doc, "off", self.now, "transport")
+            doc.clear()
+            doc.update(fresh)
+
+        mutate_itp_auto(update)
+
+        def disarm(doc):
+            fresh = disarm_itp(doc)
+            doc.clear()
+            doc.update(fresh)
+
+        mutate_itp_auto(disarm)
+        switch = [row for row in self._rows() if row["kind"] == "switch-off"]
+        self.assertEqual(switch[0]["confirmed"], 0)
+
+    def test_the_fourth_command_writes_the_switch_before_the_flap(self):
+        doc = self._armed()
+        doc["command_times"] = [self.now - 30, self.now - 20, self.now - 10]
+        self._save(doc)
+
+        def update(current):
+            fresh = apply_post_result(current, "on", self.now, "success")
+            current.clear()
+            current.update(fresh)
+
+        mutate_itp_auto(update)
+        tail = self._rows()[-2:]
+        self.assertEqual(tail[0]["kind"], "switch-on")
+        self.assertEqual(tail[0]["confirmed"], 0)
+        self.assertEqual((tail[1]["kind"], tail[1]["reason"]), ("mode-manual", "flap"))
+        self.assertLess(tail[0]["id"], tail[1]["id"])
+
+    def test_hold_and_disabled_ticks_write_nothing(self):
+        moment = self.moment
+        tick_itp_decision(moment, self.now, commands_on=False)
+        self.assertEqual(self._rows(), [])
+        self._save(self._armed())
+        reset_itp_tick_clock()
+        tick_itp_decision(moment, self.now + 120, commands_on=True)
+        self.assertEqual(self._rows(), [])
+
+    def test_mutate_writes_a_mode_row_and_kv_set_does_not(self):
+        self._save(self._armed())
+        self.assertEqual(self._rows(), [])
+
+        def update(doc):
+            doc["enabled"] = False
+
+        mutate_itp_auto(update)
+        self.assertEqual(self._rows()[0]["kind"], "mode-manual")
+
+    def test_a_journal_error_does_not_undo_the_document_or_the_sample(self):
+        from tuya_breakers import settle_itp_after_sample
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("disk")
+
+        original = database.append_itp_journal
+        database.append_itp_journal = boom
+        try:
+            def update(doc):
+                doc["enabled"] = True
+
+            mutate_itp_auto(update)
+        finally:
+            database.append_itp_journal = original
+        self.assertTrue(read_itp_auto()["enabled"])
+        self.assertEqual(self._rows(), [])
+
+        self._save(self._armed())
+
+        def post(doc):
+            fresh = apply_post_result(doc, "on", self.now, "success")
+            doc.clear()
+            doc.update(fresh)
+
+        mutate_itp_auto(post)
+        original_mark = database.mark_itp_journal_confirmed
+        database.mark_itp_journal_confirmed = boom
+        try:
+            settle_itp_after_sample("on", self.now)
+        finally:
+            database.mark_itp_journal_confirmed = original_mark
+        self.assertIsNone(read_itp_auto()["pending"])
+        self.assertEqual(self._rows()[-1]["confirmed"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

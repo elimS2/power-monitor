@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK` for Part 2 (heat journal). Part 1 control loop stays `LIVE`.
 - Active skin: control Skin A (edge). Journal skin J-G: tap the heat lane, show that day. J-A marks superseded. J-B, J-C, J-D, and J-E rejected.
-- Last updated: 2026-11-22T22:34:00Z
-- Current phase: Phase J1 landed. Do not start Phase J2 until an explicit yes.
-- Next allowed step: Phase J2 only, after an explicit yes. Do not deploy. Do not change `ITP_AUTO_COMMANDS`.
+- Last updated: 2026-11-22T22:40:00Z
+- Current phase: Phase J2 landed. Do not start Phase J3 until an explicit yes.
+- Next allowed step: Phase J3 only, after an explicit yes. Do not deploy. Do not change `ITP_AUTO_COMMANDS`.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`, `mutationKind=plan`. Earlier proof `2026-11-22T18:43:35.564Z` remains the Part 1 write.
@@ -66,6 +66,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | 2026-11-22T22:18:00Z | Critic round 1 | `grok-4.7-xhigh-fast`. CHANGES REQUIRED. CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2. Fixes are in the plan. Re-review not back. No code. |
 | 2026-11-22T22:22:00Z | Critic round 2 | Same model, resumed. APPROVE. CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. J1 waits for an explicit yes. No code. |
 | 2026-11-22T22:34:00Z | Phase J1 | Operator yes, prompt 2. Table `itp_journal`, `append_itp_journal`, `itp_journal_for_day`, and `itp_journal_line`. No page and no live writer. `JournalStoreTests` passed with the breaker and lighting suites after the info-button assertion was narrowed to the one existing `brk-help`. No deploy. Proof `verifiedAtUtc=2026-11-22T22:32:17.637Z`. J2 not started. |
+| 2026-11-22T22:40:00Z | Phase J2 | Operator yes, prompt 2. `mutate_itp_auto` writes a switch row at `confirmed=0`, then a mode row when `enabled` changes. Confirm is `mark_itp_journal_confirmed` from `_confirm_itp_command` and `settle_itp_after_sample`. A journal error does not undo the document. 115 tests OK. No deploy. Proof `verifiedAtUtc=2026-11-22T22:37:09.536Z`. J3 not started. |
 
 ## Part 2 checklist
 
@@ -73,7 +74,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 |---|---|---|
 | Plan | reviewed | 2026-11-22T22:22:00Z. Critic round 2 APPROVE, 0 CRITICAL, 0 HIGH. J1 waits for an explicit yes. |
 | J1 Table | done | 2026-11-22T22:34:00Z. Helpers only. The page does not read them. |
-| J2 Writers | not started | Mode flip and switch row. |
+| J2 Writers | done | 2026-11-22T22:40:00Z. Rows are written. The page does not show them. |
 | J3 Day list | not started | Tap `Обігрів`, show that day. No marks. Deploy only with a yes. |
 
 ## Decisions mirrored from the plan

@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import threading
+import time
 from datetime import datetime, timedelta
 from html import escape
 
@@ -197,9 +198,66 @@ def mutate_itp_auto(update) -> dict:
 
     with _doc_lock:
         doc = _parse_doc(database.kv_get(KEY, ""))
+        before_enabled = bool(doc.get("enabled"))
+        before_pending = doc.get("pending")
         update(doc)
         database.kv_set(KEY, json.dumps(doc))
+        _journal_after(doc, before_enabled, before_pending)
         return doc
+
+
+def _pending_state(pending) -> str | None:
+    if isinstance(pending, dict) and pending.get("state") in ("on", "off"):
+        return pending["state"]
+    return None
+
+
+def _journal_switch_reason(doc: dict) -> str:
+    reason = (doc.get("last") or {}).get("reason")
+    if reason in ("boiler", "light-on", "light-off"):
+        return reason
+    return "admin"
+
+
+def _journal_after(doc: dict, before_enabled: bool, before_pending) -> None:
+    """Write a switch row, then a mode row. A journal error stays here."""
+    import database
+
+    state = _pending_state(doc.get("pending"))
+    if _pending_state(before_pending) is None and state is not None:
+        pending = doc.get("pending") or {}
+        try:
+            database.append_itp_journal(
+                float(pending.get("sent_at") or time.time()),
+                "switch-on" if state == "on" else "switch-off",
+                _journal_switch_reason(doc),
+                confirmed=0,
+            )
+        except Exception as exc:
+            log.info("itp-auto: journal %s", exc.__class__.__name__)
+    if before_enabled == bool(doc.get("enabled")):
+        return
+    try:
+        if doc.get("enabled"):
+            database.append_itp_journal(time.time(), "mode-auto", "admin", confirmed=1)
+            return
+        pause = doc.get("pause") or {}
+        reason = pause.get("reason")
+        if reason == "manual":
+            journal_reason = "hand"
+        elif reason == "flap":
+            journal_reason = "flap"
+        else:
+            journal_reason = "admin"
+        when = pause.get("at")
+        database.append_itp_journal(
+            float(when if when is not None else time.time()),
+            "mode-manual",
+            journal_reason,
+            confirmed=1,
+        )
+    except Exception as exc:
+        log.info("itp-auto: journal %s", exc.__class__.__name__)
 
 
 def read_itp_auto() -> dict:
