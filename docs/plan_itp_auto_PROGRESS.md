@@ -3,10 +3,10 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T21:28:00Z
-- Current phase: 5 done and deployed. Commands stay off.
-- Next allowed step: watch the dry line. Turning `ITP_AUTO_COMMANDS` to `1` is a later separate yes.
-- Commands: not implemented. `ITP_AUTO_COMMANDS` must stay off through deploy.
+- Last updated: 2026-11-22T21:35:00Z
+- Current phase: 5 done and deployed. Commands are on, server `.env` only.
+- Next allowed step: leave the loop armed. Rollback is `ITP_AUTO_COMMANDS=0`, disarm, restart.
+- Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic ITP control logic`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T18:43:35.564Z`, `mutationKind=plan`.
 
@@ -56,6 +56,8 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T21:13:00Z | Deploy yes | Operator: update the site. |
 | 2026-11-22T21:17:00Z | Deploy | Commit `a025d5d` is live. Footer hash matches. Heat card: `Керування: ручне. За правилом зараз увімкнути: котельня.` One `brk-auto` line. Commands were not turned on. Proof `verifiedAtUtc=2026-11-22T21:17:50.570Z`. |
 | 2026-11-22T21:28:00Z | Meter row | Operator: put the mode in the meter list. `ручне` is red, `автоматичне` is green. Deploy with this commit. Proof `verifiedAtUtc=2026-11-22T21:28:08.851Z`. |
+| 2026-11-22T21:32:00Z | Commands yes | Operator: do not wait. Turn cloud commands on now. |
+| 2026-11-22T21:33:00Z | Commands on | `ITP_AUTO_COMMANDS=1` written only in the server `.env`. Service restarted. Heat breaker was already on, and the boiler window also wants it on, so the card note became `Котельня.` The sentence about commands being off disappeared. Proof `verifiedAtUtc=2026-11-22T21:35:19.505Z`. |
 
 ## Decisions mirrored from the plan
 
