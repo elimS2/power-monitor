@@ -75,8 +75,9 @@ VOLTAGE_SAMPLE_GAP_SEC = 90
 
 # Voltage anti-spam: require N consecutive readings before notify (3 ≈ 30s at heartbeat rate)
 VOLTAGE_CONFIRM_COUNT = 3
-# One event per episode: 60 min between same-type notifications
-VOLTAGE_EPISODE_MIN_INTERVAL_SEC = 3600
+# Quiet gap after a voltage alert. A new alert waits this long, and
+# "voltage settled" is sent only after this long of actually normal phases.
+VOLTAGE_EPISODE_MIN_INTERVAL_SEC = 1800
 # Unstable mode: if ≥3 voltage state changes in 10 min → suppress for 15 min
 VOLTAGE_UNSTABLE_CHANGES_THRESHOLD = 3
 VOLTAGE_UNSTABLE_WINDOW_SEC = 600

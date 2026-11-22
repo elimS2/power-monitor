@@ -59,18 +59,7 @@ def _voltage_suppressed() -> bool:
 
 
 def _voltage_can_send_problem() -> bool:
-    """One problem per episode: 60 min since last voltage problem EVENT (from DB)."""
-    now = time.time()
-    last_ts = last_voltage_problem_ts()
-    if last_ts is not None and now - last_ts < VOLTAGE_EPISODE_MIN_INTERVAL_SEC:
-        return False
-    return True
-
-
-def _voltage_can_send_recovery() -> bool:
-    """One recovery per episode: 60 min since last voltage problem EVENT (from DB)."""
-    if _voltage_suppressed():
-        return False
+    """One problem per episode: 30 min since last voltage problem EVENT (from DB)."""
     now = time.time()
     last_ts = last_voltage_problem_ts()
     if last_ts is not None and now - last_ts < VOLTAGE_EPISODE_MIN_INTERVAL_SEC:
@@ -97,20 +86,54 @@ def _format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 
+def _remember_normal_start() -> float:
+    """When the current calm stretch began. Restarts if the mark is missing."""
+    raw = kv_get("voltage_normal_since")
+    now = time.time()
+    try:
+        start = float(raw) if raw else 0.0
+    except (TypeError, ValueError):
+        start = 0.0
+    if start <= 0:
+        kv_set("voltage_normal_since", str(now))
+        return now
+    return start
+
+
+def _clear_normal_start() -> None:
+    kv_set("voltage_normal_since", "")
+
+
+async def _maybe_send_recovery(voltage_alerted: bool) -> None:
+    """Send settled only after a real calm stretch, not merely after the clock."""
+    if not voltage_alerted or _voltage_suppressed():
+        return
+    start = _remember_normal_start()
+    if time.time() - start < VOLTAGE_EPISODE_MIN_INTERVAL_SEC:
+        return
+    await _send_voltage_recovery()
+
+
 async def _send_voltage_recovery() -> None:
     """State updates + build + send voltage recovery message. Single place for this logic."""
     from power_monitor import update_chat_photo
 
     now = time.time()
     prev = recent_events(1)
+    try:
+        stable_start = float(kv_get("voltage_normal_since") or 0)
+    except (TypeError, ValueError):
+        stable_start = 0.0
+    if stable_start <= 0:
+        stable_start = now - VOLTAGE_EPISODE_MIN_INTERVAL_SEC
     kv_set("voltage_anomaly", "0")
     kv_set("voltage_ok_count", "0")
     kv_set("power_down", "0")
+    _clear_normal_start()
     save_event("up")
     log.info("VOLTAGE RESTORED (all 3 phases)")
-    stable_mins = VOLTAGE_EPISODE_MIN_INTERVAL_SEC // 60
-    stable_start = now - VOLTAGE_EPISODE_MIN_INTERVAL_SEC
-    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга стабілізувалась. {stable_mins} останніх хвилин без понаднормових коливань."
+    calm = _format_duration(int(now - stable_start))
+    msg = f"\u2705 {_ts_fmt_hm(now)} Напруга стабілізувалась. {calm} без понаднормових коливань."
     v = last_nonzero_grid_voltage(inverter_id=_grid_id())
     if v:
         parts = []
@@ -133,6 +156,7 @@ async def _notify_live_voltage(voltage_alerted: bool, level: str) -> None:
 
     if voltage_alerted:
         kv_set("voltage_ok_count", "0")
+        _clear_normal_start()
         return
     if _voltage_suppressed() or not _voltage_can_send_problem():
         return
@@ -193,12 +217,9 @@ async def analyze():
                     await _notify_live_voltage(voltage_alerted, level)
                     return
                 if voltage_alerted and not level:
-                    ok_count = int(kv_get("voltage_ok_count") or "0") + 1
-                    kv_set("voltage_ok_count", str(ok_count))
                     kv_set("voltage_problem_count", "0")
-                    if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
-                        return
-                    await _send_voltage_recovery()
+                    await _maybe_send_recovery(True)
+                    return
                 elif is_down:
                     now = time.time()
                     prev = recent_events(1)
@@ -388,15 +409,13 @@ async def analyze():
                 return
 
             if voltage_alerted and has_grid_voltage_now(inverter_id=_grid_id()):
-                if has_all_three_phases_voltage(inverter_id=_grid_id()):
-                    ok_count = int(kv_get("voltage_ok_count") or "0") + 1
-                    kv_set("voltage_ok_count", str(ok_count))
-                    kv_set("voltage_problem_count", "0")
-                    if not _voltage_can_send_recovery() or ok_count < VOLTAGE_CONFIRM_COUNT:
-                        return
-                    await _send_voltage_recovery()
-                else:
+                trend = deye_voltage_trend(1000, inverter_id=_grid_id())
+                if trend in ("high", "low") or not has_all_three_phases_voltage(inverter_id=_grid_id()):
                     kv_set("voltage_ok_count", "0")
+                    _clear_normal_start()
+                else:
+                    kv_set("voltage_problem_count", "0")
+                    await _maybe_send_recovery(True)
                 return
 
             slot = dtek.current_slot_status()
@@ -468,6 +487,10 @@ async def analyze():
                 level = None
             if level and not is_down:
                 await _notify_live_voltage(voltage_alerted, level)
+                return
+            if not level and voltage_alerted and not is_down:
+                kv_set("voltage_problem_count", "0")
+                await _maybe_send_recovery(True)
                 return
             if not level:
                 kv_set("voltage_anomaly", "0")
