@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from datetime import datetime, timedelta
 from html import escape
@@ -24,6 +25,7 @@ FLAP_WINDOW_SEC = 3600
 FOLLOWUP_SEC = 60
 FOLLOWUP_WINDOW_SEC = 90
 KEY = "itp_auto"
+ARMED_WITHOUT_COMMANDS = "Авто увімкнено в адмінці, без команд."
 
 log = logging.getLogger("power_monitor")
 _doc_lock = threading.Lock()
@@ -267,14 +269,14 @@ def decision_log_text(doc: dict) -> str:
 
 
 def format_itp_card(doc: dict, commands_on: bool = False) -> str:
-    """Ukrainian heat-card sentence. Phase 3 passes commands_on false."""
+    """Ukrainian heat-card sentence. While commands are off, an armed card uses the admin sentence."""
     pause = doc.get("pause") or {}
     if not doc.get("enabled") and pause.get("reason") == "manual" and pause.get("at"):
         line = f"Авто вимкнено о {_hhmm(pause['at'])}: перемкнули вручну."
     elif not doc.get("enabled") and pause.get("reason") == "flap":
         line = "Авто вимкнено: за годину вже 4 перемикання."
     elif doc.get("enabled") and not commands_on:
-        line = _join("Авто увімкнено, команди ще вимкнені.", _would(doc))
+        line = ARMED_WITHOUT_COMMANDS
     elif doc.get("enabled") and doc.get("pending"):
         line = "Авто увімкнено, команда ще не підтверджена."
     elif doc.get("enabled"):
@@ -284,6 +286,25 @@ def format_itp_card(doc: dict, commands_on: bool = False) -> str:
     if doc.get("warn"):
         line = f"{line} Хмара не підтвердила команду."
     return line
+
+
+def itp_admin_status(doc: dict | None = None) -> dict:
+    """Fields the admin block and the arm route both show. The env flag is display-only."""
+    if doc is None:
+        doc = read_itp_auto()
+    last = doc.get("last") or {}
+    stamp = last.get("at")
+    when = "—" if stamp is None else datetime.fromtimestamp(float(stamp), UA_TZ).strftime("%d.%m.%Y %H:%M")
+    warn = doc.get("warn") or {}
+    return {
+        "enabled": bool(doc.get("enabled")),
+        "line": format_itp_card(doc, commands_on=False),
+        "last_state": last.get("state") or "—",
+        "last_reason": last.get("reason") or "—",
+        "last_at": when,
+        "warn_code": warn.get("code") if warn else None,
+        "commands_on": os.getenv("ITP_AUTO_COMMANDS") == "1",
+    }
 
 
 def itp_card_html() -> str:

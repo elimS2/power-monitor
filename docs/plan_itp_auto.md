@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T20:45:00Z
+- Last updated: 2026-11-22T20:54:00Z
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -576,6 +576,8 @@ Verification:
 Rollback: disarm, remove the routes and the block. Public card returns to the Phase 3 line.
 
 Deploy: only with the gate yes.
+
+Landed 2026-11-22T20:54:00Z. `GET` and `POST /api/admin/itp-auto` require the admin key. A stranger key gets 403 from a direct call. Arm copies `breaker_shown_on` of the newest `itp` day: a bit that is still on with zero watts is stored as `off`. No day row leaves `applied` empty. Arm clears pause, warn, and `timer_delete_attempted`, and keeps `command_times`. Disarm keeps `applied`, `command_times`, and `timer_delete_attempted`. Neither call constructs an HTTP client. The public heat card, while armed, says `Авто увімкнено в адмінці, без команд.` The admin block sits on the notifications tab next to the voltage switch. The button text is `Увімкнути авто` / `Вимкнути авто`. The cloud-commands line is read from `ITP_AUTO_COMMANDS` and the page cannot set it. `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule` passed, 94 tests. No deploy. The click path was not exercised in a browser because this yes did not include deploy. Phase 5 has not started. Proof `verifiedAtUtc=2026-11-22T20:53:49.287Z`.
 
 ### Phase 5 — commands, still default off
 

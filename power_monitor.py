@@ -74,7 +74,7 @@ from tuya_breakers import (
     run_deye_then_breakers,
     sync_breaker_timers_http,
 )
-from itp_auto import itp_card_html, tick_itp_decision
+from itp_auto import itp_admin_status, itp_card_html, tick_itp_decision
 from database import (
     api_key_config_list,
     api_key_get_plain,
@@ -2525,6 +2525,9 @@ async def admin_page(key: str = Query("")):
 
     check_admin(key)
     voltage_notify_enabled = kv_get("tg_voltage_notify") != "0"
+    itp = itp_admin_status()
+    itp_warn = "" if itp["warn_code"] is None else f"Код хмари: {escape(str(itp['warn_code']))}"
+    itp_commands = "увімкнені" if itp["commands_on"] else "вимкнені"
     tg_bot_id = TG_BOT_TOKEN.split(":")[0] if TG_BOT_TOKEN and ":" in str(TG_BOT_TOKEN) else "—"
     tg_channels = tg_channel_list()
     tg_active = next((c for c in tg_channels if c["is_active"]), tg_channels[0] if tg_channels else None)
@@ -2672,6 +2675,12 @@ async def admin_page(key: str = Query("")):
   <span id="admin-voltage-notify-status" class="{'up' if voltage_notify_enabled else 'down'}">{'✅ Увімкнено' if voltage_notify_enabled else '❌ Вимкнено'}</span>
   <button type="button" id="admin-voltage-notify-toggle" class="btn" data-enabled="{str(voltage_notify_enabled).lower()}">{'Вимкнути' if voltage_notify_enabled else 'Увімкнути'}</button>
 </div>
+<h3 style="font-size:1rem;margin-top:1.5rem">Обігрів, авто</h3>
+<p id="admin-itp-line">{escape(itp["line"])}</p>
+<p id="admin-itp-last" style="color:var(--muted)">Останнє рішення: {escape(str(itp["last_state"]))} / {escape(str(itp["last_reason"]))} / {escape(str(itp["last_at"]))}</p>
+<p id="admin-itp-warn" style="color:var(--muted)">{itp_warn}</p>
+<p style="color:var(--muted)">Команди в хмару: {itp_commands}. Ця сторінка їх не вмикає.</p>
+<button type="button" id="admin-itp-auto-toggle" class="btn" data-enabled="{str(itp["enabled"]).lower()}">{'Вимкнути авто' if itp["enabled"] else 'Увімкнути авто'}</button>
 <p style="margin-top:1rem;font-size:0.9rem;color:var(--muted)">
   Бот: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_bot_id))}</code>
 </p>
@@ -2916,6 +2925,25 @@ async def admin_page(key: str = Query("")):
     if (!accessDate || document.getElementById('access-next').classList.contains('is-disabled')) return;
     loadAccess(shiftAccessDay(accessDate, 1));
   }});
+  var itpToggle = document.getElementById('admin-itp-auto-toggle');
+  if (itpToggle) {{
+    itpToggle.addEventListener('click', function() {{
+      var enabled = itpToggle.dataset.enabled === 'true' ? '0' : '1';
+      fetch('/api/admin/itp-auto' + qs() + '&enabled=' + enabled, {{ method: 'POST' }})
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{
+          if (!d || !d.ok) return;
+          itpToggle.dataset.enabled = d.enabled ? 'true' : 'false';
+          itpToggle.textContent = d.enabled ? 'Вимкнути авто' : 'Увімкнути авто';
+          var lineEl = document.getElementById('admin-itp-line');
+          if (lineEl) lineEl.textContent = d.line || '';
+          var lastEl = document.getElementById('admin-itp-last');
+          if (lastEl) lastEl.textContent = 'Останнє рішення: ' + (d.last_state || '—') + ' / ' + (d.last_reason || '—') + ' / ' + (d.last_at || '—');
+          var warnEl = document.getElementById('admin-itp-warn');
+          if (warnEl) warnEl.textContent = (d.warn_code === null || d.warn_code === undefined) ? '' : ('Код хмари: ' + d.warn_code);
+        }});
+    }});
+  }}
   var voltageToggle = document.getElementById('admin-voltage-notify-toggle');
   if (voltageToggle) {{
     voltageToggle.addEventListener('click', function() {{

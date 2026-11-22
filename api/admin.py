@@ -1,12 +1,15 @@
 """Admin API — key management. Admin only."""
 from __future__ import annotations
 
+import json
+import logging
 import secrets
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.deps import check_admin
+from itp_auto import arm_itp, disarm_itp, itp_admin_status, mutate_itp_auto
 from config import API_KEYS
 from database import (
     ALL_SECTIONS,
@@ -35,6 +38,7 @@ from database import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+log = logging.getLogger("power_monitor")
 
 
 @router.get("/roles")
@@ -241,6 +245,63 @@ def ep_admin_voltage_notify_set(key: str = Query(""), enabled: bool = Query(True
     check_admin(key)
     kv_set("tg_voltage_notify", "1" if enabled else "0")
     return {"ok": True, "enabled": enabled}
+
+
+def latest_itp_applied() -> str | None:
+    """On/off from the newest stored heat-breaker day. Missing row stays unknown."""
+    from database import _conn
+    from tuya_breakers import breaker_shown_on
+
+    with _conn() as db:
+        row = db.execute(
+            """SELECT switch, phase_json FROM breaker_day
+               WHERE device=?
+               ORDER BY day DESC, updated_at DESC
+               LIMIT 1""",
+            ("itp",),
+        ).fetchone()
+    if row is None:
+        return None
+    phases = None
+    raw = row["phase_json"]
+    if raw:
+        try:
+            loaded = json.loads(raw)
+        except (TypeError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict):
+            phases = loaded
+    return "on" if breaker_shown_on(row["switch"], phases) else "off"
+
+
+def set_itp_armed(enabled: bool) -> dict:
+    """Arm or disarm the local flag. Does not call Tuya and does not delete timers."""
+    applied = latest_itp_applied() if enabled else None
+
+    def update(doc):
+        fresh = arm_itp(doc, applied) if enabled else disarm_itp(doc)
+        doc.clear()
+        doc.update(fresh)
+
+    mutate_itp_auto(update)
+    log.info("itp-auto: admin %s", "arm" if enabled else "disarm")
+    return {"ok": True, **itp_admin_status()}
+
+
+@router.get("/itp-auto")
+def ep_admin_itp_auto_get(key: str = Query("")):
+    """Heat-breaker auto flag. Admin only. Does not call Tuya."""
+    check_admin(key)
+    return {"ok": True, **itp_admin_status()}
+
+
+@router.post("/itp-auto")
+def ep_admin_itp_auto_set(key: str = Query(""), enabled: int = Query(...)):
+    """Arm with enabled=1 or disarm with enabled=0. Admin only. Does not call Tuya."""
+    check_admin(key)
+    if enabled not in (0, 1):
+        return JSONResponse({"error": "enabled must be 0 or 1"}, status_code=400)
+    return set_itp_armed(bool(enabled))
 
 
 @router.get("/tg-channels")

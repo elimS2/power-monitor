@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -416,8 +417,11 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(doc["last"]["state"], "off")
         self.assertIsNone(doc["pending"])
         self.assertIsNone(doc["slot_spent"])
-        self.assertIn("команди ще вимкнені", itp_card_html())
-        self.assertNotIn("<button", itp_card_html())
+        card = itp_card_html()
+        self.assertIn("Авто увімкнено в адмінці, без команд.", card)
+        self.assertNotIn("Авто увімкнено.", card)
+        self.assertNotIn("команди ще вимкнені", card)
+        self.assertNotIn("<button", card)
 
     def test_second_tick_inside_a_minute_keeps_the_previous_decision(self):
         now = _at(10, 0)
@@ -464,6 +468,121 @@ class TickItpTests(unittest.TestCase):
         light = html.split('data-brk="svitlo"', 1)[1].split('data-brk="itp"', 1)[0]
         self.assertNotIn("Авто", light)
         self.assertNotIn("brk-auto", light)
+
+
+class AdminItpTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+
+    def tearDown(self):
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+
+    def _day(self, day: str, switch: int, watts: int, updated: float) -> None:
+        phase = json.dumps({
+            "a": {"v": 230, "i": 0, "p": watts},
+            "b": {"v": 230, "i": 0, "p": 0},
+            "c": {"v": 230, "i": 0, "p": 0},
+        })
+        with database._conn() as db:
+            db.execute(
+                """INSERT INTO breaker_day(
+                       device, day, energy_base_kwh, energy_kwh, energy_today_kwh,
+                       switch, span_json, phase_json, updated_at
+                   ) VALUES('itp', ?, 0, 0, 0, ?, '[]', ?, ?)""",
+                (day, switch, phase, updated),
+            )
+
+    def test_arm_copies_the_latest_day_and_disarm_keeps_it(self):
+        import httpx
+        from api.admin import set_itp_armed
+
+        def plant(doc):
+            doc.clear()
+            doc.update(empty_itp_auto())
+            doc["command_times"] = [10]
+            doc["timer_delete_attempted"] = True
+            doc["pause"] = {"at": 1, "reason": "manual", "was": "on", "now": "off"}
+            doc["warn"] = {"at": 1, "kind": "rejected", "code": 2001}
+            doc["applied"] = "on"
+
+        mutate_itp_auto(plant)
+        self._day("2026-11-21", 0, 100, 1)
+        self._day("2026-11-22", 1, 0, 2)
+        calls = []
+        real_client = httpx.Client
+        httpx.Client = lambda *args, **kwargs: calls.append("client")
+        try:
+            with self.assertLogs("power_monitor", level="INFO") as caught:
+                armed = set_itp_armed(True)
+        finally:
+            httpx.Client = real_client
+        self.assertEqual(calls, [])
+        self.assertTrue(armed["enabled"])
+        self.assertEqual(armed["line"], "Авто увімкнено в адмінці, без команд.")
+        self.assertFalse(armed["commands_on"])
+        stored = read_itp_auto()
+        self.assertEqual(stored["applied"], "off")
+        self.assertEqual(stored["command_times"], [10])
+        self.assertFalse(stored["timer_delete_attempted"])
+        self.assertIsNone(stored["pause"])
+        self.assertIsNone(stored["warn"])
+        self.assertIsNone(stored["pending"])
+        self.assertTrue(any("itp-auto: admin arm" in line for line in caught.output))
+        self.assertFalse(any("post" in line for line in caught.output))
+
+        def mark_attempt(doc):
+            doc["timer_delete_attempted"] = True
+
+        mutate_itp_auto(mark_attempt)
+        disarmed = set_itp_armed(False)
+        self.assertFalse(disarmed["enabled"])
+        self.assertIn("Авто вимкнено.", disarmed["line"])
+        stored = read_itp_auto()
+        self.assertEqual(stored["applied"], "off")
+        self.assertEqual(stored["command_times"], [10])
+        self.assertTrue(stored["timer_delete_attempted"])
+        card = itp_card_html()
+        self.assertIn("Авто вимкнено.", card)
+        self.assertNotIn("<button", card)
+
+    def test_arm_without_a_day_row_leaves_applied_empty(self):
+        from api.admin import set_itp_armed
+
+        armed = set_itp_armed(True)
+        self.assertTrue(armed["enabled"])
+        self.assertIsNone(read_itp_auto()["applied"])
+
+    def test_stranger_key_is_forbidden(self):
+        from fastapi import HTTPException
+        from api.admin import ep_admin_itp_auto_get, ep_admin_itp_auto_set
+
+        for call in (
+            lambda: ep_admin_itp_auto_get(key="not-admin"),
+            lambda: ep_admin_itp_auto_set(key="not-admin", enabled=1),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                call()
+            self.assertEqual(caught.exception.status_code, 403)
+
+    def test_admin_page_shows_the_button_and_the_public_card_has_none(self):
+        import asyncio
+        import api.deps
+        import power_monitor
+
+        original = api.deps.check_admin
+        api.deps.check_admin = lambda key: None
+        try:
+            page = asyncio.run(power_monitor.admin_page(key="x"))
+        finally:
+            api.deps.check_admin = original
+        self.assertIn("Увімкнути авто", page)
+        self.assertIn("Обігрів, авто", page)
+        self.assertIn("Ця сторінка їх не вмикає.", page)
+        self.assertNotIn("/v1.0/devices", page)
 
 
 if __name__ == "__main__":
