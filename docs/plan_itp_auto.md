@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T21:17:00Z
+- Last updated: 2026-11-22T21:28:00Z
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -437,6 +437,8 @@ Would-be clause:
 - `last.reason` for a missing boiler window is still `boiler` or `light-off`. When the reason is `boiler` and the row was missing, add `Графік котельні не приходив, вікно 18:00–24:00.`
 
 `desired_itp` must return `boiler_source: "default"` or `"row"` so the card can add that sentence without reading the table again. Put `boiler_source` on `last`.
+
+The mode sits in the heat meter's list, after the battery row: label `Керування`, value `ручне` in red or `автоматичне` in green, the same row style as voltage and power. The extra sentence stays under the list in muted text. On 2026-11-22T21:28:00Z the operator asked for that place and those colors. Proof `verifiedAtUtc=2026-11-22T21:28:08.851Z`.
 
 The line is inside `_breaker_lines_html`, which `_breaker_live_html` already uses, so the 10-second fragment updates it. Do not duplicate it in the static shell.
 

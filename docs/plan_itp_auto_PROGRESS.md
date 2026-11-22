@@ -3,7 +3,7 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T21:17:00Z
+- Last updated: 2026-11-22T21:28:00Z
 - Current phase: 5 done and deployed. Commands stay off.
 - Next allowed step: watch the dry line. Turning `ITP_AUTO_COMMANDS` to `1` is a later separate yes.
 - Commands: not implemented. `ITP_AUTO_COMMANDS` must stay off through deploy.
@@ -55,6 +55,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T21:09:00Z | Shorter card | Operator: `Керування: автоматичне` or `Керування: ручне`. `tests.test_itp_auto` — 53 tests OK. Not deployed. Proof `verifiedAtUtc=2026-11-22T21:09:18.899Z`. |
 | 2026-11-22T21:13:00Z | Deploy yes | Operator: update the site. |
 | 2026-11-22T21:17:00Z | Deploy | Commit `a025d5d` is live. Footer hash matches. Heat card: `Керування: ручне. За правилом зараз увімкнути: котельня.` One `brk-auto` line. Commands were not turned on. Proof `verifiedAtUtc=2026-11-22T21:17:50.570Z`. |
+| 2026-11-22T21:28:00Z | Meter row | Operator: put the mode in the meter list. `ручне` is red, `автоматичне` is green. Deploy with this commit. Proof `verifiedAtUtc=2026-11-22T21:28:08.851Z`. |
 
 ## Decisions mirrored from the plan
 

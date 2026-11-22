@@ -75,7 +75,7 @@ from tuya_breakers import (
     run_deye_then_breakers,
     sync_breaker_timers_http,
 )
-from itp_auto import itp_admin_status, itp_card_html
+from itp_auto import itp_admin_status, itp_meter_html, itp_note_html
 from database import (
     api_key_config_list,
     api_key_get_plain,
@@ -1628,7 +1628,8 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             cards.append(
                 f'<article class="brk-card brk-dark">{_breaker_icon(kind)}'
                 f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
-                f'<div class="brk-state">ще немає знімка</div>{_itp_auto_html(name)}</article>'
+                f'<div class="brk-state">ще немає знімка</div>'
+                f'{_itp_meters(name)}{_itp_note(name)}</article>'
             )
             continue
         phases = device.get("phases")
@@ -1652,23 +1653,37 @@ def _breaker_lines_html(payload: dict, now: float | None = None) -> str:
             f'<div class="brk-hero">{_breaker_icon(kind)}</div>'
             f'<div class="brk-title">{title}</div><div class="brk-sub">{subtitle}</div>'
             f'<div class="brk-state">{"Увімкнено" if on else "Вимкнено"}</div>'
-            f'{_itp_auto_html(name)}'
             '<dl class="brk-meters">'
             f'<div><dt>Напруга</dt><dd>{_breaker_meter(phases, "v", 0, "В")}</dd></div>'
             f'<div><dt>Струм</dt><dd>{_breaker_meter(phases, "i", 1, "А")}</dd></div>'
             f'<div><dt>Потужність</dt><dd>{_breaker_power(phases)}</dd></div>'
             f'<div><dt>За добу</dt><dd>{energy}</dd></div>'
             f'<div><dt>З акумуляторів</dt><dd>{battery}</dd></div>'
+            f'{_itp_meter_row(name)}'
             "</dl>"
+            f'{_itp_note(name)}'
             f'{fault}<div class="brk-age">{age}</div></article>'
         )
     return '<div class="brk-cards">' + "".join(cards) + "</div>" + _breaker_timers_html(now)
 
 
-def _itp_auto_html(name: str) -> str:
+def _itp_meter_row(name: str) -> str:
     if name != "itp":
         return ""
-    return itp_card_html()
+    return itp_meter_html()
+
+
+def _itp_meters(name: str) -> str:
+    row = _itp_meter_row(name)
+    if not row:
+        return ""
+    return f'<dl class="brk-meters">{row}</dl>'
+
+
+def _itp_note(name: str) -> str:
+    if name != "itp":
+        return ""
+    return itp_note_html()
 
 
 def _breaker_timers_html(now: float | None) -> str:

@@ -25,8 +25,6 @@ FLAP_WINDOW_SEC = 3600
 FOLLOWUP_SEC = 60
 FOLLOWUP_WINDOW_SEC = 90
 KEY = "itp_auto"
-AUTO_OFF = "Керування: ручне."
-AUTO_ON = "Керування: автоматичне."
 
 log = logging.getLogger("power_monitor")
 _doc_lock = threading.Lock()
@@ -277,24 +275,34 @@ def decision_log_text(doc: dict, commands_on: bool = False) -> str:
     return f"would {state} {reason}{source}{tail}"
 
 
-def format_itp_card(doc: dict, commands_on: bool = False) -> str:
-    """Ukrainian line about the program. The breaker state is a separate line."""
+def itp_card_bits(doc: dict, commands_on: bool = False) -> dict:
+    """Mode word for the meter row, plus the quieter note under it."""
     pause = doc.get("pause") or {}
-    if not doc.get("enabled") and pause.get("reason") == "manual" and pause.get("at"):
-        line = f"{AUTO_OFF} О {_hhmm(pause['at'])} перемкнули вручну."
-    elif not doc.get("enabled") and pause.get("reason") == "flap":
-        line = f"{AUTO_OFF} За годину вже 4 перемикання."
-    elif doc.get("enabled") and not commands_on:
-        line = _join(f"{AUTO_ON} Команди ще вимкнені.", _would(doc))
-    elif doc.get("enabled") and doc.get("pending"):
-        line = f"{AUTO_ON} Команда ще не підтверджена."
-    elif doc.get("enabled"):
-        line = _join(AUTO_ON, _why(doc))
+    enabled = bool(doc.get("enabled"))
+    if not enabled and pause.get("reason") == "manual" and pause.get("at"):
+        note = f"О {_hhmm(pause['at'])} перемкнули вручну."
+    elif not enabled and pause.get("reason") == "flap":
+        note = "За годину вже 4 перемикання."
+    elif enabled and not commands_on:
+        note = _join("Команди ще вимкнені.", _would(doc))
+    elif enabled and doc.get("pending"):
+        note = "Команда ще не підтверджена."
+    elif enabled:
+        note = _why(doc)
     else:
-        line = _join(AUTO_OFF, _would(doc))
+        note = _would(doc)
     if doc.get("warn"):
-        line = f"{line} Хмара не підтвердила команду."
-    return line
+        note = _join(note, "Хмара не підтвердила команду.")
+    word = "автоматичне" if enabled else "ручне"
+    line = f"Керування: {word}."
+    if note:
+        line = f"{line} {note}"
+    return {"word": word, "on": enabled, "note": note, "line": line}
+
+
+def format_itp_card(doc: dict, commands_on: bool = False) -> str:
+    """Full sentence for the admin block."""
+    return itp_card_bits(doc, commands_on)["line"]
 
 
 def itp_admin_status(doc: dict | None = None) -> dict:
@@ -316,13 +324,27 @@ def itp_admin_status(doc: dict | None = None) -> dict:
     }
 
 
-def itp_card_html() -> str:
+def itp_meter_html() -> str:
+    """One meter row: label on the left, manual in red or automatic in green."""
     try:
-        text = format_itp_card(read_itp_auto(), commands_on=itp_commands_on())
+        bits = itp_card_bits(read_itp_auto(), commands_on=itp_commands_on())
     except Exception:
         log.info("itp-auto: card read failed")
-        text = "Авто вимкнено."
-    return f'<div class="brk-auto">{escape(text)}</div>'
+        bits = {"word": "ручне", "on": False}
+    kind = "on" if bits["on"] else "off"
+    return f'<div><dt>Керування</dt><dd class="brk-mode-{kind}">{escape(bits["word"])}</dd></div>'
+
+
+def itp_note_html() -> str:
+    """Quieter sentence under the meters. Empty when there is nothing extra to say."""
+    try:
+        note = itp_card_bits(read_itp_auto(), commands_on=itp_commands_on())["note"]
+    except Exception:
+        log.info("itp-auto: card read failed")
+        return ""
+    if not note:
+        return ""
+    return f'<p class="brk-mode-note">{escape(note)}</p>'
 
 
 def _parse_doc(raw) -> dict:

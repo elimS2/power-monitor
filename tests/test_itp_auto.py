@@ -22,7 +22,7 @@ from itp_auto import (
     disarm_itp,
     empty_itp_auto,
     format_itp_card,
-    itp_card_html,
+    itp_meter_html,
     mutate_itp_auto,
     read_itp_auto,
     reset_itp_tick_clock,
@@ -427,9 +427,10 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(doc["last"]["state"], "off")
         self.assertIsNone(doc["pending"])
         self.assertIsNone(doc["slot_spent"])
-        card = itp_card_html()
-        self.assertIn("Керування: автоматичне.", card)
-        self.assertIn("Команди ще вимкнені.", card)
+        card = itp_meter_html()
+        self.assertIn("<dt>Керування</dt>", card)
+        self.assertIn('class="brk-mode-on"', card)
+        self.assertIn("автоматичне", card)
         self.assertNotIn("в адмінці", card)
         self.assertNotIn("<button", card)
 
@@ -472,12 +473,14 @@ class TickItpTests(unittest.TestCase):
                 },
             }
         }, 1)
-        self.assertEqual(html.count("brk-auto"), 1)
-        self.assertIn("Керування: ручне.", html)
+        self.assertEqual(html.count("brk-mode-off"), 1)
+        self.assertIn("<dt>Керування</dt>", html)
+        self.assertIn(">ручне<", html)
+        heat = html.split('data-brk="itp"', 1)[1]
+        self.assertLess(heat.index("З акумуляторів"), heat.index("<dt>Керування</dt>"))
         self.assertNotIn("<button", html)
         light = html.split('data-brk="svitlo"', 1)[1].split('data-brk="itp"', 1)[0]
-        self.assertNotIn("Авто", light)
-        self.assertNotIn("brk-auto", light)
+        self.assertNotIn("Керування", light)
 
 
 class AdminItpTests(unittest.TestCase):
@@ -555,8 +558,9 @@ class AdminItpTests(unittest.TestCase):
         self.assertEqual(stored["applied"], "off")
         self.assertEqual(stored["command_times"], [10])
         self.assertTrue(stored["timer_delete_attempted"])
-        card = itp_card_html()
-        self.assertIn("Керування: ручне.", card)
+        card = itp_meter_html()
+        self.assertIn('class="brk-mode-off"', card)
+        self.assertIn(">ручне<", card)
         self.assertNotIn("<button", card)
 
     def test_arm_without_a_day_row_leaves_applied_empty(self):
