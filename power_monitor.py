@@ -2051,8 +2051,15 @@ def _breaker_section_html() -> str:
     live = _breaker_lines_html(payload, now)
     return (
         '<details id="breaker_details" open data-ls-key="breaker_open" data-default-open="1">'
-        '<summary><h2 style="display:inline">Автомати підвалу</h2></summary>'
-        '<p class="brk-note">Лише показ. За добу — від півночі. З акумуляторів — кіловати і час, поки цей автомат увімкнений і немає мережі. Є споживання — увімкнено, навіть якщо біт лишився вимкненим. Потужність рівно 0 — вимкнено, навіть якщо біт лишився увімкненим. Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>'
+        '<summary><h2 style="display:inline">Автомати підвалу</h2>'
+        '<span class="brk-help-wrap">'
+        '<button type="button" class="brk-help" aria-label="Пояснення показників" aria-expanded="false">i</button>'
+        '<span class="brk-help-pop" hidden>'
+        "<p>Лише показ. За добу — від півночі.</p>"
+        "<p>З акумуляторів — кіловати і час, поки цей автомат увімкнений і немає мережі.</p>"
+        "<p>Є споживання — увімкнено, навіть якщо біт лишився вимкненим. Потужність рівно 0 — вимкнено, навіть якщо біт лишився увімкненим.</p>"
+        "<p>Понад 15 хвилин мережі обнуляє і час, і кіловати.</p>"
+        "</span></span></summary>"
         f'<div id="pm-breakers-live">{live}</div>'
         f'<div id="pm-breakers-board">{bars}</div>'
         "</details>"

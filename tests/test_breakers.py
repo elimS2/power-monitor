@@ -469,6 +469,15 @@ class BreakerPageTests(unittest.TestCase):
         database.DB_PATH = self._old_path
         self._tmpdir.cleanup()
 
+    def test_breaker_note_is_behind_an_info_button(self):
+        import power_monitor
+
+        html = power_monitor._breaker_section_html()
+        self.assertIn('class="brk-help"', html)
+        self.assertIn('class="brk-help-pop" hidden', html)
+        self.assertIn("Лише показ.", html)
+        self.assertNotIn('class="brk-note"', html)
+
     def test_bars_are_green_then_red_and_the_other_breaker_is_empty(self):
         import power_monitor
         from database import read_breaker_board

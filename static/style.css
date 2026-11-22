@@ -248,6 +248,22 @@ details[open] summary::before { content: '▼ '; }
 .sb-bar-on { background: #22c55e; }
 .sb-bar-actual { background: #f87171; }
 .brk-note, .brk-empty, .brk-age, .brk-legend, .brk-timers-empty, .brk-auto { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0; }
+.brk-help-wrap { position: relative; display: inline-block; margin-left: 0.4rem; vertical-align: middle; }
+.brk-help {
+  width: 32px; height: 32px; padding: 0; border-radius: 8px; cursor: pointer;
+  border: 1px solid #475569; background: #1e293b; color: #e2e8f0;
+  font-family: Georgia, serif; font-style: italic; font-size: 0.9rem; font-weight: 700;
+  line-height: 1; touch-action: manipulation;
+}
+.brk-help-pop {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 30;
+  width: min(22rem, calc(100vw - 2rem));
+  background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 8px;
+  padding: 0.55rem 0.7rem; font-size: 0.78rem; line-height: 1.45; text-align: left;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+.brk-help-pop p { margin: 0 0 0.35rem; }
+.brk-help-pop p:last-child { margin-bottom: 0; }
 .brk-when-cards { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.35rem 0 0.55rem; }
 .brk-when {
   min-width: 8.6rem; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
