@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -27,7 +29,14 @@ from itp_auto import (
     step_itp,
     tick_itp_decision,
 )
-from tuya_breakers import BREAKER_TIMER_FOLLOWUP_SEC, BREAKER_TIMER_FOLLOWUP_WINDOW_SEC
+import httpx
+from tuya_breakers import (
+    BREAKER_TIMER_FOLLOWUP_SEC,
+    BREAKER_TIMER_FOLLOWUP_WINDOW_SEC,
+    BreakerPollConfig,
+    TokenCache,
+    run_itp_auto,
+)
 
 
 def _at(hour: int, minute: int) -> datetime:
@@ -207,7 +216,8 @@ class StepItpTests(unittest.TestCase):
         self.assertEqual(saved["command_times"], [self.NOW])
 
     def test_hand_disarms_only_when_commands_and_timers_are_ready(self):
-        doc, action = step_itp(_ready(), _off(), "off", self.NOW, True, "edge")
+        want_on = {"state": "on", "reason": "light-on", "boiler_source": "none"}
+        doc, action = step_itp(_ready(), want_on, "off", self.NOW, True, "edge")
         self.assertEqual(action, "none")
         self.assertFalse(doc["enabled"])
         self.assertEqual(doc["pause"]["reason"], "manual")
@@ -358,7 +368,7 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(last["reason"], "boiler")
         self.assertEqual(last["boiler_source"], "default")
         text = format_itp_card(read_itp_auto())
-        self.assertIn("Авто вимкнено.", text)
+        self.assertIn("Автоматичне керування: вимкнено.", text)
         self.assertIn("котельня", text)
         self.assertIn("Графік котельні не приходив, вікно 18:00–24:00.", text)
         self.assertTrue(any("boiler-default" in line and "commands-off" in line for line in caught.output))
@@ -374,7 +384,7 @@ class TickItpTests(unittest.TestCase):
         self.assertEqual(last["state"], "on")
         self.assertEqual(last["reason"], "light-on")
         text = format_itp_card(read_itp_auto())
-        self.assertIn("Авто вимкнено.", text)
+        self.assertIn("Автоматичне керування: вимкнено.", text)
         self.assertIn("світло вже 15 хв", text)
 
     def test_tick_cannot_read_or_post(self):
@@ -418,9 +428,9 @@ class TickItpTests(unittest.TestCase):
         self.assertIsNone(doc["pending"])
         self.assertIsNone(doc["slot_spent"])
         card = itp_card_html()
-        self.assertIn("Авто увімкнено в адмінці, без команд.", card)
-        self.assertNotIn("Авто увімкнено.", card)
-        self.assertNotIn("команди ще вимкнені", card)
+        self.assertIn("Автоматичне керування: увімкнено.", card)
+        self.assertIn("Команди ще вимкнені.", card)
+        self.assertNotIn("в адмінці", card)
         self.assertNotIn("<button", card)
 
     def test_second_tick_inside_a_minute_keeps_the_previous_decision(self):
@@ -439,10 +449,10 @@ class TickItpTests(unittest.TestCase):
             "pause": {"reason": "manual", "at": _at(21, 5).timestamp()},
             "warn": {"kind": "rejected"},
         })
-        self.assertIn("Авто вимкнено о 21:05: перемкнули вручну.", manual)
+        self.assertIn("Автоматичне керування: вимкнено о 21:05. Перемкнули вручну.", manual)
         self.assertIn("Хмара не підтвердила команду.", manual)
         flap = format_itp_card({"enabled": False, "pause": {"reason": "flap"}})
-        self.assertEqual(flap, "Авто вимкнено: за годину вже 4 перемикання.")
+        self.assertEqual(flap, "Автоматичне керування: вимкнено. За годину вже 4 перемикання.")
 
     def test_heat_card_has_the_line_and_the_light_card_does_not(self):
         from power_monitor import _breaker_lines_html
@@ -463,7 +473,7 @@ class TickItpTests(unittest.TestCase):
             }
         }, 1)
         self.assertEqual(html.count("brk-auto"), 1)
-        self.assertIn("Авто вимкнено.", html)
+        self.assertIn("Автоматичне керування: вимкнено.", html)
         self.assertNotIn("<button", html)
         light = html.split('data-brk="svitlo"', 1)[1].split('data-brk="itp"', 1)[0]
         self.assertNotIn("Авто", light)
@@ -522,7 +532,7 @@ class AdminItpTests(unittest.TestCase):
             httpx.Client = real_client
         self.assertEqual(calls, [])
         self.assertTrue(armed["enabled"])
-        self.assertEqual(armed["line"], "Авто увімкнено в адмінці, без команд.")
+        self.assertEqual(armed["line"], "Автоматичне керування: увімкнено. Команди ще вимкнені.")
         self.assertFalse(armed["commands_on"])
         stored = read_itp_auto()
         self.assertEqual(stored["applied"], "off")
@@ -540,13 +550,13 @@ class AdminItpTests(unittest.TestCase):
         mutate_itp_auto(mark_attempt)
         disarmed = set_itp_armed(False)
         self.assertFalse(disarmed["enabled"])
-        self.assertIn("Авто вимкнено.", disarmed["line"])
+        self.assertIn("Автоматичне керування: вимкнено.", disarmed["line"])
         stored = read_itp_auto()
         self.assertEqual(stored["applied"], "off")
         self.assertEqual(stored["command_times"], [10])
         self.assertTrue(stored["timer_delete_attempted"])
         card = itp_card_html()
-        self.assertIn("Авто вимкнено.", card)
+        self.assertIn("Автоматичне керування: вимкнено.", card)
         self.assertNotIn("<button", card)
 
     def test_arm_without_a_day_row_leaves_applied_empty(self):
@@ -583,6 +593,234 @@ class AdminItpTests(unittest.TestCase):
         self.assertIn("Обігрів, авто", page)
         self.assertIn("Ця сторінка їх не вмикає.", page)
         self.assertNotIn("/v1.0/devices", page)
+
+
+class _Reply:
+    def __init__(self, status: int, body: dict):
+        self.status_code = status
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+class _Cloud:
+    def __init__(self, switch_on: bool = True, timer_ok: bool = True, fail_status: bool = False):
+        self.calls = []
+        self.switch_on = switch_on
+        self.timer_ok = timer_ok
+        self.fail_status = fail_status
+
+    async def get(self, url, headers=None):
+        self.calls.append(("GET", url, None))
+        if self.fail_status and url.endswith("/status"):
+            raise httpx.TimeoutException("slow")
+        if "/timer/" in url:
+            body = {"success": True, "result": []} if self.timer_ok else {"success": False, "code": 2008}
+            return _Reply(200, body)
+        if url.endswith("/status"):
+            return _Reply(200, {"success": True, "result": [{"code": "switch", "value": self.switch_on}]})
+        raise AssertionError(url)
+
+    async def request(self, method, url, content=None, headers=None):
+        self.calls.append((method, url, content))
+        return _Reply(200, {"success": True, "result": True})
+
+
+class CloudItpTests(unittest.TestCase):
+    ITP = "heatbreaker1"
+    LIGHT = "lightbreaker1"
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self._old_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "t.db"
+        database.init_db()
+        reset_itp_tick_clock()
+        self._old_commands = os.environ.get("ITP_AUTO_COMMANDS")
+        self._old_slot = os.environ.get("ITP_AUTO_SLOT")
+        os.environ["ITP_AUTO_COMMANDS"] = "1"
+        os.environ.pop("ITP_AUTO_SLOT", None)
+
+    def tearDown(self):
+        if self._old_commands is None:
+            os.environ.pop("ITP_AUTO_COMMANDS", None)
+        else:
+            os.environ["ITP_AUTO_COMMANDS"] = self._old_commands
+        if self._old_slot is None:
+            os.environ.pop("ITP_AUTO_SLOT", None)
+        else:
+            os.environ["ITP_AUTO_SLOT"] = self._old_slot
+        database.DB_PATH = self._old_path
+        self._tmpdir.cleanup()
+        reset_itp_tick_clock()
+
+    def _moment(self, hour: int = 10, minute: int = 7):
+        moment = _at(hour, minute)
+        return moment, moment.timestamp()
+
+    def _cfg(self):
+        return BreakerPollConfig("access", "secret", (("svitlo", self.LIGHT), ("itp", self.ITP)))
+
+    def _cache(self, now: float):
+        cache = TokenCache()
+        cache.token = "token"
+        cache.refresh_at = now + 10_000
+        return cache
+
+    def _beat(self, ts: float) -> None:
+        with database._conn() as db:
+            db.execute("INSERT INTO heartbeats(plug204, plug175, ts) VALUES(1, 1, ?)", (ts,))
+
+    def _event(self, event: str, ts: float) -> None:
+        with database._conn() as db:
+            db.execute("INSERT INTO power_events(event, ts) VALUES(?, ?)", (event, ts))
+
+    def _plant(self, **fields) -> None:
+        def update(doc):
+            doc.clear()
+            doc.update(empty_itp_auto())
+            doc.update(fields)
+
+        mutate_itp_auto(update)
+
+    def _run(self, cloud, moment, now: float):
+        asyncio.run(run_itp_auto(cloud, self._cfg(), self._cache(now), moment, now))
+
+    def _urls(self, cloud) -> list[str]:
+        return [item[1] for item in cloud.calls]
+
+    def test_hold_and_disabled_issue_no_requests(self):
+        moment, now = self._moment()
+        self._beat(now - 301)
+        self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
+        cloud = _Cloud()
+        self._run(cloud, moment, now)
+        self.assertEqual(cloud.calls, [])
+        reset_itp_tick_clock()
+        self._plant(enabled=False, timers_cleared_at=1, timer_delete_attempted=True)
+        self._beat(now)
+        self._event("up", now - 16 * 60)
+        cloud = _Cloud()
+        self._run(cloud, moment, now)
+        self.assertEqual(cloud.calls, [])
+
+    def test_edge_reads_once_and_posts_only_when_the_breaker_differs(self):
+        moment, now = self._moment()
+        self._beat(now)
+        self._event("down", now - 20 * 60)
+        self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
+        cloud = _Cloud(switch_on=True)
+        self._run(cloud, moment, now)
+        posts = [item for item in cloud.calls if item[0] == "POST"]
+        self.assertEqual(len([url for url in self._urls(cloud) if url.endswith("/status")]), 1)
+        self.assertEqual(len(posts), 1)
+        self.assertIn(b'"code":"switch"', posts[0][2])
+        self.assertNotIn("iot-03", posts[0][1])
+        self.assertTrue(all(self.LIGHT not in url for url in self._urls(cloud)))
+        self.assertEqual(read_itp_auto()["pending"]["state"], "off")
+
+        reset_itp_tick_clock()
+        self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
+        cloud = _Cloud(switch_on=False)
+        self._run(cloud, moment, now)
+        self.assertEqual(len([url for url in self._urls(cloud) if url.endswith("/status")]), 1)
+        self.assertFalse(any(item[0] == "POST" for item in cloud.calls))
+        self.assertEqual(read_itp_auto()["applied"], "off")
+
+    def test_failed_read_does_not_post_or_retry_inside_the_quarter(self):
+        moment, now = self._moment()
+        self._beat(now)
+        self._event("down", now - 20 * 60)
+        self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
+        cloud = _Cloud(fail_status=True)
+        self._run(cloud, moment, now)
+        self.assertFalse(any(item[0] == "POST" for item in cloud.calls))
+        first = len(cloud.calls)
+        later = now + 60
+        self._run(cloud, moment, later)
+        self.assertEqual(len(cloud.calls), first)
+
+    def test_commands_off_issues_nothing_while_armed(self):
+        os.environ["ITP_AUTO_COMMANDS"] = "0"
+        moment, now = self._moment()
+        self._beat(now)
+        self._event("down", now - 20 * 60)
+        self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
+        cloud = _Cloud()
+        self._run(cloud, moment, now)
+        self.assertEqual(cloud.calls, [])
+        self.assertIsNone(read_itp_auto()["pending"])
+
+    def test_confirm_window_reads_the_heat_breaker_once(self):
+        moment, now = self._moment()
+        sent = now - 30
+        self._plant(enabled=False, pending={"state": "off", "sent_at": sent, "followup_done": False})
+        early = _Cloud()
+        self._run(early, moment, now)
+        self.assertEqual(early.calls, [])
+
+        reset_itp_tick_clock()
+        due = sent + 60
+        cloud = _Cloud(switch_on=False)
+        self._run(cloud, datetime.fromtimestamp(due, UA_TZ), due)
+        status = [url for url in self._urls(cloud) if url.endswith("/status")]
+        self.assertEqual(len(status), 1)
+        self.assertTrue(all(self.LIGHT not in url for url in self._urls(cloud)))
+        self.assertIsNone(read_itp_auto()["pending"])
+
+        self._plant(enabled=False, pending={"state": "off", "sent_at": due - 60, "followup_done": False})
+        reset_itp_tick_clock()
+        mismatch = _Cloud(switch_on=True)
+        self._run(mismatch, datetime.fromtimestamp(due, UA_TZ), due)
+        stored = read_itp_auto()
+        self.assertIsNotNone(stored["pending"])
+        self.assertFalse(stored["enabled"])
+
+        reset_itp_tick_clock()
+        again = _Cloud()
+        self._run(again, datetime.fromtimestamp(due + 10, UA_TZ), due + 10)
+        self.assertEqual(again.calls, [])
+
+        self._plant(enabled=False, pending={"state": "off", "sent_at": now, "followup_done": False})
+        reset_itp_tick_clock()
+        late = _Cloud()
+        self._run(late, datetime.fromtimestamp(now + 151, UA_TZ), now + 151)
+        self.assertEqual(late.calls, [])
+
+    def test_failed_timer_delete_is_not_retried_until_the_next_arm(self):
+        from api.admin import set_itp_armed
+
+        moment, now = self._moment()
+        self._beat(now - 301)
+        self._plant(enabled=True, applied="on")
+        cloud = _Cloud(timer_ok=False)
+        self._run(cloud, moment, now)
+        self.assertTrue(any("/timer/" in url for url in self._urls(cloud)))
+        self.assertFalse(any(item[0] in ("POST", "DELETE") for item in cloud.calls))
+        stored = read_itp_auto()
+        self.assertTrue(stored["timer_delete_attempted"])
+        self.assertIsNone(stored["timers_cleared_at"])
+        self.assertEqual(stored["warn"]["kind"], "timer-delete")
+
+        reset_itp_tick_clock()
+        again = _Cloud(timer_ok=False)
+        self._run(again, moment, now + 61)
+        self.assertEqual(again.calls, [])
+
+        set_itp_armed(False)
+        reset_itp_tick_clock()
+        after_disarm = _Cloud()
+        self._run(after_disarm, moment, now + 130)
+        self.assertEqual(after_disarm.calls, [])
+        self.assertTrue(read_itp_auto()["timer_delete_attempted"])
+
+        set_itp_armed(True)
+        reset_itp_tick_clock()
+        retried = _Cloud(timer_ok=True)
+        self._run(retried, moment, now + 200)
+        self.assertEqual(len([url for url in self._urls(retried) if "/timer/" in url]), 1)
+        self.assertIsNotNone(read_itp_auto()["timers_cleared_at"])
 
 
 if __name__ == "__main__":

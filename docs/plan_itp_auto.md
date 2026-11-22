@@ -4,7 +4,7 @@
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
-- Last updated: 2026-11-22T20:54:00Z
+- Last updated: 2026-11-22T21:06:00Z
 - Active skin: **Skin A** (local decision every minute, one extra ITP status read and one command only when the desired state changes, then one ITP status read about a minute later). Skin B is the quarter-hour fallback for the decision. Skin C is rejected and must not be implemented.
 - This file is the implementation contract. A new chat must not need the planning conversation.
 - Commands ship off. `ITP_AUTO_COMMANDS` defaults to `0`. Arming the rule in admin does not by itself POST a switch.
@@ -419,12 +419,12 @@ Ukrainian, one sentence, no device id:
 
 | Document | Line |
 |---|---|
-| `enabled` false, no `pause` | `Авто вимкнено.` plus the would-be clause from `last` |
-| `pause.reason == manual` | `Авто вимкнено о HH:MM: перемкнули вручну.` |
-| `pause.reason == flap` | `Авто вимкнено: за годину вже 4 перемикання.` |
-| `enabled` true, commands off | `Авто увімкнено, команди ще вимкнені.` plus the would-be clause |
-| `enabled` true, commands on, `pending` | `Авто увімкнено, команда ще не підтверджена.` |
-| `enabled` true, commands on, in sync | `Авто увімкнено.` plus why (`світло` or `котельня`) |
+| `enabled` false, no `pause` | `Автоматичне керування: вимкнено.` plus the would-be clause from `last` |
+| `pause.reason == manual` | `Автоматичне керування: вимкнено о HH:MM. Перемкнули вручну.` |
+| `pause.reason == flap` | `Автоматичне керування: вимкнено. За годину вже 4 перемикання.` |
+| `enabled` true, commands off | `Автоматичне керування: увімкнено. Команди ще вимкнені.` plus the would-be clause |
+| `enabled` true, commands on, `pending` | `Автоматичне керування: увімкнено. Команда ще не підтверджена.` |
+| `enabled` true, commands on, in sync | `Автоматичне керування: увімкнено.` plus why (`світло` or `котельня`) |
 | `warn` set | append `Хмара не підтвердила команду.` |
 
 Would-be clause:
@@ -440,7 +440,7 @@ Would-be clause:
 
 The line is inside `_breaker_lines_html`, which `_breaker_live_html` already uses, so the 10-second fragment updates it. Do not duplicate it in the static shell.
 
-Phase 4, before Phase 5's command copy exists, uses one armed sentence instead of the "команди ще вимкнені" row: `Авто увімкнено в адмінці, без команд.` Phase 5 replaces it with the table above.
+Phase 4 used one temporary armed sentence, `Авто увімкнено в адмінці, без команд.` On 2026-11-22T21:00:00Z the operator said that sounded like a way of switching the breaker. The line names the program instead: `Автоматичне керування: увімкнено` or `вимкнено`. Phase 5 uses the table above.
 
 The lighting card gets no such line.
 
@@ -603,6 +603,8 @@ Deploy only with the gate yes, and only while the server env leaves `ITP_AUTO_CO
 
 Turning `ITP_AUTO_COMMANDS` to `1` on the server is not part of this phase. It is a separate operator yes after at least one evening of armed dry lines that match what the operator would have done by hand. That yes is out of this plan's implementation phases. Record it in the progress file when it happens. Do not set it inside a deploy commit.
 
+Landed 2026-11-22T21:06:00Z. The minute tick reads `ITP_AUTO_COMMANDS` and `ITP_AUTO_SLOT`. Missing or any value other than `1` stays off, so an armed dry tick still logs `commands-off` and does not GET or POST. With commands on, a fake client shows one heat status GET on an edge, one POST only when that read differs, no lighting id, no second path, no retry in the same quarter after a failed read, one confirm GET inside 60–150 seconds, and one timer-delete attempt that is not repeated until the next arm. A read that already matches the rule is remembered and does not disarm. The card says `Автоматичне керування: увімкнено` or `вимкнено`. `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule` passed, 100 tests. No deploy. `ITP_AUTO_COMMANDS` was not set on the server. Proof `verifiedAtUtc=2026-11-22T21:06:20.892Z`.
+
 Rollback: set `ITP_AUTO_COMMANDS=0`, disarm, restart. Pending cloud state is whatever the last command did; the loop will not send another. Revert the commit if the POST helper itself mis-fires. Do not delete `breaker_sample` rows.
 
 ## 8. Data, migrations, compatibility
@@ -619,7 +621,7 @@ Existing `breaker_day` rows stay. Arming reads the latest `itp` row and does not
 
 Rollback does not need a down migration. Delete the `kv` row only if a bad document must be forgotten. Disarm is enough for a normal rollback.
 
-The public dashboard keeps working when the document is missing or invalid JSON. Invalid JSON is treated as the default disabled document, and one error line is logged. The card then shows `Авто вимкнено.`
+The public dashboard keeps working when the document is missing or invalid JSON. Invalid JSON is treated as the default disabled document, and one error line is logged. The card then shows `Автоматичне керування: вимкнено.`
 
 ## 9. Verification strategy
 

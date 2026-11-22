@@ -15,7 +15,7 @@ import threading
 from datetime import datetime, timedelta
 from html import escape
 
-from config import STALE_THRESHOLD_SEC, UA_TZ
+from config import STALE_THRESHOLD_SEC, UA_TZ, itp_commands_on, itp_slot
 
 STABLE = timedelta(minutes=15)
 _DEFAULT_START = 18 * 60
@@ -25,7 +25,8 @@ FLAP_WINDOW_SEC = 3600
 FOLLOWUP_SEC = 60
 FOLLOWUP_WINDOW_SEC = 90
 KEY = "itp_auto"
-ARMED_WITHOUT_COMMANDS = "Авто увімкнено в адмінці, без команд."
+AUTO_OFF = "Автоматичне керування: вимкнено."
+AUTO_ON = "Автоматичне керування: увімкнено."
 
 log = logging.getLogger("power_monitor")
 _doc_lock = threading.Lock()
@@ -124,6 +125,9 @@ def step_itp(doc: dict, desired: dict, actual: str, now: float, commands_on: boo
     if doc.get("pending"):
         return doc, "none"
     _clear_rejected_warn(doc, actual)
+    if actual in ("on", "off") and actual == desired.get("state"):
+        doc["applied"] = actual
+        return doc, "none"
     if _manual_disarm(doc, actual, now, commands_on):
         return doc, "none"
     if desired.get("state") == doc.get("applied"):
@@ -211,9 +215,13 @@ def reset_itp_tick_clock() -> None:
     _last_decision_at = None
 
 
-def tick_itp_decision(now_kyiv: datetime, now_unix: float) -> str:
-    """Decide from local rows. This phase always passes commands off, so the action stays none."""
+def tick_itp_decision(now_kyiv: datetime, now_unix: float, commands_on: bool | None = None, slot: str | None = None) -> str:
+    """Decide from local rows. Commands follow the env unless a caller passes them."""
     global _last_decision_at
+    if commands_on is None:
+        commands_on = itp_commands_on()
+    if slot is None:
+        slot = itp_slot()
     if _last_decision_at is not None and now_unix - _last_decision_at < 60:
         return "none"
     light, boiler = load_itp_context(now_kyiv, now_unix)
@@ -222,7 +230,7 @@ def tick_itp_decision(now_kyiv: datetime, now_unix: float) -> str:
 
     def update(doc):
         before = _signature(doc)
-        new, action = step_itp(doc, desired, "unknown", now_unix, False, "edge")
+        new, action = step_itp(doc, desired, "unknown", now_unix, commands_on, slot)
         doc.clear()
         doc.update(new)
         outcome["action"] = action
@@ -231,7 +239,7 @@ def tick_itp_decision(now_kyiv: datetime, now_unix: float) -> str:
     stored = mutate_itp_auto(update)
     _last_decision_at = now_unix
     if outcome["changed"]:
-        log.info("itp-auto: %s", decision_log_text(stored))
+        log.info("itp-auto: %s", decision_log_text(stored, commands_on))
     return outcome["action"]
 
 
@@ -258,31 +266,32 @@ def load_itp_context(now_kyiv: datetime, now_unix: float) -> tuple[dict, dict]:
     return light, boiler
 
 
-def decision_log_text(doc: dict) -> str:
+def decision_log_text(doc: dict, commands_on: bool = False) -> str:
     last = doc.get("last") or {}
     state = last.get("state") or "hold"
     reason = last.get("reason") or "unknown"
     if state == "hold":
         return f"hold {reason}"
     source = " boiler-default" if last.get("boiler_source") == "default" else ""
-    return f"would {state} {reason}{source} commands-off"
+    tail = "" if commands_on else " commands-off"
+    return f"would {state} {reason}{source}{tail}"
 
 
 def format_itp_card(doc: dict, commands_on: bool = False) -> str:
-    """Ukrainian heat-card sentence. While commands are off, an armed card uses the admin sentence."""
+    """Ukrainian line about the program. The breaker state is a separate line."""
     pause = doc.get("pause") or {}
     if not doc.get("enabled") and pause.get("reason") == "manual" and pause.get("at"):
-        line = f"Авто вимкнено о {_hhmm(pause['at'])}: перемкнули вручну."
+        line = f"Автоматичне керування: вимкнено о {_hhmm(pause['at'])}. Перемкнули вручну."
     elif not doc.get("enabled") and pause.get("reason") == "flap":
-        line = "Авто вимкнено: за годину вже 4 перемикання."
+        line = "Автоматичне керування: вимкнено. За годину вже 4 перемикання."
     elif doc.get("enabled") and not commands_on:
-        line = ARMED_WITHOUT_COMMANDS
+        line = _join(f"{AUTO_ON} Команди ще вимкнені.", _would(doc))
     elif doc.get("enabled") and doc.get("pending"):
-        line = "Авто увімкнено, команда ще не підтверджена."
+        line = f"{AUTO_ON} Команда ще не підтверджена."
     elif doc.get("enabled"):
-        line = _join("Авто увімкнено.", _why(doc))
+        line = _join(AUTO_ON, _why(doc))
     else:
-        line = _join("Авто вимкнено.", _would(doc))
+        line = _join(AUTO_OFF, _would(doc))
     if doc.get("warn"):
         line = f"{line} Хмара не підтвердила команду."
     return line
@@ -298,7 +307,7 @@ def itp_admin_status(doc: dict | None = None) -> dict:
     warn = doc.get("warn") or {}
     return {
         "enabled": bool(doc.get("enabled")),
-        "line": format_itp_card(doc, commands_on=False),
+        "line": format_itp_card(doc, commands_on=itp_commands_on()),
         "last_state": last.get("state") or "—",
         "last_reason": last.get("reason") or "—",
         "last_at": when,
@@ -309,7 +318,7 @@ def itp_admin_status(doc: dict | None = None) -> dict:
 
 def itp_card_html() -> str:
     try:
-        text = format_itp_card(read_itp_auto(), commands_on=False)
+        text = format_itp_card(read_itp_auto(), commands_on=itp_commands_on())
     except Exception:
         log.info("itp-auto: card read failed")
         text = "Авто вимкнено."

@@ -1,6 +1,7 @@
 """Decode a Tuya breaker status payload and store one day row.
 
-The poller in this file reads status. It does not send switch commands.
+The quarter-hour poll reads status. A heat-breaker switch command exists only
+for the automatic rule, and only while ITP_AUTO_COMMANDS is exactly 1.
 The page does not call Tuya.
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any
 import httpx
 
 import database
-from config import UA_TZ
+from config import UA_TZ, itp_commands_on, itp_slot
 from schedule_board import kyiv_date_str, kyiv_day_bounds, shift_date
 
 log = logging.getLogger("power_monitor.breakers")
@@ -810,6 +811,15 @@ async def poll_breakers(client, cfg: BreakerPollConfig, cache: TokenCache, now: 
             log.warning("breaker %s code %s", name, exc.code)
             continue
         apply_breaker_status(name, now, payload, "poll")
+        if name == "itp" and itp_commands_on():
+            try:
+                shown = shown_from_status(payload)
+            except (TypeError, ValueError):
+                shown = None
+            if shown in ("on", "off"):
+                settle_itp_after_sample(shown, now)
+                if itp_slot() == "quarter":
+                    await quarter_post_itp(client, cfg, cache, device_id, shown, now)
     await sync_breaker_timers(client, cfg, cache, now)
 
 
@@ -870,6 +880,300 @@ async def _device_status(client, cfg: BreakerPollConfig, token: str, device_id: 
         cfg.access_id, cfg.access_secret, "GET", path, token, str(int(now * 1000)),
     )
     return await _get_json(client, cfg.host + path, headers)
+
+
+def shown_from_status(payload: dict) -> str:
+    """Same watt rule as a stored sample. A raw status dict is not a phase map."""
+    fields = _status_fields(payload)
+    switch = _switch_bit(fields.get("switch"))
+    phases = {
+        "a": decode_phase(fields.get("phase_a")),
+        "b": decode_phase(fields.get("phase_b")),
+        "c": decode_phase(fields.get("phase_c")),
+    }
+    return "on" if breaker_shown_on(switch, phases) else "off"
+
+
+def latest_itp_applied() -> str | None:
+    """On/off from the newest stored heat-breaker day. A missing row stays unknown."""
+    with database._conn() as db:
+        row = db.execute(
+            """SELECT switch, phase_json FROM breaker_day
+               WHERE device=?
+               ORDER BY day DESC, updated_at DESC
+               LIMIT 1""",
+            ("itp",),
+        ).fetchone()
+    if row is None:
+        return None
+    phases = None
+    raw = row["phase_json"]
+    if raw:
+        try:
+            loaded = json.loads(raw)
+        except (TypeError, ValueError):
+            loaded = None
+        if isinstance(loaded, dict):
+            phases = loaded
+    return "on" if breaker_shown_on(row["switch"], phases) else "off"
+
+
+def itp_device_id(cfg: BreakerPollConfig) -> str:
+    for name, device_id in cfg.devices:
+        if name == "itp":
+            return device_id
+    return ""
+
+
+async def run_itp_auto_http(cfg: BreakerPollConfig, cache: TokenCache, now_kyiv: datetime, now: float) -> None:
+    """Open a client only when commands are allowed. A dry tick stays on SQLite."""
+    if not itp_commands_on() or not itp_device_id(cfg):
+        await run_itp_auto(None, cfg, cache, now_kyiv, now)
+        return
+    async with httpx.AsyncClient(timeout=breaker_http_timeout()) as client:
+        await run_itp_auto(client, cfg, cache, now_kyiv, now)
+
+
+async def run_itp_auto(client, cfg: BreakerPollConfig, cache: TokenCache, now_kyiv: datetime, now: float) -> None:
+    """Confirm, one timer cleanup, then the minute decision. No full poll."""
+    from itp_auto import tick_itp_decision
+
+    device_id = itp_device_id(cfg) if cfg is not None else ""
+    if client is not None and device_id and itp_commands_on():
+        await _confirm_itp_command(client, cfg, cache, device_id, now)
+        await _clear_itp_timers_once(client, cfg, cache, device_id, now)
+    action = tick_itp_decision(now_kyiv, now)
+    if action == "read" and client is not None and device_id and itp_commands_on() and itp_slot() == "edge":
+        await _read_then_maybe_post(client, cfg, cache, device_id, now)
+
+
+def settle_itp_after_sample(actual: str, now: float) -> None:
+    """Quarter sample backup. The breaker lock is already released by the caller."""
+    from itp_auto import mutate_itp_auto
+
+    def update(doc):
+        pending = doc.get("pending") or None
+        if pending:
+            if actual == pending.get("state"):
+                doc["applied"] = actual
+                doc["pending"] = None
+                doc["warn"] = None
+                log.info("itp-auto: confirmed %s", actual)
+                return
+            sent = pending.get("sent_at")
+            if sent is not None and now - float(sent) >= 20 * 60:
+                doc["pending"] = None
+                doc["warn"] = {"at": now, "kind": "unconfirmed", "code": "unconfirmed"}
+                log.info("itp-auto: command unconfirmed code unconfirmed")
+            return
+        if not (doc.get("enabled") and itp_commands_on() and doc.get("timers_cleared_at") is not None and not doc.get("warn") and doc.get("applied") in ("on", "off") and actual != doc.get("applied")):
+            return
+        from itp_auto import step_itp
+
+        desired = {"state": doc.get("applied"), "reason": "settle", "boiler_source": "none"}
+        new, _action = step_itp(doc, desired, actual, now, True, "quarter")
+        doc.clear()
+        doc.update(new)
+
+    mutate_itp_auto(update)
+
+
+async def quarter_post_itp(client, cfg: BreakerPollConfig, cache: TokenCache, device_id: str, actual: str, now: float) -> None:
+    """Skin B posts from the poll that already holds the heat status."""
+    from itp_auto import mutate_itp_auto, read_itp_auto, step_itp
+
+    doc = read_itp_auto()
+    last = doc.get("last") or {}
+    desired = {
+        "state": last.get("state"),
+        "reason": last.get("reason"),
+        "boiler_source": last.get("boiler_source"),
+    }
+    outcome = {"action": "none"}
+
+    def update(current):
+        new, action = step_itp(current, desired, actual, now, True, "quarter")
+        current.clear()
+        current.update(new)
+        outcome["action"] = action
+
+    mutate_itp_auto(update)
+    if outcome["action"] == "post":
+        await _emit_post(client, cfg, cache, device_id, desired.get("state"), now)
+
+
+async def _confirm_itp_command(client, cfg, cache, device_id: str, now: float) -> None:
+    from itp_auto import command_followup_due, mutate_itp_auto, read_itp_auto
+
+    pending = read_itp_auto().get("pending") or {}
+    sent = pending.get("sent_at")
+    if not pending or pending.get("followup_done") or not command_followup_due(sent, now):
+        return
+
+    def mark(doc):
+        current = doc.get("pending") or {}
+        if current.get("sent_at") == sent and not current.get("followup_done"):
+            current = dict(current)
+            current["followup_done"] = True
+            doc["pending"] = current
+
+    mutate_itp_auto(mark)
+    try:
+        shown = await _itp_shown(client, cfg, cache, device_id, now)
+    except TuyaCallError as exc:
+        log.info("itp-auto: confirm failed code %s", exc.code)
+        return
+
+    def apply(doc):
+        current = doc.get("pending") or {}
+        if current.get("sent_at") != sent:
+            return
+        if shown == current.get("state"):
+            doc["applied"] = shown
+            doc["pending"] = None
+            doc["warn"] = None
+            log.info("itp-auto: confirmed %s", shown)
+
+    mutate_itp_auto(apply)
+
+
+async def _clear_itp_timers_once(client, cfg, cache, device_id: str, now: float) -> None:
+    from itp_auto import mutate_itp_auto
+
+    go = {"yes": False}
+
+    def begin(doc):
+        if not doc.get("enabled") or doc.get("timers_cleared_at") is not None or doc.get("timer_delete_attempted"):
+            return
+        doc["timer_delete_attempted"] = True
+        doc["applied"] = latest_itp_applied()
+        go["yes"] = True
+
+    mutate_itp_auto(begin)
+    if not go["yes"]:
+        return
+    try:
+        token = await _ensure_token(client, cfg, cache, now)
+        await _delete_future_itp_oneshots(client, cfg, token, device_id, now)
+    except TuyaCallError as exc:
+        def fail(doc):
+            doc["warn"] = {"at": now, "kind": "timer-delete", "code": exc.code}
+
+        mutate_itp_auto(fail)
+        log.info("itp-auto: timer delete failed code %s", exc.code)
+        return
+
+    def done(doc):
+        doc["timers_cleared_at"] = now
+        if (doc.get("warn") or {}).get("kind") == "timer-delete":
+            doc["warn"] = None
+
+    mutate_itp_auto(done)
+
+
+async def _read_then_maybe_post(client, cfg, cache, device_id: str, now: float) -> None:
+    from itp_auto import mutate_itp_auto, read_itp_auto, step_itp
+
+    desired = read_itp_auto().get("last") or {}
+    log.info("itp-auto: read status before %s", desired.get("state"))
+    try:
+        shown = await _itp_shown(client, cfg, cache, device_id, now)
+    except TuyaCallError as exc:
+        log.info("itp-auto: read failed code %s", exc.code)
+        return
+    outcome = {"action": "none"}
+
+    def update(doc):
+        new, action = step_itp(doc, desired, shown, now, True, "edge")
+        doc.clear()
+        doc.update(new)
+        outcome["action"] = action
+
+    mutate_itp_auto(update)
+    if outcome["action"] == "post":
+        await _emit_post(client, cfg, cache, device_id, desired.get("state"), now)
+
+
+async def _emit_post(client, cfg, cache, device_id: str, state: str, now: float) -> None:
+    from itp_auto import apply_post_result, mutate_itp_auto
+
+    try:
+        token = await _ensure_token(client, cfg, cache, now)
+        result = await _post_switch(client, cfg, token, device_id, state == "on", now)
+    except TuyaCallError as exc:
+        result = ("transport", exc.code)
+    outcome, code = result
+
+    def record(doc):
+        fresh = apply_post_result(doc, "on" if state == "on" else "off", now, outcome, code)
+        doc.clear()
+        doc.update(fresh)
+
+    mutate_itp_auto(record)
+    if outcome == "success":
+        log.info("itp-auto: post %s", "on" if state == "on" else "off")
+
+
+async def _itp_shown(client, cfg, cache, device_id: str, now: float) -> str:
+    token = await _ensure_token(client, cfg, cache, now)
+    payload = await _device_status(client, cfg, token, device_id, now)
+    return shown_from_status(payload)
+
+
+async def _delete_future_itp_oneshots(client, cfg, token: str, device_id: str, now: float) -> None:
+    payload = await _device_timers(client, cfg, token, device_id, now)
+    ids = []
+    for row in timer_rows(payload):
+        if "1" in str(row.get("loops") or ""):
+            continue
+        fire = _timer_fire_ts(row)
+        if fire is not None and fire > now:
+            ids.append(str(row["timer_id"]))
+    if not ids:
+        return
+    joined = ",".join(ids)
+    path = f"/v2.0/cloud/timer/device/{device_id}/batch?timer_ids={joined}"
+    await _send_json(client, cfg, "DELETE", path, token, now, None)
+
+
+async def _post_switch(client, cfg, token: str, device_id: str, turn_on: bool, now: float):
+    if not _DEVICE_ID_RE.fullmatch(device_id):
+        raise TuyaCallError("bad-id")
+    path = f"/v1.0/devices/{device_id}/commands"
+    body = {"commands": [{"code": "switch", "value": bool(turn_on)}]}
+    try:
+        payload = await _send_json(client, cfg, "POST", path, token, now, body)
+    except TuyaCallError as exc:
+        if exc.code in ("timeout", "http", "bad-json") or isinstance(exc.code, int):
+            return "transport", exc.code
+        return "rejected", exc.code
+    if payload.get("success") is True:
+        return "success", None
+    return "rejected", payload.get("code")
+
+
+async def _send_json(client, cfg, method: str, path: str, token: str, now: float, body: dict | None) -> dict:
+    data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode()
+    headers = sign_headers(cfg.access_id, cfg.access_secret, method, path, token, str(int(now * 1000)), data)
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    try:
+        response = await client.request(method, cfg.host + path, content=None if body is None else data, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise TuyaCallError("timeout") from exc
+    except httpx.HTTPError as exc:
+        raise TuyaCallError("http") from exc
+    if response.status_code != 200:
+        raise TuyaCallError(response.status_code)
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise TuyaCallError("bad-json") from exc
+    if not isinstance(payload, dict):
+        raise TuyaCallError("bad-json")
+    if payload.get("success") is not True:
+        raise TuyaCallError(payload.get("code"))
+    return payload
 
 
 async def _get_json(client, url: str, headers: dict[str, str]) -> dict:

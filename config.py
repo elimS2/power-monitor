@@ -140,6 +140,16 @@ TUYA_ACCESS_SECRET = os.getenv("TUYA_ACCESS_SECRET", "").strip()
 TUYA_BREAKER_SVITLO = os.getenv("TUYA_BREAKER_SVITLO", "").strip()
 TUYA_BREAKER_ITP = os.getenv("TUYA_BREAKER_ITP", "").strip()
 TUYA_POLL_INTERVAL_SEC = int(os.getenv("TUYA_POLL_INTERVAL_SEC", "900") or "900")
+
+
+def itp_commands_on() -> bool:
+    """True only for the exact value 1. Missing or anything else stays off."""
+    return os.getenv("ITP_AUTO_COMMANDS") == "1"
+
+
+def itp_slot() -> str:
+    """Skin B is the exact value quarter. Anything else is the edge slot."""
+    return "quarter" if os.getenv("ITP_AUTO_SLOT") == "quarter" else "edge"
 DEYE_POLL_LOG = Path(os.getenv("DEYE_POLL_LOG", str(Path(__file__).parent / "logs" / "deye_poll.log")))
 
 # ─── Weather ────────────────────────────────────────────────

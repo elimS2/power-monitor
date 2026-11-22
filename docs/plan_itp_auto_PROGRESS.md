@@ -3,9 +3,9 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: `REVIEWED / READY FOR LOCAL WORK`
 - Active skin: Skin A (edge). Skin B is `ITP_AUTO_SLOT=quarter`. Skin C rejected.
-- Last updated: 2026-11-22T20:54:00Z
-- Current phase: 4 done. Waiting for an explicit yes before Phase 5.
-- Next allowed step: Phase 5 only after an explicit operator yes. Do not start it in the same turn.
+- Last updated: 2026-11-22T21:06:00Z
+- Current phase: 5 done. Code phases of this plan are complete.
+- Next allowed step: a deploy yes, with `ITP_AUTO_COMMANDS` left unset or `0`. Turning commands on is a later separate yes, after dry lines have been watched. Do not deploy or set the env in the same turn.
 - Commands: not implemented. `ITP_AUTO_COMMANDS` must stay off through deploy.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic ITP control logic`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T18:43:35.564Z`, `mutationKind=plan`.
@@ -19,7 +19,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2 Pure step | done | 2026-11-22T20:31:00Z. `step_itp`, flap guard, follow-up window, arm/disarm, temp sqlite. No HTTP. |
 | 3 Local tick and card line | done | 2026-11-22T20:45:00Z. Minute decision and heat-card line. Commands hard-off. |
 | 4 Admin arm | done | 2026-11-22T20:54:00Z. Admin flag only. No Tuya call. Armed card uses the admin sentence. |
-| 5 Command path | not started | Env default remains `0`. Turning it on is a later yes. |
+| 5 Command path | done | 2026-11-22T21:06:00Z. Fake client covers read, post, confirm, and one timer delete. Env default remains off. |
 
 ## Gate log
 
@@ -49,6 +49,9 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Automatic 
 | 2026-11-22T20:45:00Z | Phase 3 | Local minute tick and the heat-card line landed. Commands stay hard-off. Three unittest modules — 90 tests OK. No deploy. Phase 4 not started. Proof `verifiedAtUtc=2026-11-22T20:45:01.057Z`. |
 | 2026-11-22T20:51:00Z | Phase 4 yes | Operator: Agree & Continue. Prompt 2. |
 | 2026-11-22T20:54:00Z | Phase 4 | Admin arm and disarm landed. Stranger key returns 403. Newest heat-breaker day supplies `applied`. No HTTP client, no deploy. Browser click is waiting for a deploy yes. Phase 5 not started. Proof `verifiedAtUtc=2026-11-22T20:53:49.287Z`. |
+| 2026-11-22T21:00:00Z | Card wording | Operator: the line should read like automatic control on or off. `в адмінці` sounded like a way of switching the breaker. Card now says `Автоматичне керування: увімкнено` or `вимкнено`. |
+| 2026-11-22T21:00:00Z | Phase 5 yes | Operator: Agree & Continue. Prompt 2. |
+| 2026-11-22T21:06:00Z | Phase 5 | Command path landed behind `ITP_AUTO_COMMANDS`. Default stays off. Fake client: 100 tests OK across the three modules. No deploy. Proof `verifiedAtUtc=2026-11-22T21:06:20.892Z`. |
 
 ## Decisions mirrored from the plan
 

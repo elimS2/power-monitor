@@ -70,11 +70,12 @@ from tuya_breakers import (
     breaker_shown_on,
     breaker_timer_followup_due,
     poll_breakers_http,
+    run_itp_auto_http,
     poll_is_enabled,
     run_deye_then_breakers,
     sync_breaker_timers_http,
 )
-from itp_auto import itp_admin_status, itp_card_html, tick_itp_decision
+from itp_auto import itp_admin_status, itp_card_html
 from database import (
     api_key_config_list,
     api_key_get_plain,
@@ -713,7 +714,7 @@ async def bg_loop():
                     return
                 now = time.time()
                 try:
-                    tick_itp_decision(datetime.now(UA_TZ), now)
+                    await run_itp_auto_http(breaker_cfg, _breaker_tokens, datetime.now(UA_TZ), now)
                 except Exception as exc:
                     log.error("itp-auto: %s", exc.__class__.__name__)
                 if not breaker_timers_synced:
@@ -2679,7 +2680,7 @@ async def admin_page(key: str = Query("")):
 <p id="admin-itp-line">{escape(itp["line"])}</p>
 <p id="admin-itp-last" style="color:var(--muted)">Останнє рішення: {escape(str(itp["last_state"]))} / {escape(str(itp["last_reason"]))} / {escape(str(itp["last_at"]))}</p>
 <p id="admin-itp-warn" style="color:var(--muted)">{itp_warn}</p>
-<p style="color:var(--muted)">Команди в хмару: {itp_commands}. Ця сторінка їх не вмикає.</p>
+<p style="color:var(--muted)">Команди в хмару: {itp_commands}.{" Хмарні таймери ще можуть спрацювати." if not itp["commands_on"] else ""} Ця сторінка їх не вмикає.</p>
 <button type="button" id="admin-itp-auto-toggle" class="btn" data-enabled="{str(itp["enabled"]).lower()}">{'Вимкнути авто' if itp["enabled"] else 'Увімкнути авто'}</button>
 <p style="margin-top:1rem;font-size:0.9rem;color:var(--muted)">
   Бот: <code style="user-select:all;cursor:pointer" title="Клік — копіювати">{escape(str(tg_bot_id))}</code>

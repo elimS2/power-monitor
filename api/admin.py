@@ -1,7 +1,6 @@
 """Admin API — key management. Admin only."""
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 
@@ -247,35 +246,10 @@ def ep_admin_voltage_notify_set(key: str = Query(""), enabled: bool = Query(True
     return {"ok": True, "enabled": enabled}
 
 
-def latest_itp_applied() -> str | None:
-    """On/off from the newest stored heat-breaker day. Missing row stays unknown."""
-    from database import _conn
-    from tuya_breakers import breaker_shown_on
-
-    with _conn() as db:
-        row = db.execute(
-            """SELECT switch, phase_json FROM breaker_day
-               WHERE device=?
-               ORDER BY day DESC, updated_at DESC
-               LIMIT 1""",
-            ("itp",),
-        ).fetchone()
-    if row is None:
-        return None
-    phases = None
-    raw = row["phase_json"]
-    if raw:
-        try:
-            loaded = json.loads(raw)
-        except (TypeError, ValueError):
-            loaded = None
-        if isinstance(loaded, dict):
-            phases = loaded
-    return "on" if breaker_shown_on(row["switch"], phases) else "off"
-
-
 def set_itp_armed(enabled: bool) -> dict:
     """Arm or disarm the local flag. Does not call Tuya and does not delete timers."""
+    from tuya_breakers import latest_itp_applied
+
     applied = latest_itp_applied() if enabled else None
 
     def update(doc):
