@@ -4,6 +4,7 @@ Used by server-side polling (power_monitor._poll_deye).
 Requires: pymodbus (Modbus TCP), pysolarmanv5 (Solarman port 8899).
 """
 
+import logging
 import sys
 from typing import Optional
 
@@ -39,6 +40,29 @@ def _to_signed16(val: int) -> int:
     if val > 32767:
         return val - 65536
     return val
+
+
+_FAST_BLOCK_LEN = 56
+
+
+def decode_fast_block(registers) -> Optional[dict]:
+    """Volts and watts from one 598×56 holding-register read. None unless the list is exactly 56 words."""
+    try:
+        if len(registers) != _FAST_BLOCK_LEN:
+            return None
+        words = [int(word) for word in registers]
+    except (TypeError, ValueError):
+        return None
+    return {
+        "grid_v_l1": words[0] * 0.1,
+        "grid_v_l2": words[1] * 0.1,
+        "grid_v_l3": words[2] * 0.1,
+        "grid_power_w": _to_signed16(words[27]),
+        "load_l1_w": _to_signed16(words[52]),
+        "load_l2_w": _to_signed16(words[53]),
+        "load_l3_w": _to_signed16(words[54]),
+        "load_power_w": _to_signed16(words[55]),
+    }
 
 
 def _parse_reg_val(val: int, signed: bool, scale: float) -> float:
@@ -94,6 +118,150 @@ def _store_temps(data: dict, pair, battery) -> None:
             data["temp_batt_c"] = batt
 
 
+_log = logging.getLogger(__name__)
+
+
+def _words_or_none(raw, quantity: int):
+    if not raw or len(raw) < quantity:
+        return None
+    try:
+        return [int(word) for word in raw[:quantity]]
+    except (TypeError, ValueError):
+        return None
+
+
+def _scaled_u32(hi: int, lo: int, scale: float, name: str):
+    """High word first, same guards as the old per-register loop."""
+    value = (int(hi) << 16) | int(lo)
+    if value == 0xFFFFFFFF:
+        return None
+    scaled = value * scale
+    if name == "year_load_kwh" and scaled > 1_000:
+        return None
+    if name in ("total_grid_import_kwh", "total_grid_export_kwh") and scaled > 100_000:
+        return None
+    return round(scaled, 2)
+
+
+def _store_energy_block(data: dict, block) -> None:
+    if not block or len(block) < 9:
+        return
+    data["day_grid_import_kwh"] = block[0] * 0.1
+    data["day_grid_export_kwh"] = block[1] * 0.1
+    total_import = _scaled_u32(block[2], block[3], 0.000001, "total_grid_import_kwh")
+    total_export = _scaled_u32(block[4], block[5], 0.000001, "total_grid_export_kwh")
+    data["day_load_kwh"] = block[6] * 0.1
+    total_load = _scaled_u32(block[7], block[8], 0.000001, "total_load_kwh")
+    if total_import is not None:
+        data["total_grid_import_kwh"] = total_import
+    if total_export is not None:
+        data["total_grid_export_kwh"] = total_export
+    if total_load is not None:
+        data["total_load_kwh"] = total_load
+
+
+def _store_apartment_battery(data: dict, block) -> None:
+    if not block or len(block) < 5:
+        return
+    temp = decode_temp_c(block[0])
+    if temp is not None:
+        data["temp_batt_c"] = temp
+    data["battery_voltage"] = block[1] * 0.01
+    data["battery_soc"] = block[2]
+    data["battery_power_w"] = _to_signed16(block[4])
+
+
+def _store_house_battery(data: dict, block) -> None:
+    if not block or len(block) < 10:
+        return
+    temp = decode_temp_c(block[0])
+    if temp is not None:
+        data["temp_batt_c"] = temp
+    data["battery_soc"] = block[2]
+    _apply_hv_battery(data, block[1:10])
+
+
+def _store_apartment_battery_singles(data: dict, read) -> None:
+    """Illegal-address fallback. Apartment scales only."""
+    temp, _raised = _attempt(read, 586, 1)
+    if temp:
+        decoded = decode_temp_c(temp[0])
+        if decoded is not None:
+            data["temp_batt_c"] = decoded
+    volts, _raised = _attempt(read, 587, 1)
+    if volts:
+        data["battery_voltage"] = volts[0] * 0.01
+    soc, _raised = _attempt(read, 588, 1)
+    if soc:
+        data["battery_soc"] = soc[0]
+    power, _raised = _attempt(read, 590, 1)
+    if power:
+        data["battery_power_w"] = _to_signed16(power[0])
+
+
+def _store_house_battery_singles(data: dict, read) -> None:
+    """Today's house sequence. Do not use the apartment 0.01 scale."""
+    temp, _raised = _attempt(read, 586, 1)
+    if temp:
+        decoded = decode_temp_c(temp[0])
+        if decoded is not None:
+            data["temp_batt_c"] = decoded
+    soc, _raised = _attempt(read, 588, 1)
+    if soc:
+        data["battery_soc"] = soc[0]
+    block, _raised = _attempt(read, 587, 9)
+    if block:
+        _apply_hv_battery(data, block)
+
+
+def _attempt(read, addr: int, quantity: int):
+    try:
+        raw = read(register_addr=addr, quantity=quantity)
+    except Exception as exc:
+        _log.warning(
+            "Deye block %s x %s failed: %s",
+            addr, quantity, exc.__class__.__name__,
+        )
+        return None, True
+    return _words_or_none(raw, quantity), False
+
+
+def read_deye_blocks(read_holding_registers, hv: bool = False) -> dict:
+    """Six holding-register reads. A failed block omits only its own keys."""
+    data: dict = {}
+    energy, _raised = _attempt(read_holding_registers, 520, 9)
+    _store_energy_block(data, energy)
+    year, _raised = _attempt(read_holding_registers, 87, 2)
+    if year:
+        scaled = _scaled_u32(year[0], year[1], 0.1, "year_load_kwh")
+        if scaled is not None:
+            data["year_load_kwh"] = scaled
+    month, _raised = _attempt(read_holding_registers, 66, 1)
+    if month:
+        data["month_load_kwh"] = month[0] * 0.1
+    temps, _raised = _attempt(read_holding_registers, 540, 2)
+    if temps:
+        _store_temps(data, temps, None)
+    battery_qty = 10 if hv else 5
+    battery, raised = _attempt(read_holding_registers, 586, battery_qty)
+    if battery:
+        if hv:
+            _store_house_battery(data, battery)
+        else:
+            _store_apartment_battery(data, battery)
+    elif raised:
+        if hv:
+            _store_house_battery_singles(data, read_holding_registers)
+        else:
+            _store_apartment_battery_singles(data, read_holding_registers)
+    fast, _raised = _attempt(read_holding_registers, 598, _FAST_BLOCK_LEN)
+    if fast:
+        decoded = decode_fast_block(fast)
+        if decoded:
+            data.update(decoded)
+    return data
+
+
 def read_deye_solarman(
     host: str, port: int = 8899, serial: str = "", socket_timeout: float = 10,
     hv: bool = False,
@@ -117,59 +285,7 @@ def read_deye_solarman(
 
     data = {}
     try:
-        # Read grid voltage L1/L2/L3 in one request (registers 598-600)
-        try:
-            rr = modbus.read_holding_registers(register_addr=598, quantity=3)
-            if rr and len(rr) >= 3:
-                data["grid_v_l1"] = rr[0] * 0.1
-                data["grid_v_l2"] = rr[1] * 0.1
-                data["grid_v_l3"] = rr[2] * 0.1
-        except Exception:
-            pass
-        try:
-            pair = modbus.read_holding_registers(register_addr=540, quantity=2)
-            _store_temps(data, pair, None)
-        except Exception:
-            pass
-        try:
-            battery = modbus.read_holding_registers(register_addr=586, quantity=1)
-            _store_temps(data, None, battery)
-        except Exception:
-            pass
-        for name, spec in REGS.items():
-            if name in data:
-                continue
-            addr = spec[0]
-            signed = spec[1] if len(spec) >= 2 else False
-            scale = spec[2] if len(spec) >= 3 else 1.0
-            try:
-                rr = modbus.read_holding_registers(register_addr=addr, quantity=1)
-                if rr:
-                    data[name] = _parse_reg_val(rr[0], signed, scale)
-            except Exception:
-                pass
-        if hv:
-            try:
-                block = modbus.read_holding_registers(register_addr=587, quantity=9)
-                _apply_hv_battery(data, block)
-            except Exception:
-                pass
-        for name, spec in REGS_32BIT.items():
-            addr_hi, addr_lo, scale = spec
-            try:
-                rr = modbus.read_holding_registers(register_addr=addr_hi, quantity=2)
-                if rr and len(rr) >= 2:
-                    val_32 = (rr[0] << 16) | rr[1]
-                    if val_32 == 0xFFFFFFFF:
-                        continue
-                    v = val_32 * scale
-                    if name == "year_load_kwh" and v > 1_000:
-                        continue
-                    if name in ("total_grid_import_kwh", "total_grid_export_kwh") and v > 100_000:
-                        continue
-                    data[name] = round(v, 2)
-            except Exception:
-                pass
+        data = read_deye_blocks(modbus.read_holding_registers, hv=hv)
     finally:
         modbus.disconnect()
     return data if data else None

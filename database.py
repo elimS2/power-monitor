@@ -341,6 +341,24 @@ def init_db():
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_deye_log_inverter_ts ON deye_log(inverter_id, ts)"
         )
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS deye_fast (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                inverter_id  INTEGER NOT NULL,
+                ts           REAL NOT NULL,
+                grid_v_l1    REAL,
+                grid_v_l2    REAL,
+                grid_v_l3    REAL,
+                grid_power_w REAL,
+                load_l1_w    REAL,
+                load_l2_w    REAL,
+                load_l3_w    REAL,
+                load_power_w REAL
+            )
+        """)
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_deye_fast_inverter_ts ON deye_fast(inverter_id, ts)"
+        )
         # API key permissions (label = API_KEYS value, e.g. admin, vasyl)
         db.execute("""
             CREATE TABLE IF NOT EXISTS api_key_config (
@@ -1682,6 +1700,42 @@ def save_deye_log(
         )
         if int(inverter_id) == apartment_inverter_id():
             _record_voltage_sample(db, ts, grid_v_l1, grid_v_l2, grid_v_l3)
+
+
+def save_deye_fast(
+    inverter_id: int | None,
+    grid_v_l1: float | None,
+    grid_v_l2: float | None,
+    grid_v_l3: float | None,
+    grid_power_w: float | None,
+    load_l1_w: float | None,
+    load_l2_w: float | None,
+    load_l3_w: float | None,
+    load_power_w: float | None,
+) -> None:
+    """One narrow sample. Does not write deye_log and does not touch the voltage alert path."""
+    if inverter_id is None:
+        raise ValueError("inverter_id is required")
+    ts = time.time()
+    with _conn() as db:
+        known = db.execute(
+            "SELECT id FROM deye_inverter WHERE id=?",
+            (inverter_id,),
+        ).fetchone()
+        if known is None:
+            raise ValueError("unknown inverter_id")
+        db.execute(
+            """INSERT INTO deye_fast (
+                inverter_id, ts,
+                grid_v_l1, grid_v_l2, grid_v_l3, grid_power_w,
+                load_l1_w, load_l2_w, load_l3_w, load_power_w
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                int(inverter_id), ts,
+                grid_v_l1, grid_v_l2, grid_v_l3, grid_power_w,
+                load_l1_w, load_l2_w, load_l3_w, load_power_w,
+            ),
+        )
 
 
 def _scoped_inverter(inverter_id: int | None) -> int:
