@@ -1,11 +1,11 @@
 # House light from the basement inverter
 
-- Status: `PHASE 2 CODE LOCAL / DEPLOY NEXT`
+- Status: `PHASE 2 PUSHED / DEPLOY BLOCKED`
 - Owner: Volodymyr Demyanovich
 - Repo: `power-monitor/` (git repo `elimS2/power-monitor`, branch `main`)
 - This file replaces the plug-based calm-letter plan and the 2026-11-23T13:18:00Z draft that still described the plug branch as the live path. The one-second Deye read stays in `docs/plan_deye_fast_read.md`. Do not edit that file or its progress companion.
 - Related Jira: none. Related KB ids: none. `power-monitor` is not in `kb_repo_memory_catalog` (catalog generated `2026-11-23T13:44:59Z`).
-- Last updated: `2026-11-23T16:58:30Z`
+- Last updated: `2026-11-23T16:59:43Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, title `Public basement Deye on the dashboard`, `mutationKind=plan`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`, workspace `4c1fa1b840e12ac3c666c8ec38a21207`.
 
 ## 1. Goal and non-goals
@@ -302,6 +302,7 @@ None. Building light is the basement inverter. The apartment letter is the apart
 - `2026-11-23T14:45:00Z` — Critic round 3, same model, same agent, verdict `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Status `REVIEWED / READY FOR LOCAL WORK`. Local work starts only after an explicit yes. No code.
 - `2026-11-23T15:45:53Z` — Phase 1 implemented locally after an explicit yes. Spare plug branch, `PHASES_ONLY`, and `OUTAGE_CONFIRM_COUNT` are gone. `analyze` runs from `_grid_check_loop` every `GRID_CHECK_SEC` (10). Heartbeat route only stores the row. Site was not restarted. `_fast_loop` was not edited. 99 tests passed: `tests.test_voltage_settled`, `tests.test_itp_auto`, `tests.test_voltage_chart.BatteryBoardTests`, `tests.test_voltage_chart.OutdoorSampleTests`. Awaiting a yes before Phase 2.
 - `2026-11-23T16:58:30Z` — Operator yes for Phase 2 via Agree & Continue (prompt 2). Knowledge, ideas, code directories, code files, and code symbols were searched. `power-monitor` is still absent from Repo Memory. Idea `#64` is a different Nous plug on `192.168.88.176` and was not used. The dashboard section `hb_details`, the fragment keys `pm_hb_tbody` and `pm_mk`, and the catalog rows in `database.py` and `config.py` are removed. `static/app.js` still assigns those ids only when the element exists, so a missing node is a no-op. The `heartbeats` table and `GET /api/status` field stay. 100 tests passed, the same set plus `test_fragments_do_not_include_the_plug_table`. No `#autodeploy`. Deploy is the next step of this phase, not done in this note.
+- `2026-11-23T16:59:43Z` — Pushed `9041629` to `origin/main` (`0396c0b..9041629`). No `#autodeploy`. SSH `elims2@35.246.222.183` returned `Permission denied (publickey)`. `gcloud compute instances list` has no visible VM (permission denied on project `lexora-kb`). Server SHA before pull was not read. Service was not restarted. `.env` was not edited. Deploy remains open.
 
 ## 10. Progress log
 
@@ -319,7 +320,7 @@ None. Building light is the basement inverter. The apartment letter is the apart
 
 ## 11. Handoff
 
-Phase 2 code is in the working tree with Phase 1. Deploy is the remaining step of Phase 2: record the server SHA, `git pull --ff-only`, restart `power-monitor`. Do not edit the server `.env`. Do not add `#autodeploy`.
+Phase 2 code is on `origin/main` as `9041629`. Deploy is blocked: SSH to `35.246.222.183` rejects the key, and this gcloud account cannot list that VM. Do not edit the server `.env`. Do not add `#autodeploy`. When a working shell exists: record `git rev-parse HEAD`, then `git pull --ff-only` and restart `power-monitor`.
 
 Do not touch `docs/plan_deye_fast_read.md`, `docs/plan_deye_fast_read_PROGRESS.md`, `deye_fast`, `DEYE_FAST_INTERVAL_SEC`, `_fast_loop`, `read_fast_sample`, the battery board, or `VOLTAGE_EPISODE_MIN_INTERVAL_SEC`.
 
