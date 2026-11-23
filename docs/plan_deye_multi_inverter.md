@@ -3,7 +3,7 @@
 - Status: `PHASE 4 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-23T17:34:30Z
+- Last updated: 2026-11-23T17:41:22Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -39,7 +39,7 @@ Company KB does not index `power-monitor`. Catalog checked 2026-11-13: seven rep
 | D | `code_files` hybrid, `deye_log` / `save_deye_log` | FTS empty, semantic fallthrough to other repos. |
 | E | `code_symbols` hybrid | No rows (`fallback_applied=or_like`, empty). |
 | F | `jira` fts, "power-monitor Deye" | False hit `KB-294` (Cursor/Bitbucket). No ticket for this work. Do not open one from this plan. |
-| G | `dialogs` hybrid | Historical elevator-backup chats (ids 707, 535, 586) name a Deye 50 kW and an early 90 kWh pack. Capacity there is stale. Live pack size is `house/hv-battery.md` (160 kWh). Those chats have no basement IP. |
+| G | `dialogs` hybrid | Historical elevator-backup chats (ids 707, 535, 586) name a Deye 50 kW and an early 90 kWh pack. Capacity there is stale. The counted pack since 2026-11-14 is 153.6 kWh in `house/hv-battery.md`. Those chats have no basement IP. |
 
 `kb_rule('project_memory')` is the knowledge_base repo, not this one. No live Jira status to split from a snapshot.
 
@@ -68,8 +68,8 @@ Company KB does not index `power-monitor`. Catalog checked 2026-11-13: seven rep
 | `power_monitor.py` `_get_public_dashboard_url` (~244) | Public key is the row whose label is `public`, not a URL pasted into git. | Resolve the role by that label |
 | `config.py` `DEYE_BATTERY_KWH`, `DASHBOARD_SECTION_ORDER` (~188) | One capacity for every block. Order has no house section. | Capacity comes from the registry row. Env only seeds the apartment row. |
 | `docs/DEYE_WIREGUARD_VPN.md` | GCP `10.99.0.1` peers MikroTik `10.99.0.2` and routes `192.168.88.0/24` only | Do not retarget this peer at the basement |
-| `house/hv-battery.md` | Building head is a Deye 50 kW in the basement of building 6, pack about 160 kWh. Nameplate not rechecked 2026-11-12. | Identity and capacity default after the operator confirms the host. Not an IP. |
-| `house/shelter-wifi.md` | Still says the OpenWrt TL-WDR3500 is on the desk | Stale. Operator 2026-11-13: the router is in the basement. |
+| `house/hv-battery.md` | Building head is a Deye 50 kW in the basement of building 6. Counted pack since 2026-11-14 is 153.6 kWh (10 × 15.360). The 2026-11-07 sum of 160 is the earlier round number. | The registry row stores 153.6. Not an IP. |
+| `house/shelter-wifi.md` | Since 2026-11-13 the OpenWrt TL-WDR3500 is in the basement, LAN `192.168.67.1`. Phase 4 is done. | Host of the logger stays in Phase 0 of this plan. |
 | `house/basement-breakers.md` | Two Smtonoff breakers. Apartment LAN did not see them on 2026-11-07. | Same room as the new inverter. No IP in this file. |
 | canvas `shelter-wifi-plan` | Desk-era plan: shelter WG peer `10.99.0.6`, GCP route `192.168.67.0/24` | Not proof that this route exists, and not the LAN where the breakers were seen |
 
@@ -168,7 +168,7 @@ The public key is the DB/env key whose label is `public` (`_get_public_dashboard
 
 The house row stores the logger MAC. `host` is the last address a person confirmed. The GCP poller reads that host and keeps a sample only after a successful Solarman read. It does not see basement ARP and it does not SSH to the shelter router. If TCP 8899 is silent, it skips the sample and leaves `host` unchanged. A new address is a separate human step from a machine that can already SSH to `192.168.67.1`: read `ip neigh`, take `74:e9:d8:39:22:8a` only when the state is REACHABLE or DELAY, check TCP 8899, write `host`, then repeat the route gate for that IP. Until that gate passes, house `poll_enabled` stays 0. No tunnel script in Temp. Breaker commands stay on the Tuya cloud device id in the server env. Their MACs are recorded here so a moved address can still be recognized. Those ids are not copied into git.
 
-Apartment `Test-NetConnection` to `192.168.0.104:8899` on 2026-11-13T19:14:28Z returned `TcpTestSucceeded=False`. The successful read went through the shelter router. GCP still has no documented route to `192.168.0.0/24`.
+Apartment `Test-NetConnection` to `192.168.0.104:8899` on 2026-11-13T19:14:28Z returned `TcpTestSucceeded=False`. The successful read that evening went through the shelter router. The sentence that GCP had no route is superseded: at `2026-11-13T20:49:06Z` the shelter peer's AllowedIPs included `192.168.0.104/32`, and TCP 8899 from GCP was open. The whole `192.168.0.0/24` prefix is still not that route. Only this one host was added.
 
 ## 6. Phases
 
@@ -180,7 +180,7 @@ Human gate after every phase. No next phase without an explicit "yes, continue".
 - Touch: notes in this decision log only. Do not commit secrets. Do not write the serial into git.
 - Steps: on the basement OpenWrt, read the live addresses (`uci show network` or the current `ip addr`). The scan to diff is the LAN where the breakers and Akuvox were, `192.168.0.0/24` on 2026-11-08/09, WAN side of that router (`192.168.0.108` then, gateway `192.168.0.1`). If that prefix moved, scan the prefix that still contains the known breaker hosts, not `192.168.67.0/24`. Diff against `.100`–`.104`. The new address is the candidate. Record IP and port (expect 8899). Confirm it answers `read_deye`.
 - Verify: one successful read from the router or from a host that already routes there. Log load and SOC only.
-- Gate: operator confirms this host is the building 50 kW (or names a different machine). Record battery_kwh from `house/hv-battery.md` (160) only after that confirmation.
+- Gate: operator confirms this host is the building 50 kW (or names a different machine). Record battery_kwh from `house/hv-battery.md` only after that confirmation. The 160 written here on 2026-11-13 is superseded by the 2026-11-14 count of 153.6.
 - Rollback: none.
 - Commit: no serial and no router password. The candidate address may be written here.
 
@@ -336,6 +336,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T21:00:27Z — Phase 4. `house/shelter-wifi.md` now says the TL-WDR3500 has been in the basement since 2026-11-13, LAN `192.168.67.1`, and points at Phase 0 for the logger host. No serial and no dashboard key. The Life folder is not a git repo, so that card is a local file. No deploy.
 - 2026-11-23T17:11:00Z — Two stale locks brought in line with the code already on `HEAD` `0396c0b`. `config.py` → `NOTIFY_GRID_SOURCE` is `"house"`. `database.py` → `notify_grid_inverter_id` returns the basement row, and the apartment id only when that row is missing. `get_display_status` and `detection.py` follow that id. `save_deye_log` still writes `schedule_day.voltage_json` only for the apartment id. The public chart is `voltage_house_details` ("Напруга мережі будинку"). `voltage_details` ("Напруга мережі в квартирі") is rendered only when `deye_details` is allowed, so the public key does not get it. The 2026-11-13 sentences that froze the lamp on the apartment and left the public voltage strip on the apartment are superseded. No code change. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:10:46.489Z`.
 - 2026-11-23T17:22:00Z — The three leftover current-tense copies of that old lamp lock are updated: the section 3 map, the section 5 diagram, and the section 7 compatibility bullet. The Phase 2 lamp asserts are marked superseded. No code change. Source proof `verifiedAtUtc=2026-11-23T17:21:40.386Z`.
+- 2026-11-23T17:41:22Z — Acceptance leftovers, text only. The shelter-card map now says the router is in the basement. The route sentence now points at the one-host gate of `2026-11-13T20:49:06Z`. The handoff no longer waits on `REVIEWED / READY FOR LOCAL WORK`. Pack count: on 2026-11-14 the operator counted 10 modules × 15.360 kWh = 153.6, and `database.py` → `_ensure_house_inverter` rewrites a stored 160 to 153.6 once. The 2026-11-13 seed line that says battery 160 stays as the history of that evening. No code change. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:41:22.449Z`.
 
 ### Open questions
 
@@ -390,7 +391,7 @@ None. The building logger is the Phase 0 host. The lamp follows that basement ro
 - Do not set `poll_enabled=1` until Phase 0 has a host and Phase 3 has a confirmed route from GCP. Do not guess `192.168.67.0/24`.
 - Do not search the company KB for this house network, and do not write house IPs, serials, or dashboard keys into KB or into git.
 - Human gate between phases. English in code and commits. This file plus `plan_deye_multi_inverter_PROGRESS.md` are the source of truth.
-- Implementation waits for status `REVIEWED / READY FOR LOCAL WORK` and an explicit continue. This review is not that continue.
+- Next phase: none. Status is `PHASE 4 DONE`. The old handoff line that waited for `REVIEWED / READY FOR LOCAL WORK` applied before Phase 1 and is closed.
 
 ## 12. Review audit
 
