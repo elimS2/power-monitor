@@ -1,7 +1,7 @@
 # Automatic ITP control
 
 - Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE`. Part 3 phase L1 is `LIVE` at `cef1f6d`.
-- Last updated: 2026-11-23T10:34:00Z
+- Last updated: 2026-11-23T10:45:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -704,6 +704,10 @@ None that block Phases 1–5. The notice "boiler is off today" is a non-goal unt
 
 ## 12. Handoff for a new Cursor dialog
 
+Superseded 2026-11-23T10:45:00Z. Do not start Phase 1. Phases 1–5, J1–J3, and L1 are already on disk and on the server at `cef1f6d`. The only current handoff is §3.10: there is no next phase.
+
+The paragraphs below are the original handoff from before that work landed. They are history.
+
 Start at Phase 1. Do not start Phase 2 in the same turn as Phase 1. Stop at the human gate.
 
 Read this file and `plan_itp_auto_PROGRESS.md` completely before editing. Disk wins over this chat. Company KB does not contain this repo. If the KB MCP is down, do not block Phase 1: the harvest above is the record, and this repo must not be written into that KB. If a later phase seems to need a KB write, stop and ask.
@@ -716,11 +720,11 @@ Code, tests, and commit messages stay English. The card and admin sentences stay
 
 Update both this file and the progress file at every gate, with a DateTime.
 
-Known blockers: none. Part 1 is already live. The next new work is Part 2 below. Do not restart Part 1.
+Known blockers: none. Superseded 2026-11-23T10:45:00Z: Part 1, Part 2, and Part 3 are live. Do not restart them. See §3.10.
 
 ## Part 2 — Heat journal
 
-Status of this part: `REVIEWED / READY FOR LOCAL WORK`. Do not start J1 without an explicit yes.
+Status of this part: `LIVE` at `cef1f6d`. J1, J2, and J3 have landed. Do not start them again.
 
 ### 2.1 Goal and non-goals
 
@@ -977,6 +981,8 @@ Open questions: none. The selected day already has `‹` `›`.
 
 ### 2.10 Handoff
 
+Superseded 2026-11-23T10:45:00Z. Do not start J1. The journal is live at `cef1f6d`. The sentence below is the original handoff.
+
 Start at Phase J1 only after an explicit yes. Read this Part 2 and the progress file. Active journal skin is J-G. Do not implement J-A marks. Do not reopen Part 1. Do not edit `plan_breakers.md`. Do not set or clear `ITP_AUTO_COMMANDS` in git or on the server as part of these phases.
 
 If the company KB MCP is down, do not block J1. The harvest in 2.2 is the record. Do not write this repo into that KB.
@@ -1155,6 +1161,7 @@ After a deploy the operator asks for: open the dashboard, confirm the shared key
 | 2026-11-22T23:59:00Z | Operator, looking at the live chart: the info marks sit against the names and are taller than the bars. They must sit on the right, in one column beside the bars, and be 16px, the bar height. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
 | 2026-11-23T09:58:00Z | Operator: show the lane legend on hover as well as on click. Hover opens, leaving closes, a click pins. Proof `verifiedAtUtc=2026-11-23T09:58:42.117Z`. |
 | 2026-11-23T10:34:00Z | Review implementation, prompt 18, `GO`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 1. The live SHA in the header was still `f764d9b`. The running code is `cef1f6d`: 16px info marks and hover. Proof `verifiedAtUtc=2026-11-23T10:34:46.214Z`. |
+| 2026-11-23T10:45:00Z | Acceptance, prompt 19, `REJECT`, HIGH 2. §12 still said start Phase 1, and the Part 2 header still said do not start J1. Both are superseded. The only current handoff is §3.10. Proof `verifiedAtUtc=2026-11-23T10:45:54.006Z`. |
 
 Open questions: none.
 
