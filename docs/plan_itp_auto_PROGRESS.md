@@ -1,11 +1,11 @@
 # Progress — automatic ITP control
 
 - Plan: `power-monitor/docs/plan_itp_auto.md`
-- Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
-- Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is live: one legend per lane, hidden until that lane or its info mark is opened.
-- Last updated: 2026-11-23T09:58:00Z
-- Current phase: L1 is on the site. There is no L2.
-- Next allowed step: none. A keyed click of the lanes was not driven.
+- Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is `LIVE` at `cef1f6d`.
+- Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is live: one legend per lane, shown on hover or click. A click pins it.
+- Last updated: 2026-11-23T10:34:00Z
+- Current phase: L1 is on the site at `cef1f6d`. There is no L2.
+- Next allowed step: none.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
 
 Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-22T22:04:58.446Z`, `mutationKind=plan`. Earlier proof `2026-11-22T18:43:35.564Z` remains the Part 1 write.
@@ -79,6 +79,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | 2026-11-22T23:53:00Z | Deploy | Operator yes. Pull `c5bdc4b..f764d9b`, restart, active, HEAD `f764d9b`. Public script and stylesheet match. Keyed click not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No deploy tag, so this record commit must not be pulled by the poller. |
 | 2026-11-22T23:59:00Z | Info marks | Live chart: the `i` sat next to each name and was 32px. It moves to the right edge, 16px, level with the bar. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
 | 2026-11-23T09:58:00Z | Hover legend | Operator: the lane pop also opens on hover. Leaving closes it. A click pins it. Proof `verifiedAtUtc=2026-11-23T09:58:42.117Z`. |
+| 2026-11-23T10:34:00Z | Review closeout | Prompt 18 `GO`. Header SHA is `cef1f6d`. The old “click not driven” next step is removed. Historical gate rows stay. Proof `verifiedAtUtc=2026-11-23T10:34:46.214Z`. |
 
 ## Part 2 checklist
 
@@ -88,7 +89,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | J1 Table | done | 2026-11-22T22:34:00Z. Helpers only. The page does not read them. |
 | J2 Writers | done | 2026-11-22T22:40:00Z. Rows are written. The page does not show them. |
 | J3 Day list | live | 2026-11-22T23:04:00Z. Running commit `c5bdc4b`. |
-| L1 Per-lane legend | live | 2026-11-22T23:53:00Z. Running commit `f764d9b`. |
+| L1 Per-lane legend | live | 2026-11-23T10:34:00Z. Running commit `cef1f6d`. Info marks are 16px beside the bars. Hover opens the legend. A click pins it. |
 
 ## Decisions mirrored from the plan
 

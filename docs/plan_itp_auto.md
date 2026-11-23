@@ -1,7 +1,7 @@
 # Automatic ITP control
 
-- Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
-- Last updated: 2026-11-23T09:58:00Z
+- Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE`. Part 3 phase L1 is `LIVE` at `cef1f6d`.
+- Last updated: 2026-11-23T10:34:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -985,11 +985,11 @@ Code and commits stay English. The journal sentences stay the Ukrainian in 2.5.
 
 Update this file and `plan_itp_auto_PROGRESS.md` at every gate, with a DateTime.
 
-Status of Part 2 is live. Part 3 phase L1 is live at `f764d9b`.
+Status of Part 2 is live. Part 3 phase L1 is live at `cef1f6d`.
 
 ## Part 3 — One legend per lane
 
-Status of this part: phase L1 is `LIVE` at `f764d9b`. Parts 1 and 2 stay as they are.
+Status of this part: phase L1 is `LIVE` at `cef1f6d`. Parts 1 and 2 stay as they are.
 
 Proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the ITP on-off rule`, `verifiedAtUtc=2026-11-22T23:13:52.524Z`.
 
@@ -1154,16 +1154,17 @@ After a deploy the operator asks for: open the dashboard, confirm the shared key
 | 2026-11-22T23:53:00Z | Deploy yes. Manual pull `c5bdc4b..f764d9b`, service restarted, `systemctl is-active` is `active`, server HEAD `f764d9b`. Public `/app.js?v=f764d9b` has `brk-lane-hit`, the empty-day sentence, and the charge sentence. `brk-journal-hit` is gone. The only `class="brk-legend"` left is inside `paintAlertDay`. Public stylesheet has `--brk-label` and `brk-lane-pop`. The keyed lane click was not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No `#автооновити`. |
 | 2026-11-22T23:59:00Z | Operator, looking at the live chart: the info marks sit against the names and are taller than the bars. They must sit on the right, in one column beside the bars, and be 16px, the bar height. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
 | 2026-11-23T09:58:00Z | Operator: show the lane legend on hover as well as on click. Hover opens, leaving closes, a click pins. Proof `verifiedAtUtc=2026-11-23T09:58:42.117Z`. |
+| 2026-11-23T10:34:00Z | Review implementation, prompt 18, `GO`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 1. The live SHA in the header was still `f764d9b`. The running code is `cef1f6d`: 16px info marks and hover. Proof `verifiedAtUtc=2026-11-23T10:34:46.214Z`. |
 
 Open questions: none.
 
 ### 3.10 Handoff
 
-Phase L1 landed locally at 2026-11-22T23:51:00Z. The shared legend is gone from both painters. Each lane and the `i` beside its name open `#brk-lane-pop`. Heat still lists the day under its colors. `paintAlertDay` was not edited. `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule tests.test_alert_level` — 127 tests OK. `node --check static/app.js` passed. The keyed lane click was not driven on this deploy. The public script and stylesheet match `f764d9b`.
+Phase L1 landed locally at 2026-11-22T23:51:00Z. The shared legend is gone from both painters. Each lane and the `i` beside its name open `#brk-lane-pop`. Heat still lists the day under its colors. `paintAlertDay` was not edited. `python -m unittest tests.test_itp_auto tests.test_breakers tests.test_light_schedule tests.test_alert_level` — 127 tests OK. `node --check static/app.js` passed. The keyed lane click was not driven on this deploy. The public script and stylesheet match `f764d9b`. Later commits `d01ccee` and `cef1f6d` are the running code: the info marks are 16px beside the bars, and hover opens the legend.
 
 Code and commits stay English. The legend words stay the Ukrainian in 3.5.
 
 Update this file and `plan_itp_auto_PROGRESS.md` at the gate, with a DateTime.
 
-Status of Part 3 phase L1 is `LIVE` at `f764d9b`.
+Status of Part 3 phase L1 is `LIVE` at `cef1f6d`. Hover opens the legend. A click pins it. There is no L2.
 
