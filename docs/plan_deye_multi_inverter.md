@@ -3,7 +3,7 @@
 - Status: `PHASE 4 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-23T17:22:00Z
+- Last updated: 2026-11-23T17:34:30Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -297,6 +297,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - Smoke after Phase 0: one live read, SOC and load only.
 - Smoke after the Phase 3 route gate: one live read from GCP, then `poll_enabled=1`.
 - Done when: the public page shows "Deye інвертор будинку" and "Напруга мережі будинку" from basement samples, the apartment block and `schedule_day.voltage_json` stay on the apartment inverter, the lamp follows the basement while that row exists, and a house poll failure does not blank the apartment block or skip the breaker poll.
+- 2026-11-23T17:34:30Z: prompt #19 rejected acceptance because `python -m unittest tests.test_schedule_board tests.test_voltage_chart` failed two voltage-trend tests in one process. `test_board_read_does_not_scan_samples_or_events` replaced `deye_voltage_trend`, `events_in_range`, `recent_events`, and `deye_aggregates_refresh`, and its `finally` put back only `_conn`. Each module alone was already green (40 and 28). The same `finally` now puts those four callables back. The pair in one process is 68 OK. This note records the fix. It does not re-issue acceptance. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:33:33.106Z`.
 
 ## 9. Risks and decisions
 

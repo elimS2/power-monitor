@@ -489,10 +489,14 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
     def test_board_read_does_not_scan_samples_or_events(self):
         database.init_db()
         seen = []
-        real = database._conn
+        real_conn = database._conn
+        real_trend = database.deye_voltage_trend
+        real_events = database.events_in_range
+        real_recent = database.recent_events
+        real_agg = database.deye_aggregates_refresh
 
         def wrapped():
-            conn = real()
+            conn = real_conn()
 
             class Spy:
                 def execute(self, sql, params=()):
@@ -519,21 +523,25 @@ class OverlayWriterTests(ScheduleHistoryQueueTests):
         try:
             first = read_schedule_board("2026-11-09", 1_762_646_400.0)
             updated = None
-            with real() as db:
+            with real_conn() as db:
                 row = db.execute(
                     "SELECT updated_at FROM schedule_day WHERE queue=? AND target_date=?",
                     (DTEK_QUEUE, "2026-11-09"),
                 ).fetchone()
                 updated = None if row is None else row["updated_at"]
             second = read_schedule_board("2026-11-09", 1_762_646_500.0)
-            with real() as db:
+            with real_conn() as db:
                 row = db.execute(
                     "SELECT updated_at FROM schedule_day WHERE queue=? AND target_date=?",
                     (DTEK_QUEUE, "2026-11-09"),
                 ).fetchone()
                 updated_again = None if row is None else row["updated_at"]
         finally:
-            database._conn = real
+            database._conn = real_conn
+            database.deye_voltage_trend = real_trend
+            database.events_in_range = real_events
+            database.recent_events = real_recent
+            database.deye_aggregates_refresh = real_agg
         self.assertEqual(first["our_queue"], DTEK_QUEUE)
         self.assertIsNone(first["match"])
         self.assertFalse(first["groups"][DTEK_QUEUE]["has_snapshot"])
