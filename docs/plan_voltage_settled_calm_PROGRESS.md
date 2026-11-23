@@ -5,7 +5,7 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - Status: `PHASE 2 DEPLOYED`
 - Active skin: A (one basement-phase decision; `analyze` runs every 10 seconds from its own task; the plug branch and `PHASES_ONLY` are deleted; a stale basement sample is unknown; the calm mark is kept only while the anomaly is set and all three phases are normal; «усі фази зникли» is the third confirm while the anomaly is unset; an open anomaly with trend high sends no line and the lamp stays «Висока напруга»; the old router letter is the apartment inverter link)
 - Current phase: deployed. Server `1964065`, restarted `2026-11-23T17:06:27Z`. Rollback `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`.
-- Last updated: `2026-11-23T17:06:27Z`
+- Last updated: `2026-11-23T18:44:00Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`
 
 ## Done
@@ -24,6 +24,7 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - `2026-11-23T16:58:30Z` — Phase 2 page change. Operator yes via Agree & Continue. Repo Memory has no `power-monitor`. Plug section removed. 100 tests OK. Deploy not run.
 - `2026-11-23T16:59:43Z` — Pushed `9041629`. SSH publickey denied. gcloud cannot see the VM. Server not restarted.
 - `2026-11-23T17:06:27Z` — Deployed with the instance key and `IdentitiesOnly`. Before: `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. After: `1964065`. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` untouched.
+- `2026-11-23T18:44:00Z` — Operator asked to clear the three leftovers. Status field and dead page script removed. `PHASES_ONLY` line to be deleted from the server `.env` in the same step. Router ping storage stays.
 
 ## Phase status
 
@@ -37,9 +38,7 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - The fast-read plan, `_fast_loop`, and `DEYE_FAST_INTERVAL_SEC`
 - The battery board and the 98% rule
 - `VOLTAGE_EPISODE_MIN_INTERVAL_SEC`
-- Old `heartbeats` rows and `GET /api/heartbeat` storage
-- `GET /api/status` heartbeat field
-- Server `.env`
+- Old `heartbeats` rows, the table, and `GET /api/heartbeat` storage. The router still posts.
 
 ## Next
 

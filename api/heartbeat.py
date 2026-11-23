@@ -1,4 +1,8 @@
-"""Heartbeat API routes."""
+"""Heartbeat API routes.
+
+The apartment router still posts plug pings here. The rows are history.
+They do not decide whether the building has light.
+"""
 import logging
 
 from fastapi import APIRouter, Query

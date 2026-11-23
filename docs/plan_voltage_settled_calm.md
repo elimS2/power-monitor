@@ -5,7 +5,7 @@
 - Repo: `power-monitor/` (git repo `elimS2/power-monitor`, branch `main`)
 - This file replaces the plug-based calm-letter plan and the 2026-11-23T13:18:00Z draft that still described the plug branch as the live path. The one-second Deye read stays in `docs/plan_deye_fast_read.md`. Do not edit that file or its progress companion.
 - Related Jira: none. Related KB ids: none. `power-monitor` is not in `kb_repo_memory_catalog` (catalog generated `2026-11-23T13:44:59Z`).
-- Last updated: `2026-11-23T17:06:27Z`
+- Last updated: `2026-11-23T18:44:00Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, title `Public basement Deye on the dashboard`, `mutationKind=plan`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`, workspace `4c1fa1b840e12ac3c666c8ec38a21207`.
 
 ## 1. Goal and non-goals
@@ -283,7 +283,7 @@ Done when:
 - The apartment letter and the building light letter can both be true. The texts must not use the same sentence.
 - Calling `analyze` from both the 10-second task and the heartbeat route would double-count voltage confirm steps. Phase 1 leaves only the 10-second task.
 - `VOLTAGE_CONFIRM_COUNT` is 3 calls. At the old ~10-second ping that is about 30 seconds. A 30-second loop would make it about 90 seconds. `GRID_CHECK_SEC` stays 10 so that wait does not change. Do not hook the one-second loop to go faster.
-- `GET /api/status` still returns plug rows. That is a read API, not the decision. Leaving it avoids breaking an unknown reader. The page table is the confusing surface, and Phase 2 removes it.
+- `GET /api/status` returned plug rows until `2026-11-23T18:44:00Z`. The operator asked to remove that field so it would not look like an unfinished light sensor. `GET /api/heartbeat` still stores the router ping.
 
 ### Open questions
 
@@ -316,8 +316,10 @@ None. Building light is the basement inverter. The apartment letter is the apart
 - `2026-11-23T13:50:00Z` — Plan rewritten. Spare path and the switch are in Phase 1 to delete. First draft woke `analyze` from the 30-second loop. Superseded the same hour.
 - `2026-11-23T13:52:00Z` — Lead review before the critic. Two defects fixed in this file. All phases at zero is not automatically «Світло зникло»: trend `"high"` stays the «усі фази зникли» letter and does not set `power_down`. The clock is a 10-second task. The sentence “an open anomaly that goes dark sends no line” was too wide. Superseded by the critic round below.
 - `2026-11-23T14:20:00Z` — Critic round 1, model `grok-4.7-xhigh-fast`, agent `1e0a5846-8242-4f7c-8883-b81a5f4fd6b6`, verdict `CHANGES REQUIRED`, CRITICAL 0, HIGH 2, MEDIUM 3, LOW 2. All accepted. Section 4 now lists the eight live outcomes, including «Світло зникло» when an open anomaly meets trend `None`, and «Світло з'явилось» when power is down and the trend is still high or low. The calm clear covers lines 246–281, and the test sets `voltage_anomaly`. A 301-second row of 230 V is `unknown`. The high-before-blackout letter is the third confirm. The lamp and the tab title share one sentence. Phase 2 also drops `pm_mk` / `#pm-mk-wrap`. The 10-second task is cancelled in `lifespan`. Status stays `REVIEW IN PROGRESS` until the confirmation review. No code.
-- `2026-11-23T15:45:53Z` — Phase 1 local. Spare path and the switch are gone. Site not restarted. Fast-read loop not edited. Awaiting yes before Phase 2.
-- `2026-11-23T16:58:30Z` — Phase 2 page change is local. Plug table and router line are gone from the dashboard and from the section catalog. Heartbeat storage stays. 100 tests OK. Deploy not done yet.
+- `2026-11-23T15:45:53Z` — Phase 1 local. Spare path and the switch are gone. Site not restarted. Fast-read loop not edited.
+- `2026-11-23T16:58:30Z` — Phase 2 page change is local. Plug table is gone from the dashboard and from the section catalog.
+- `2026-11-23T17:06:27Z` — Deployed. Server moved `cef1f6d` to `1964065` and restarted. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` not edited in that step.
+- `2026-11-23T18:44:00Z` — Operator asked to remove the three leftovers that would look like unfinished work. `GET /api/status` no longer returns `heartbeats`. The dead `#pm-hb-tbody` and `#pm-mk-wrap` assignments are deleted. The unused `PHASES_ONLY` line is removed from the server `.env`. `GET /api/heartbeat` still stores the router ping so that script does not start receiving errors.
 
 ## 11. Handoff
 

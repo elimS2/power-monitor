@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from api.deps import check_admin, check_permission
 from config import API_KEYS, GIT_COMMIT
-from database import kv_get, recent_deye_log, recent_events, recent_heartbeats
+from database import kv_get, recent_deye_log, recent_events
 import dtek
 
 router = APIRouter(tags=["dashboard"])
@@ -31,7 +31,6 @@ async def ep_status(key: str = Query("")):
         "power_down": kv_get("power_down") == "1",
         "voltage_anomaly": kv_get("voltage_anomaly") == "1",
         "deye": deye_last,
-        "heartbeats": recent_heartbeats(20),
         "events": recent_events(30),
     }
 
