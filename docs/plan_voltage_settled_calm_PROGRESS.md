@@ -2,10 +2,10 @@
 
 Companion to `docs/plan_voltage_settled_calm.md`.
 
-- Status: `PHASE 2 PUSHED / DEPLOY BLOCKED`
+- Status: `PHASE 2 DEPLOYED`
 - Active skin: A (one basement-phase decision; `analyze` runs every 10 seconds from its own task; the plug branch and `PHASES_ONLY` are deleted; a stale basement sample is unknown; the calm mark is kept only while the anomaly is set and all three phases are normal; «усі фази зникли» is the third confirm while the anomaly is unset; an open anomaly with trend high sends no line and the lamp stays «Висока напруга»; the old router letter is the apartment inverter link)
-- Current phase: `9041629` is on origin. The server was not restarted.
-- Last updated: `2026-11-23T16:59:43Z`
+- Current phase: deployed. Server `1964065`, restarted `2026-11-23T17:06:27Z`. Rollback `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`.
+- Last updated: `2026-11-23T17:06:27Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`
 
 ## Done
@@ -23,13 +23,14 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - `2026-11-23T15:45:53Z` — Phase 1 implemented locally. No deploy. No server `.env` edit. `_fast_loop` not edited. Unit tests named in the plan passed (99).
 - `2026-11-23T16:58:30Z` — Phase 2 page change. Operator yes via Agree & Continue. Repo Memory has no `power-monitor`. Plug section removed. 100 tests OK. Deploy not run.
 - `2026-11-23T16:59:43Z` — Pushed `9041629`. SSH publickey denied. gcloud cannot see the VM. Server not restarted.
+- `2026-11-23T17:06:27Z` — Deployed with the instance key and `IdentitiesOnly`. Before: `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. After: `1964065`. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` untouched.
 
 ## Phase status
 
 | Phase | Status | Note |
 |---|---|---|
-| 1 Delete the spare path | done locally | Code and tests. Site not restarted. No server `.env` edit. |
-| 2 Page table and deploy | pushed, deploy blocked | `9041629` on origin. SSH publickey denied. No restart. |
+| 1 Delete the spare path | deployed | Inside `9041629`, live since `2026-11-23T17:06:27Z`. |
+| 2 Page table and deploy | deployed | Plug table gone on the live page. Rollback `cef1f6d`. |
 
 ## Do not touch
 
@@ -42,4 +43,4 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 
 ## Next
 
-Deploy is blocked until a shell on `35.246.222.183` accepts a key. Then record `HEAD`, `git pull --ff-only`, restart `power-monitor`, and confirm the plug table is gone. Do not edit `.env`.
+Both phases are on the server. No further step in this plan. A later change still uses the key in the local canvas `power-monitor-deploy.canvas.tsx`.
