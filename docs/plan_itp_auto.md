@@ -1,7 +1,7 @@
 # Automatic ITP control
 
 - Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
-- Last updated: 2026-11-22T23:59:00Z
+- Last updated: 2026-11-23T09:58:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -1064,7 +1064,7 @@ The label column stays aligned with the hour pad. One custom property, `calc(5.2
 
 Timer pins exist only on `Освітлення` and `Обігрів`. They are `<i class="brk-when-pin">`, not buttons. Each pin is a sibling of the lane button, outside `.brk-lane`, because that lane is `overflow: hidden`. Set `pointer-events: none` on the pins in `.brk-lane-slot`. The hit is 16px, the same as the bar, so the 26px pin uses `top: -5px` and stays centered on that bar. Hour lines and `.brk-now` already ignore the pointer.
 
-Opening. Store the open lane id on `#pm-breakers-board` as `_laneOpen`: `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, `alert`, or `""`. A boolean cannot choose the words once seven lanes share one pop, and `querySelector('.brk-lane-hit')` would mark the first bar. A click on `.brk-lane-hit` or `.brk-lane-info` toggles that `data-lane`. The same lane's `i` and bar are one control. A second click on either clears the id. Opening another lane replaces the id. Set `aria-expanded="true"` on both buttons whose `data-lane` is that id, and `false` on the others.
+Opening. Store the open lane id on `#pm-breakers-board` as `_laneOpen`: `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, `alert`, or `""`. A boolean cannot choose the words once seven lanes share one pop, and `querySelector('.brk-lane-hit')` would mark the first bar. Moving the pointer onto `.brk-lane-hit` or `.brk-lane-info` opens that lane. Leaving the lane and the pop closes it. A click pins it: the pop stays when the pointer leaves. A second click on the same lane, Esc, or a click outside clears the pin. `_lanePinned` on the board is that pin. Hover does not replace a pinned lane. Set `aria-expanded="true"` on both buttons whose `data-lane` is that id, and `false` on the others.
 
 One fill, not the journal-only `fillHeatJournal`. It `replaceChildren()` once, then writes that lane's color lines with text nodes and `.brk-key` swatches. For `heat` only, append the journal in the same pass, still with text nodes, oldest first. Do not call a journal-only fill for any other lane. Do not `replaceChildren()` again after the colors are in. `paintBreakers` assigns `breakerBoard.innerHTML` and then, if `_laneOpen` is set, calls this same fill. A 60-second refresh or `‹` / `›` must not wipe the color lines and must not show the heat journal under another lane. If the open lane is `heat`, those arrows keep the id and refill the journal for the new day. The color words do not change with the day.
 
@@ -1153,6 +1153,7 @@ After a deploy the operator asks for: open the dashboard, confirm the shared key
 | 2026-11-22T23:51:00Z | Phase L1 landed locally. Both painters drop the shared legend. One pop, lane id on the board, heat journal appended after that lane's colors. Label column and hour pad share `--brk-label`. 127 tests OK. Not deployed. |
 | 2026-11-22T23:53:00Z | Deploy yes. Manual pull `c5bdc4b..f764d9b`, service restarted, `systemctl is-active` is `active`, server HEAD `f764d9b`. Public `/app.js?v=f764d9b` has `brk-lane-hit`, the empty-day sentence, and the charge sentence. `brk-journal-hit` is gone. The only `class="brk-legend"` left is inside `paintAlertDay`. Public stylesheet has `--brk-label` and `brk-lane-pop`. The keyed lane click was not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No `#автооновити`. |
 | 2026-11-22T23:59:00Z | Operator, looking at the live chart: the info marks sit against the names and are taller than the bars. They must sit on the right, in one column beside the bars, and be 16px, the bar height. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
+| 2026-11-23T09:58:00Z | Operator: show the lane legend on hover as well as on click. Hover opens, leaving closes, a click pins. Proof `verifiedAtUtc=2026-11-23T09:58:42.117Z`. |
 
 Open questions: none.
 

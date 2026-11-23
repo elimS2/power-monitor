@@ -712,6 +712,8 @@ class BreakerPageTests(unittest.TestCase):
         self.assertNotIn("factOnSegments", chunk)
         self.assertIn("brk-lane-hit", chunk)
         self.assertIn("brk-lane-info", chunk)
+        self.assertIn("mouseover", chunk)
+        self.assertIn("_lanePinned", chunk)
         self.assertIn("textContent", chunk)
         self.assertIn("увімкнено, було світло", chunk)
         self.assertNotIn("brk-journal-hit", chunk)

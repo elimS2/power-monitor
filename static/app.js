@@ -1189,7 +1189,10 @@
   function closeBreakerLane() {
     var board = document.getElementById('pm-breakers-board');
     var pop = document.getElementById('brk-lane-pop');
-    if (board) board._laneOpen = '';
+    if (board) {
+      board._laneOpen = '';
+      board._lanePinned = false;
+    }
     if (pop) {
       pop.hidden = true;
       pop.replaceChildren();
@@ -1773,12 +1776,44 @@
         e.stopPropagation();
         if (!breakerPayload) return;
         var lane = hit.getAttribute('data-lane') || '';
-        breakerBoard._laneOpen = breakerBoard._laneOpen === lane ? '' : lane;
+        if (breakerBoard._lanePinned && breakerBoard._laneOpen === lane) {
+          breakerBoard._lanePinned = false;
+          breakerBoard._laneOpen = '';
+        } else {
+          breakerBoard._lanePinned = true;
+          breakerBoard._laneOpen = lane;
+        }
         fillLanePop(breakerPayload);
         return;
       }
       if (e.target.closest && e.target.closest('#brk-lane-pop, #brk-prev, #brk-next')) return;
       if (!breakerBoard._laneOpen) return;
+      breakerBoard._lanePinned = false;
+      breakerBoard._laneOpen = '';
+      fillLanePop(breakerPayload);
+    }, true);
+    function hoverLane(node) {
+      if (!node || !node.closest) return '';
+      if (node.closest('#brk-lane-pop')) return 'pop';
+      var hit = node.closest('.brk-lane-hit, .brk-lane-info');
+      if (hit && breakerBoard.contains(hit)) return hit.getAttribute('data-lane') || '';
+      return '';
+    }
+    document.addEventListener('mouseover', function(e) {
+      if (breakerBoard._lanePinned) return;
+      var lane = hoverLane(e.target);
+      if (!lane || lane === 'pop') return;
+      if (breakerBoard._laneOpen === lane) return;
+      if (!breakerPayload) return;
+      breakerBoard._laneOpen = lane;
+      fillLanePop(breakerPayload);
+    }, true);
+    document.addEventListener('mouseout', function(e) {
+      if (breakerBoard._lanePinned) return;
+      if (!breakerBoard._laneOpen) return;
+      var next = hoverLane(e.relatedTarget);
+      if (next === 'pop' || next === breakerBoard._laneOpen) return;
+      if (next) return;
       breakerBoard._laneOpen = '';
       fillLanePop(breakerPayload);
     }, true);

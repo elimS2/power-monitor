@@ -3,7 +3,7 @@
 - Plan: `power-monitor/docs/plan_itp_auto.md`
 - Status: Part 1 and Part 2 stay `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
 - Active skin: control Skin A (edge). Journal skin J-G is live. Legend skin L-A is live: one legend per lane, hidden until that lane or its info mark is opened.
-- Last updated: 2026-11-22T23:59:00Z
+- Last updated: 2026-11-23T09:58:00Z
 - Current phase: L1 is on the site. There is no L2.
 - Next allowed step: none. A keyed click of the lanes was not driven.
 - Commands: on since 2026-11-22T21:33:00Z. The value is in the server `.env`, not in git.
@@ -78,6 +78,7 @@ Source proof: composer `85ba10c3-3110-479d-ac13-0dddaf1132bc`, title `Write the 
 | 2026-11-22T23:51:00Z | Phase L1 | Shared legend removed. Each lane and its info mark open one pop. Heat keeps the day list under its colors. 127 tests OK, including the alert-day module. `node --check static/app.js` passed. Not deployed. The site stays at `c5bdc4b`. |
 | 2026-11-22T23:53:00Z | Deploy | Operator yes. Pull `c5bdc4b..f764d9b`, restart, active, HEAD `f764d9b`. Public script and stylesheet match. Keyed click not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No deploy tag, so this record commit must not be pulled by the poller. |
 | 2026-11-22T23:59:00Z | Info marks | Live chart: the `i` sat next to each name and was 32px. It moves to the right edge, 16px, level with the bar. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
+| 2026-11-23T09:58:00Z | Hover legend | Operator: the lane pop also opens on hover. Leaving closes it. A click pins it. Proof `verifiedAtUtc=2026-11-23T09:58:42.117Z`. |
 
 ## Part 2 checklist
 
