@@ -4,8 +4,8 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 
 - Status: `PHASE 2 DEPLOYED`
 - Active skin: A (one basement-phase decision; `analyze` runs every 10 seconds from its own task; the plug branch and `PHASES_ONLY` are deleted; a stale basement sample is unknown; the calm mark is kept only while the anomaly is set and all three phases are normal; «усі фази зникли» is the third confirm while the anomaly is unset; an open anomaly with trend high sends no line and the lamp stays «Висока напруга»; the old router letter is the apartment inverter link)
-- Current phase: deployed. Server `1964065`, restarted `2026-11-23T17:06:27Z`. Rollback `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`.
-- Last updated: `2026-11-23T18:44:00Z`
+- Current phase: deployed. Git HEAD `c590a14`. Process restarted `2026-11-23T18:46:01Z` on `35ec406`. The `1964065` restart at `2026-11-23T17:06:27Z` is the first deploy. Rollback of the light decision `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`.
+- Last updated: `2026-11-23T19:10:42Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`
 
 ## Done
@@ -25,6 +25,7 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - `2026-11-23T16:59:43Z` — Pushed `9041629`. SSH publickey denied. gcloud cannot see the VM. Server not restarted.
 - `2026-11-23T17:06:27Z` — Deployed with the instance key and `IdentitiesOnly`. Before: `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. After: `1964065`. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` untouched.
 - `2026-11-23T18:45:00Z` — Leftovers cleared on the server at `35ec406`. `PHASES_ONLY` removed from `.env` (1 line). Live status has no `heartbeats`. Dead page script is gone. Router ping storage stays.
+- `2026-11-23T19:10:42Z` — Acceptance leftovers. Plan section 3 is history. Handoff names `c590a14` and the `18:46:01Z` restart. Two `detection.py` log lines no longer say `phases_only`. Those lines are local until the next deploy. No restart in this note.
 
 ## Phase status
 
@@ -42,4 +43,4 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 
 ## Next
 
-Both phases are on the server. No further step in this plan. A later change still uses the key in the local canvas `power-monitor-deploy.canvas.tsx`.
+Both phases are on the server. No further step in this plan. The renamed log lines reach the journal on the next deploy. A later change still uses the key in the local canvas `power-monitor-deploy.canvas.tsx`.

@@ -322,7 +322,7 @@ async def analyze():
                             msg += f"\n\U0001f4a0 Напруга: {v_str}"
                         save_event(s["event"])
                         kv_set("voltage_anomaly", "1")
-                        log.warning("VOLTAGE ANOMALY detected (phases_only)")
+                        log.warning("VOLTAGE ANOMALY detected")
                         await update_chat_photo(s["voltage"] is None, voltage=s["voltage"], message_to_send=msg, is_voltage_notification=True)
                 else:
                     slot = dtek.current_slot_status()
@@ -351,7 +351,7 @@ async def analyze():
                         since_ts = prev[0]["ts"] if prev else 0
                         kv_set("power_down", "1")
                         save_event("down")
-                        log.warning("POWER OUTAGE detected (phases_only)")
+                        log.warning("POWER OUTAGE detected")
                         dev = dtek.schedule_deviation(is_down_event=True)
                         if dev is not None:
                             sched_label = " (\U0001f4c5 За графіком)" if abs(dev) <= 30 else " (\u26a1Позапланове)"

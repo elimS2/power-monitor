@@ -5,7 +5,7 @@
 - Repo: `power-monitor/` (git repo `elimS2/power-monitor`, branch `main`)
 - This file replaces the plug-based calm-letter plan and the 2026-11-23T13:18:00Z draft that still described the plug branch as the live path. The one-second Deye read stays in `docs/plan_deye_fast_read.md`. Do not edit that file or its progress companion.
 - Related Jira: none. Related KB ids: none. `power-monitor` is not in `kb_repo_memory_catalog` (catalog generated `2026-11-23T13:44:59Z`).
-- Last updated: `2026-11-23T18:44:00Z`
+- Last updated: `2026-11-23T19:10:42Z`
 - Source proof: composer `195973fe-c59a-43b4-85a5-83484b6497f6`, title `Public basement Deye on the dashboard`, `mutationKind=plan`, `resolutionStatus=exact`, `verifiedAtUtc=2026-11-23T13:49:47.015Z`, workspace `4c1fa1b840e12ac3c666c8ec38a21207`.
 
 ## 1. Goal and non-goals
@@ -25,12 +25,14 @@ The letter that today says the router is silent is sent when the apartment inver
 - Do not change `VOLTAGE_EPISODE_MIN_INTERVAL_SEC` (already `1800`).
 - Do not change the battery board, the 98% full rule, or `bat_hour_charge_w`.
 - Do not change `DEYE_FAST_INTERVAL_SEC`, `deye_fast`, `_fast_loop`, `read_fast_sample`, or the fast-read plan. Do not call `analyze` from the one-second loop.
-- Do not edit the server `.env`. The leftover `PHASES_ONLY=1` line becomes ignored. Do not set `DEYE_FAST_INTERVAL_SEC` to `0`.
+- Do not edit the server `.env` during Phase 1 or Phase 2. The leftover `PHASES_ONLY=1` line was to be ignored, not deleted, in those phases. Do not set `DEYE_FAST_INTERVAL_SEC` to `0`.
 - Do not delete old `heartbeats` rows, the `heartbeats` table, `POST`/`GET /api/heartbeat`, or `GET /api/heartbeats`.
-- Do not remove the `heartbeats` field from `GET /api/status`.
+- Do not remove the `heartbeats` field from `GET /api/status` during Phase 2.
 - Do not add a table or a flag.
 - Do not turn ITP commands on.
 - Do not deploy in the planning step.
+
+The `.env` line and the status field were later removed because the operator asked on `2026-11-23T18:44:00Z`. Section 10 records that. Do not put either back.
 
 ## 2. Context harvest
 
@@ -53,6 +55,8 @@ Repo Memory does not index this repository. Disk is the source of truth. Catalog
 | `database.py` section catalog `hb_details` and `config.py` role section list | Same section name | Phase 2 removes the catalog row |
 | `api/dashboard.py` `ep_status` | Returns the last 20 heartbeat rows beside phases | Do not touch |
 | `docs/plan_deye_fast_read.md` | Another dialog | Do not touch |
+
+This table is the `2026-11-23T13:44Z` reading. `GET /api/status` later dropped `heartbeats`. Section 10 records that removal.
 
 ### Harvest log (2026-11-23T13:44Z)
 
@@ -93,23 +97,25 @@ In the 24 hours before that read, heartbeat rows with both plugs at 0: 0. Rows w
 
 The spare path is still dangerous. `PHASES_ONLY` defaults to `0` in `config.py`. A process started without that `.env` line would require both plugs dead before «Світло зникло». Plug 175 is always powered, so that spare path would never send the letter.
 
-## 3. Current system reality
+## 3. System reality before Phase 1
 
-Two decisions exist in one function. Only one of them runs on the server.
+History, read at `2026-11-23T13:44Z`. Phase 1 deleted this shape. The sentences below are that reading, not the running code. The live tree is section 11.
 
-The live branch (`PHASES_ONLY` true) uses `has_all_three_phases_voltage` and `has_grid_voltage_now` on `notify_grid_inverter_id()`. `NOTIFY_GRID_SOURCE` is `house`, so that id is the basement inverter. All three phases present and a normal trend can send «Світло з'явилось» when `power_down` is set. All phases absent and no voltage trend sends «Світло зникло» and sets `power_down`. That is what the channel did today.
+Two decisions existed in one function. Only one of them ran on the server.
 
-Before that branch, `analyze` loads `OUTAGE_CONFIRM_COUNT` heartbeats (18) and returns if fewer than 3 rows exist. The only caller is `GET /api/heartbeat`, which the apartment router hits about every 10 seconds. The plugs are not the light sensor anymore, but the ping is still the clock. If those HTTP calls stop, `analyze` is not called, and the 3-row check would also return.
+The live branch (`PHASES_ONLY` true) used `has_all_three_phases_voltage` and `has_grid_voltage_now` on `notify_grid_inverter_id()`. `NOTIFY_GRID_SOURCE` was `house`, so that id was the basement inverter. All three phases present and a normal trend could send «Світло з'явилось» when `power_down` was set. All phases absent and no voltage trend sent «Світло зникло» and set `power_down`. That is what the channel did that day.
 
-The spare branch starts at `all_dead`. It sends «Світло зникло» only when every one of 18 rows has `plug204 == 0` and `plug175 == 0`. If the newest row has either plug above 0, it takes `latest_alive` and does not start that letter. This branch does not run while the server env stays `1`.
+Before that branch, `analyze` loaded `OUTAGE_CONFIRM_COUNT` heartbeats (18) and returned if fewer than 3 rows existed. The only caller was `GET /api/heartbeat`, which the apartment router hit about every 10 seconds. The plugs were not the light sensor anymore, but the ping was still the clock. If those HTTP calls stopped, `analyze` was not called, and the 3-row check would also return.
 
-`get_display_status` reads the same basement phases and then `power_down`. The lamp and the channel match today because the live branch writes `power_down` from phases.
+The spare branch started at `all_dead`. It sent «Світло зникло» only when every one of 18 rows had `plug204 == 0` and `plug175 == 0`. If the newest row had either plug above 0, it took `latest_alive` and did not start that letter. This branch did not run while the server env stayed `1`.
 
-`watchdog` sends «Роутер не відповідає» when the newest heartbeat is older than `STALE_THRESHOLD_SEC` (300). Every heartbeat request clears `stale_alerted`, so a leftover ping hides that alert.
+`get_display_status` read the same basement phases and then `power_down`. The lamp and the channel matched that day because the live branch wrote `power_down` from phases.
 
-`load_itp_context` treats light as unknown when that heartbeat is stale. Unknown light makes the ITP decision hold. ITP commands stay off.
+`watchdog` sent «Роутер не відповідає» when the newest heartbeat was older than `STALE_THRESHOLD_SEC` (300). Every heartbeat request cleared `stale_alerted`, so a leftover ping hid that alert.
 
-`voltage_normal_since` is cleared on some live-phase branches and not when the grid reading disappears. The review at `2026-11-23T12:44Z` named that hole. This plan keeps the fix.
+`load_itp_context` treated light as unknown when that heartbeat was stale. Unknown light made the ITP decision hold. ITP commands stayed off.
+
+`voltage_normal_since` was cleared on some live-phase branches and not when the grid reading disappeared. The review at `2026-11-23T12:44Z` named that hole. This plan kept the fix.
 
 ## 4. Options and skins
 
@@ -303,7 +309,8 @@ None. Building light is the basement inverter. The apartment letter is the apart
 - `2026-11-23T15:45:53Z` — Phase 1 implemented locally after an explicit yes. Spare plug branch, `PHASES_ONLY`, and `OUTAGE_CONFIRM_COUNT` are gone. `analyze` runs from `_grid_check_loop` every `GRID_CHECK_SEC` (10). Heartbeat route only stores the row. Site was not restarted. `_fast_loop` was not edited. 99 tests passed: `tests.test_voltage_settled`, `tests.test_itp_auto`, `tests.test_voltage_chart.BatteryBoardTests`, `tests.test_voltage_chart.OutdoorSampleTests`. Awaiting a yes before Phase 2.
 - `2026-11-23T16:58:30Z` — Operator yes for Phase 2 via Agree & Continue (prompt 2). Knowledge, ideas, code directories, code files, and code symbols were searched. `power-monitor` is still absent from Repo Memory. Idea `#64` is a different Nous plug on `192.168.88.176` and was not used. The dashboard section `hb_details`, the fragment keys `pm_hb_tbody` and `pm_mk`, and the catalog rows in `database.py` and `config.py` are removed. `static/app.js` still assigns those ids only when the element exists, so a missing node is a no-op. The `heartbeats` table and `GET /api/status` field stay. 100 tests passed, the same set plus `test_fragments_do_not_include_the_plug_table`. No `#autodeploy`. Deploy is the next step of this phase, not done in this note.
 - `2026-11-23T16:59:43Z` — Pushed `9041629` to `origin/main` (`0396c0b..9041629`). No `#autodeploy`. SSH `elims2@35.246.222.183` returned `Permission denied (publickey)`. `gcloud compute instances list` has no visible VM (permission denied on project `lexora-kb`). Server SHA before pull was not read. Service was not restarted. `.env` was not edited. Deploy remains open.
-- `2026-11-23T17:06:27Z` — Deployed with the key file `elims2_instance-2_private.priv`, flags `BatchMode`, `IdentitiesOnly`, and an explicit `-i`. Bare SSH and `gcloud` on project `lexora-kb` are the wrong door. Server was `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. `git pull --ff-only` moved `cef1f6d..1964065`. Restart at `2026-11-23T17:06:27Z`. Service `active`. Local page has no `Plug 204`, no `hb_details`, no `pm-hb-tbody`. Lamp text «Світло ВІДСУТНЄ», matching the 15:36 Kyiv letter. No new light letter at restart. `.env` not edited. Rollback is checkout of `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302` and restart. Three older doc-only commits (`e6afca4`, `c5ee725`, `0396c0b`) rode along because the server was behind; they do not change the light decision.
+- `2026-11-23T17:06:27Z` — Deployed with the key file `elims2_instance-2_private.priv`, flags `BatchMode`, `IdentitiesOnly`, and an explicit `-i`. Bare SSH and `gcloud` on project `lexora-kb` are the wrong door. Server was `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. `git pull --ff-only` moved `cef1f6d..1964065`. Restart at `2026-11-23T17:06:27Z`. Service `active`. Local page has no `Plug 204`, no `hb_details`, no `pm-hb-tbody`. Lamp text «Світло ВІДСУТНЄ», matching the 15:36 Kyiv letter. No new light letter at restart. `.env` not edited. Rollback is checkout of `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302` and restart. Three older doc-only commits (`e6afca4`, `c5ee725`, `0396c0b`) rode along because the server was behind; they do not change the light decision. This SHA was the first deploy, not the process that is running after the `18:46Z` restart.
+- `2026-11-23T19:10:42Z` — Acceptance leftovers. Section 3 is marked as the pre-Phase-1 reading. Section 11 names git `c590a14` and the `2026-11-23T18:46:01Z` restart on `35ec406`. Section 12's old status sentence is marked as critic-round history. Two log lines in `detection.py` no longer say `phases_only`. Those lines are local until the next deploy. No server restart in this note.
 
 ## 10. Progress log
 
@@ -320,18 +327,21 @@ None. Building light is the basement inverter. The apartment letter is the apart
 - `2026-11-23T16:58:30Z` — Phase 2 page change is local. Plug table is gone from the dashboard and from the section catalog.
 - `2026-11-23T17:06:27Z` — Deployed. Server moved `cef1f6d` to `1964065` and restarted. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` not edited in that step.
 - `2026-11-23T18:44:00Z` — Operator asked to remove the three leftovers that would look like unfinished work. `GET /api/status` no longer returns `heartbeats`. The dead `#pm-hb-tbody` and `#pm-mk-wrap` assignments are deleted. The unused `PHASES_ONLY` line was removed from the server `.env` after `35ec406` restarted; a read of that file no longer contains the name. `GET /api/heartbeat` still stores the router ping so that script does not start receiving errors. Live status keys: `deye`, `events`, `power_down`, `voltage_anomaly`.
+- `2026-11-23T19:10:42Z` — Acceptance leftovers in the text. Section 3 is history. The handoff names `c590a14` and the `18:46:01Z` restart. The two `phases_only` log words are renamed locally and are not on the running process yet.
 
 ## 11. Handoff
 
-Phase 2 is on the server as `1964065`, restarted `2026-11-23T17:06:27Z`. Rollback SHA is `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. Use the key file named in the local canvas `power-monitor-deploy.canvas.tsx`, with `IdentitiesOnly` and `-i`. Do not edit the server `.env`. Do not add `#autodeploy`.
+Both phases are on the server. Git HEAD is `c590a143e9b9119536a5eaec22f0f8e2248fd6d9` (`c590a14`). That commit is docs after the code restart. The running process was restarted `2026-11-23T18:46:01Z` on `35ec406`. The first deploy, `1964065` at `2026-11-23T17:06:27Z`, is history. Rollback of the light decision is checkout of `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302` and a restart. Use the key file named in the local canvas `power-monitor-deploy.canvas.tsx`, with `IdentitiesOnly` and `-i`.
+
+The `PHASES_ONLY` line is already gone from the server `.env`. Do not put that name back. Do not add `#autodeploy`.
 
 Do not touch `docs/plan_deye_fast_read.md`, `docs/plan_deye_fast_read_PROGRESS.md`, `deye_fast`, `DEYE_FAST_INTERVAL_SEC`, `_fast_loop`, `read_fast_sample`, the battery board, or `VOLTAGE_EPISODE_MIN_INTERVAL_SEC`.
 
-Do not edit the server `.env`.
+No further step in this plan. The renamed log lines in `detection.py` reach the server only on the next deploy.
 
 If the Knowledge Base MCP is down, stop.
 
-Read this file and `docs/plan_voltage_settled_calm_PROGRESS.md` before editing. After the phase, update both with a DateTime and stop for a human yes.
+Read this file and `docs/plan_voltage_settled_calm_PROGRESS.md` before editing. A later change updates both with a DateTime and stops for a human yes.
 
 ## 12. Self-review
 
@@ -344,7 +354,7 @@ Checked before handoff. Findings fixed in this file:
 - A second call from `_fast_loop` is forbidden in non-goals and in the phase steps.
 - `OUTAGE_CONFIRM_COUNT` is deleted with the flag so the number 18 does not look like a remaining plug rule.
 - The page has two plug-table builders (`dashboard` and `_build_update_fragments`) plus `app.js`. Phase 2 names all three.
-- `GET /api/status` still returns heartbeats. That is an explicit non-goal, not a forgotten consumer.
+- `GET /api/status` still returned heartbeats at this self-review. That was an explicit non-goal then. The operator later asked to remove the field; section 10 at `2026-11-23T18:44:00Z` records the removal.
 - One live phase is not `up`. Carried forward from `2026-11-23T13:18:00Z`.
 
-No CRITICAL or HIGH left after critic round 3. Status is `REVIEWED / READY FOR LOCAL WORK`. That is not a yes to start Phase 1.
+No CRITICAL or HIGH left after critic round 3. The next sentence described this file at `2026-11-23T14:45:00Z`: status was `REVIEWED / READY FOR LOCAL WORK`, and that was not a yes to start Phase 1. The header status now is `PHASE 2 DEPLOYED`.
