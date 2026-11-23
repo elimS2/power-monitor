@@ -5,7 +5,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - Status: `PHASE 4 DONE`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Next phase: none. The four phases in this plan are done. House poll stays on the apartment-safe path.
-- Last updated: 2026-11-23T16:00:00Z
+- Last updated: 2026-11-23T17:22:00Z
 
 ## Phase board
 
@@ -49,3 +49,5 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T20:56:34Z — House poll on. First sample 3776 W, SOC 98%. Apartment sample stayed separate. Public page shows the house block only.
 - 2026-11-13T21:00:27Z — Phase 4. Shelter card no longer says the router is on the desk. No deploy.
 - 2026-11-23T16:00:00Z — Phase board only. Phases 1 and 2 are marked deployed. They left the machine with the Phase 3 deploy. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T15:59:57.964Z`.
+- 2026-11-23T17:11:00Z — Plan text only. The lamp lock now matches `NOTIFY_GRID_SOURCE=house`, with the apartment as the fallback when the basement row is missing. The public voltage chart is `voltage_house_details`. `schedule_day.voltage_json` stays apartment-only. No code. Source proof `verifiedAtUtc=2026-11-23T17:10:46.489Z`.
+- 2026-11-23T17:22:00Z — The three leftover copies of the old lamp lock are updated in the map, the diagram, and the compatibility list. No code. Source proof `verifiedAtUtc=2026-11-23T17:21:40.386Z`.

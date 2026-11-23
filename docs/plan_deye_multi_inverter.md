@@ -3,7 +3,7 @@
 - Status: `PHASE 4 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-13T21:00:27Z
+- Last updated: 2026-11-23T17:22:00Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -13,12 +13,12 @@
 
 ### Goal
 
-One registry of Deye inverters and one sample log. The apartment block and a new block "Deye інвертор будинку" each read their own rows. The key labeled `admin` keeps the apartment inverter. The key labeled `public` gains only the building block. Every outage and voltage-alarm path stays on the apartment inverter. The building inverter gets its own voltage subsection inside its own block.
+One registry of Deye inverters and one sample log. The apartment block and a new block "Deye інвертор будинку" each read their own rows. The key labeled `admin` keeps the apartment inverter. The key labeled `public` gains the building block and the house voltage chart, and does not gain the apartment block. The lamp and the voltage alerts follow `NOTIFY_GRID_SOURCE`, which is `house`. If the basement row is missing, `notify_grid_inverter_id` falls back to the apartment. `schedule_day.voltage_json` stays on the apartment inverter.
 
 ### Non-goals
 
 - Do not show apartment SOC, load, or battery on the public key.
-- Do not let a building sample drive `get_display_status`, `detection.py`, the Telegram voltage avatar, or `schedule_day.voltage_json`.
+- Do not let a building sample write `schedule_day.voltage_json`. The 2026-11-13 rule that also froze `get_display_status`, `detection.py`, and the Telegram voltage avatar on the apartment inverter is superseded: those follow the basement while the house row exists. See the decision at `2026-11-23T17:11:00Z`.
 - Do not poll the building inverter until Phase 0 has a live host and Phase 3 has confirmed a route from the GCP poller. Do not invent that route in Phase 0.
 - Do not renumber the shelter router or the camera. A one-host route, if it is missing, is a separate human gate inside Phase 3, not a silent firewall edit.
 - Do not write API keys, router passwords, or the Solarman serial into this file, the PROGRESS file, or any committed doc. The serial stays in the server `.env`.
@@ -49,18 +49,18 @@ Company KB does not index `power-monitor`. Catalog checked 2026-11-13: seven rep
 |---|---|---|
 | `database.py` `deye_log`, `save_deye_log` (~1258), `recent_deye_log` (~1305) | Single undifferentiated sample stream. Insert has no device column. | Add `inverter_id`. Every writer sets it. |
 | `database.py` `_record_voltage_sample` (~1014), called at the end of `save_deye_log` | Copies every sample into `schedule_day.voltage_json` | Call only for the apartment id |
-| `database.py` `deye_voltage_buckets` (~1321), `deye_voltage_trend` (~1771), `has_grid_voltage_now` (~1737), `has_all_three_phases_voltage` (~1749), `last_nonzero_grid_voltage` (~1725), `_last_nonzero_for_phase` (~1761) | Latest row and phase history decide the lamp and the voltage chart | Apartment id only |
+| `database.py` `deye_voltage_buckets`, `deye_voltage_trend`, `has_grid_voltage_now`, `has_all_three_phases_voltage`, `last_nonzero_grid_voltage`, `_last_nonzero_for_phase` | Phase helpers. The lamp and the two voltage charts call them with an id. | Lamp callers pass `notify_grid_inverter_id`. The apartment chart passes the apartment id. The house chart passes the house id. |
 | `database.py` `deye_aggregates_refresh` (~1433), `_deye_agg` (~1414) | One in-memory cache for month, day, and battery episodes. The HTTP handler only copies it. | Key the cache by `inverter_id`. Refresh stays off the request. |
 | `database.py` `_conn` (~50) | `PRAGMA journal_mode=WAL` only. `foreign_keys` is not turned on. | Do not promise a SQLite FK failure. Reject a bad id in Python. |
 | `database.py` roles seed and the "Без Deye" rewrite (~343–358) | Empty DB seeds "Без Deye" as every section except `deye_details`. A one-shot rewrite replaces that list when `voltage_details` is missing. | Do not extend that rewrite. It would hand the new section to every key that still hits it. |
 | `power_monitor.py` `_poll_deye` (~389) | One env host `DEYE_POLL_IP` | Loop enabled registry rows, one failure isolated |
-| `power_monitor.py` `get_display_status` (~604) | Docstring: Deye phases only, no plugs. Uses `has_grid_voltage_now` and `has_all_three_phases_voltage`. | Apartment id only. A newer house row must not flip "Світло є" or a voltage alarm. |
-| `detection.py` | Same four helpers plus `deye_voltage_trend`. This is the Telegram voltage path. | Apartment id only |
+| `power_monitor.py` `get_display_status` | Lamp text. Calls the phase helpers with `notify_grid_inverter_id`. | The basement row is the lamp while it exists. A missing basement row falls back to the apartment. |
+| `detection.py` | Telegram light and voltage path. Uses the same notify id as the lamp. | Same id as `get_display_status`. |
 | `power_monitor.py` `dashboard` (~1750) | Two Deye assemblies, ~1810 and ~1988. The response uses the later one. The earlier one still reads the log and is then overwritten. | One builder, called with an id. Do not leave the earlier read unfiltered. |
 | `power_monitor.py` `_build_update_fragments` (~763) | Third copy, `recent_deye_log(30)` ~860, for the live fragment. The fragment key is `pm_deye`. | Same builder. A second key `pm_deye_house` for the house block. |
 | `api/dashboard.py` `ep_dashboard_fragments` (~84) | Checks `dashboard` permission only. Returns the fragment dict with no `allowed_sections` filter. | Omit `pm_deye` unless `deye_details` is allowed. Omit `pm_deye_house` unless `deye_house_details` is allowed. |
 | `static/app.js` (~951) | Writes `d.pm_deye` into `#pm-deye` for every key that loads the page. | Also write `d.pm_deye_house` into `#pm-deye-house`. |
-| `power_monitor.py` `_build_voltage_panel` (~668), `_voltage_chart_html` (~719) | Chart reads buckets, not only the last 30 rows | Buckets stay apartment-only. House voltage is not this chart. |
+| `power_monitor.py` `_build_voltage_panel`, `_voltage_chart_html` | Two charts. The apartment one is `voltage_details`. The house one is `voltage_house_details`. | Each chart is called with its own inverter id. |
 | `api/deye.py` `POST /api/deye-heartbeat` | Legacy writer. Calls `save_deye_log` with no device. | Must pass the apartment id in the same release as the column. |
 | `api/dashboard.py` `/api/status` (~15) and `last_nonzero_grid_voltage` (~119) | Any dashboard key can read the latest phases | Apartment id only |
 | `api/debug.py` | Raw `deye_log` scans for battery episodes | Filter by the requested id. Default the apartment id. |
@@ -105,7 +105,7 @@ Apartment Deye only. The process on GCP polls it.
 - Insert: `save_deye_log` writes one row, then `_record_voltage_sample` merges L1/L2/L3 into `schedule_day.voltage_json` for `DTEK_QUEUE`.
 - Second writer: `POST /api/deye-heartbeat` (`api/deye.py`). The old local script used this. It must not start inserting NULL `inverter_id` after the column exists.
 - Reads: `recent_deye_log` is `ORDER BY id DESC LIMIT ?` with no device filter. Aggregates, buckets, and the phase helpers filter on `ts` or "latest row" only.
-- Lamp: `get_display_status` uses the latest row's phases. `detection.py` uses the same helpers for voltage alerts and the channel avatar. Plug heartbeats still own `power_down`. A house row that is newer than the apartment row would still change the lamp and the voltage alarm, because those functions do not look at plugs.
+- Lamp: `get_display_status` and `detection.py` follow `notify_grid_inverter_id`. That is the basement row while it exists. The 2026-11-13 sentence that said a newer house row must not move the lamp is superseded.
 - UI: section id `deye_details`, title "Deye інвертор". Section `voltage_details` ("Напруга мережі") is a different block, fed from apartment samples, and the built-in role "Без Deye" includes it. Inner ids that must stay unique per block: `deye_details` / `deye_open`, `pm-deye`, `deye_battery_details` / `deye_battery_open`, `deye_grid_details` / `deye_grid_open`, `deye_cumulative_details` / `deye_cumulative_open`, `deye_daily_details` / `deye_daily_open`, `deye_table_details` / `deye_table_open`.
 - Live refresh: `GET /api/dashboard-fragments` returns `pm_deye` to any key with the `dashboard` permission. `static/app.js` paints it into `#pm-deye`. Hiding the HTML section does not stop the JSON. The response body is the leak.
 - Capacity: `DEYE_BATTERY_KWH` is one float. The apartment card says the dashboard uses 60. The building pack is about 160. One env value cannot serve both blocks.
@@ -115,7 +115,7 @@ Apartment Deye only. The process on GCP polls it.
 Invariants:
 
 - Existing `deye_log` rows stay the apartment inverter after backfill.
-- `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, and `voltage_details` stay on the apartment id.
+- `schedule_day.voltage_json` stays on the apartment id. `get_display_status` and `detection.py` follow `notify_grid_inverter_id` (basement, then apartment if that row is missing). The public chart is `voltage_house_details`. `voltage_details` is the apartment chart and is not on the public key.
 - The public key never receives `deye_details`.
 - One inverter's poll error does not skip the other, and does not skip the breaker step that runs after `run_deye_then_breakers`.
 - Apartment month/day/battery aggregates do not change when a house row is inserted.
@@ -149,10 +149,10 @@ deye_inverter (id, serial UNIQUE, mac, title, host, port, battery_kwh, poll_enab
                 +-- section deye_house_details   title "Deye інвертор будинку", house id, public key
                 |
                 +-- schedule_day.voltage_json    apartment id only
-                +-- get_display_status           apartment id only
-                +-- detection.py                 apartment id only
-                +-- voltage_details              apartment id only
-                +-- voltage subsection inside deye_house_details   house id only
+                +-- get_display_status           notify_grid_inverter_id
+                +-- detection.py                 same notify id
+                +-- voltage_details              apartment id, only with deye_details
+                +-- voltage_house_details        house id, public key
                 |
                 +-- aggregate cache keyed by inverter_id
                     refreshed off the HTTP request, same split as today
@@ -249,7 +249,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - Touch: `recent_deye_log`, `deye_voltage_buckets`, `deye_first_voltage_ts`, `deye_voltage_trend`, `has_grid_voltage_now`, `has_all_three_phases_voltage`, `last_nonzero_grid_voltage`, `_last_nonzero_for_phase`, the helpers `deye_aggregates_refresh` calls, plus `deye_monthly_load_kwh` and `deye_yearly_load_kwh` (no callers today; give them the same argument or delete them in this phase), `deye_aggregates_snapshot`, `_record_voltage_sample`'s call site, `get_display_status`, `detection.py`, `/api/status`, `api/debug.py`, `_build_voltage_panel` / `_voltage_chart_html`, the three Deye assemblies (`_build_update_fragments` ~860, `dashboard` ~1810, `dashboard` ~1988), `ep_dashboard_fragments`, and `static/app.js`.
 - Steps: add an `inverter_id` argument. The outage helpers default to the apartment id so a forgotten call site stays on the apartment inverter, not on "latest row of any inverter". A NULL `inverter_id` does not match the apartment id. `_record_voltage_sample` only for the apartment id. Replace the single `_deye_agg` dict with a cache keyed by `inverter_id`. `deye_aggregates_refresh` still runs off the request, from `bg_loop`, and still bails if a run is already going. The apartment entry keeps today's meaning. Fold the three HTML assemblies into one builder that takes the id; delete the overwritten assembly at ~1810 rather than leaving a second unfiltered read. `ep_dashboard_fragments` calls `allowed_sections` and omits `pm_deye` unless `deye_details` is allowed.
 - Verify: existing tests. A fixture with two ids: `recent_deye_log` for the apartment id does not return the house row. Inserting a house row does not change `schedule_day.voltage_json`, does not change `has_grid_voltage_now` when the apartment row is older and dark, and does not change the apartment `monthly_kwh` snapshot.
-- Negative: house sample does not appear in the apartment "last 30" and does not change `schedule_day.voltage_json`. Two lamp asserts, because plugs own `power_down` while `PHASES_ONLY` defaults to 0, and `get_display_status` returns a voltage string on `phases_mixed` before it returns "Світло ВІДСУТНЄ". First: plugs all dead, `power_down` still 0, apartment sample dark, house sample with voltage; `detection.analyze` does not set `voltage_anomaly` and still sets `power_down`. Second: apartment sample dark and `power_down` already 1, house sample with only one live phase; `get_display_status()["status_text"]` stays "Світло ВІДСУТНЄ". Keep the `has_grid_voltage_now` assert. The fragment JSON for a key whose sections exclude `deye_details` does not contain apartment SOC.
+- Negative: house sample does not appear in the apartment "last 30" and does not change `schedule_day.voltage_json`. The fragment JSON for a key whose sections exclude `deye_details` does not contain apartment SOC. The two lamp asserts written here on 2026-11-13 are superseded: a fresh basement sample is the lamp.
 - Rollback: poller and heartbeat write only the apartment id. House poll stays disabled, so the filters are idle.
 - Commit: yes, if asked. Deploy: yes, together with Phase 1. Still one host.
 
@@ -266,7 +266,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
   6. Route gate, before `poll_enabled=1`: from the GCP host, check whether the current house address is reachable through the existing WireGuard (documented path is only `192.168.88.0/24`). The apartment PC already failed a direct TCP check to `192.168.0.104:8899` on 2026-11-13T19:14:28Z. If GCP cannot reach it either, stop and ask. A one-host route via the shelter peer is allowed only after an explicit yes. Do not renumber the router. Do not change the camera. Do not guess `192.168.67.40`.
   7. After that yes, set `poll_enabled=1` for this confirmed address only. The tick runs from registry rows, not from a non-empty `DEYE_POLL_IP`. Pass an explicit socket timeout into the Solarman client. Run the house read as its own task so `run_deye_then_breakers` does not await it before the breaker step. The poller uses the stored `host` and accepts a sample only after a successful Solarman read. It does not check the MAC and it does not SSH to `192.168.67.1`. If TCP 8899 is silent, skip the sample and leave `host` unchanged. Reachability of `10.99.0.6` from GCP was not measured on 2026-11-13. The failed ping that evening was from the apartment. The route gate in step 6 is the measurement, and it runs on the server. Changing `host` later is the human step in section 5, then step 6 again, and `poll_enabled` stays 0 until that gate passes. Do not drop a tunnel script in Temp. A house failure does not skip the apartment poll and does not skip breakers.
 - Verify: public key HTML contains "Deye інвертор будинку" and does not contain the apartment SOC. `GET /api/dashboard-fragments` for that key does not contain apartment SOC, and does contain the house fragment only after the section is allowed. With poll disabled, the house block says there is no sample. Admin HTML still contains "Deye інвертор" with the apartment numbers, and both blocks can be collapsed independently (distinct ids). After poll is enabled, the house block's live fragment updates, and the apartment lamp does not follow the basement.
-- Negative: the fragment JSON, not only the HTML, lacks apartment `load_power_w` and SOC. A house sample does not write `schedule_day.voltage_json`. The two lamp asserts from Phase 2 still hold.
+- Negative: the fragment JSON, not only the HTML, lacks apartment `load_power_w` and SOC. A house sample does not write `schedule_day.voltage_json`. The 2026-11-13 lamp asserts do not still hold.
 - Rollback: remove `deye_house_details` from the same role or key list that step 2 wrote, and set `poll_enabled=0`. Leave the column. Do not clear `role_id`.
 - Commit and deploy: yes, if asked. This is the user-visible phase. Deploy the empty block before the route gate if the operator wants the section visible first. Do not deploy `poll_enabled=1` in that same restart unless the route gate has passed.
 
@@ -285,7 +285,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - `inverter_id` NULL is allowed only for rows that have not been backfilled yet. After Phase 1, `save_deye_log` refuses a NULL or unknown id. The column stays nullable in SQLite.
 - No dual-write to a second log table.
 - House volts never enter `schedule_day.voltage_json`.
-- House volts never become the latest row for `get_display_status` or `detection.py`.
+- House volts are what `get_display_status` and `detection.py` read while the basement row exists. The 2026-11-13 sentence that forbade this is superseded by the decision at `2026-11-23T17:11:00Z`.
 - `DEYE_POLL_IP` and `DEYE_BATTERY_KWH` seed the apartment registry row. After that row exists, the row is the poll target and the capacity. The env is not a second hidden target.
 - Heartbeat and the GCP poller ship in the same release as the column. An old heartbeat process after the new column, still on old code, would insert NULL. Deploy is a restart of this service, so old code and the new column do not run together. Do not apply the ALTER by hand on the live DB before the new code is the one that starts.
 - First poll after restart runs the new code. There is no separate self-update worker.
@@ -296,7 +296,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - UI: admin key shows the apartment block. Public key shows the house block and does not show apartment SOC. Two blocks on the admin page have distinct element ids.
 - Smoke after Phase 0: one live read, SOC and load only.
 - Smoke after the Phase 3 route gate: one live read from GCP, then `poll_enabled=1`.
-- Done when: the public page shows "Deye інвертор будинку" from basement samples, the apartment block is unchanged, the outage lamp and `schedule_day.voltage_json` stay on the apartment inverter, and a house poll failure does not blank the apartment block or skip the breaker poll.
+- Done when: the public page shows "Deye інвертор будинку" and "Напруга мережі будинку" from basement samples, the apartment block and `schedule_day.voltage_json` stay on the apartment inverter, the lamp follows the basement while that row exists, and a house poll failure does not blank the apartment block or skip the breaker poll.
 
 ## 9. Risks and decisions
 
@@ -308,7 +308,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - One aggregate cache and one `DEYE_BATTERY_KWH` would mix the two machines. Both are split in Phase 2 and Phase 3.
 - SQLite will not reject a bad `inverter_id` by itself. The Python guard is the contract.
 - `read_deye` passes no timeout into `PySolarmanV5`. A house read awaited inside `run_deye_then_breakers` would hold the breaker step. Phase 3 puts the house read on its own task and passes an explicit socket timeout. The current call is not already bounded.
-- Public `voltage_details` today shows the apartment trace to whoever has that section. Leaving it there is the default. It is not the house voltage.
+- `voltage_details` still shows the apartment trace, and only to a key that has `deye_details`. The public key sees `voltage_house_details` instead. That split supersedes the 2026-11-13 default that left the public strip on the apartment.
 
 ### Decision log
 
@@ -333,11 +333,12 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-13T20:49:06Z — Operator said yes to one host and no poll. GCP shelter peer AllowedIPs includes `192.168.0.104/32` via `wg0`. Shelter accepts `10.99.0.1/32`. Rule `gcp_logger` allows TCP 8899 to that address. From GCP the port was open. House poll was still off.
 - 2026-11-13T20:56:34Z — House poll on. Code `2d7d17e`. First sample 3776 W, SOC 98%, grid 233.3/232.4/230.1 V. Apartment stayed 3255 W and SOC 93%. Public page has no `deye_details`.
 - 2026-11-13T21:00:27Z — Phase 4. `house/shelter-wifi.md` now says the TL-WDR3500 has been in the basement since 2026-11-13, LAN `192.168.67.1`, and points at Phase 0 for the logger host. No serial and no dashboard key. The Life folder is not a git repo, so that card is a local file. No deploy.
+- 2026-11-23T17:11:00Z — Two stale locks brought in line with the code already on `HEAD` `0396c0b`. `config.py` → `NOTIFY_GRID_SOURCE` is `"house"`. `database.py` → `notify_grid_inverter_id` returns the basement row, and the apartment id only when that row is missing. `get_display_status` and `detection.py` follow that id. `save_deye_log` still writes `schedule_day.voltage_json` only for the apartment id. The public chart is `voltage_house_details` ("Напруга мережі будинку"). `voltage_details` ("Напруга мережі в квартирі") is rendered only when `deye_details` is allowed, so the public key does not get it. The 2026-11-13 sentences that froze the lamp on the apartment and left the public voltage strip on the apartment are superseded. No code change. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:10:46.489Z`.
+- 2026-11-23T17:22:00Z — The three leftover current-tense copies of that old lamp lock are updated: the section 3 map, the section 5 diagram, and the section 7 compatibility bullet. The Phase 2 lamp asserts are marked superseded. No code change. Source proof `verifiedAtUtc=2026-11-23T17:21:40.386Z`.
 
 ### Open questions
 
-- Which physical Deye is "the building one"? `192.168.0.104` answered the sticker serial at 2026-11-13T19:15:55Z with SOC 98% and load 9525 W. That is the phase 0 host. Battery figure 160 kWh is written on the house registry row in Phase 3 step 4, after the pack size is confirmed. Phase 1 inserts only the apartment row.
-- Public "Напруга мережі" (`voltage_details`): leave it on the apartment trace. House voltage lives only inside the new block. Change this only if the operator says the public voltage widget should follow the basement.
+None. The building logger is the Phase 0 host. The lamp follows that basement row. The public voltage chart is the house chart.
 
 ### Self-review round 1 (2026-11-13T16:50:00Z) — historical
 
@@ -381,7 +382,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 
 - Phase 4 is done. The shelter card says the router is in the basement. The logger host stays in this plan's Phase 0. Do not copy the logger serial into git.
 - Active skin: A.
-- Apartment-only, even after the column exists: `schedule_day.voltage_json`, `get_display_status`, `detection.py`, `/api/status`, `voltage_details`, `deye_voltage_trend`.
+- `schedule_day.voltage_json` stays apartment-only. `get_display_status` and `detection.py` follow `notify_grid_inverter_id`: the basement while that row exists, otherwise the apartment. The public key gets `voltage_house_details` and does not get `voltage_details`.
 - Do not add `deye_details` to the key labeled `public`.
 - If `api_key_config_get("public")` has no explicit section list, or that list contains `deye_details`, stop before adding `deye_house_details` to `ALL_SECTIONS`. If `role_id` is set, edit that role, not the raw `sections` column. If another label shares the role, stop.
 - `GET /api/dashboard-fragments` must not return apartment SOC to a key that cannot see `deye_details`.
