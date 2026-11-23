@@ -1,7 +1,7 @@
 # Automatic ITP control
 
 - Status: Part 1 stays `LIVE`. Part 2, the heat journal, stays `LIVE`. Part 3 phase L1 is `LIVE` at `f764d9b`.
-- Last updated: 2026-11-22T23:53:00Z
+- Last updated: 2026-11-22T23:59:00Z
 - Owner: Volodymyr
 - Repo: `power-monitor` (public GitHub `elimS2/power-monitor`, live `https://power.elims.pp.ua`)
 - Related Jira: none. This repo is not in the company knowledge base. Do not write this plan, device ids, access secrets, or house notes there.
@@ -1054,15 +1054,15 @@ The seven lanes are not built in one loop. On the server, `Графік 5.1`, `�
 
 Every lane from those builders:
 
-- The bar is `<button type="button" class="brk-lane-hit" data-lane="...">`. The visible bar stays 16px. The button is at least 32px tall, in normal flow, with no negative offset. `aria-controls` is `brk-lane-pop`.
-- The name and the info mark share one wrapper, and that wrapper is the first grid cell: `<button type="button" class="brk-lane-info" data-lane="...">i</button>`. The glyph is small. The hit box is 32 by 32. It is not `.brk-help`. Do not add a third grid child. A third child drops the bar onto the next row.
+- The bar is `<button type="button" class="brk-lane-hit" data-lane="...">`. The visible bar stays 16px. The button is 16px tall, the same as the bar, in normal flow, with no negative offset. `aria-controls` is `brk-lane-pop`.
+- The name and the info mark share one wrapper, and that wrapper is the first grid cell: `<button type="button" class="brk-lane-info" data-lane="...">i</button>`. The glyph is small. The box is 16 by 16, the same height as the bar, and it sits on the right edge of the label cell so the seven marks form one column beside the bars. The name stays on the left. It is not `.brk-help`. Do not add a third grid child. A third child drops the bar onto the next row.
 - `data-lane` is `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, or `alert`.
 
-The label column stays aligned with the hour pad. Today `.brk-track` and `.brk-chart:not(.alert-day) > .brk-hours` are both `5.2rem` plus `1fr`, and the pad is `.brk-hours-pad`. A 32px box beside `Графік 5.1` is wider than `5.2rem`, and the default grid minimum would grow only the lane labels. Widen the label column and the hour pad by the same amount: one custom property, `calc(5.2rem + 32px + 0.25rem)`, on `.brk-track`, on `.brk-chart:not(.alert-day) > .brk-hours`, and on the pad. The name and the button sit in that first cell, flex, no wrap, button `flex: 0 0 32px`. Do not change `.alert-day .brk-hours`. Under 640px the track is already one column and the pad is hidden; the name and the `i` stay together above the bar.
+The label column stays aligned with the hour pad. One custom property, `calc(5.2rem + 16px + 0.25rem)`, is on `.brk-track`, on `.brk-chart:not(.alert-day) > .brk-hours`, and on `.brk-hours-pad`. The name and the button sit in that first cell. The name keeps the left side. The 16px info mark is pushed to the right edge, next to the bar. Do not change `.alert-day .brk-hours`. Under 640px the track is already one column and the pad is hidden; the name stays left and the `i` stays on the right of that row.
 
 `brk-journal-hit` goes away. The heat bar uses `brk-lane-hit` with `data-lane="heat"`. The capture listener that today matches `.brk-journal-hit` matches `.brk-lane-hit` and `.brk-lane-info` instead.
 
-Timer pins exist only on `Освітлення` and `Обігрів`. They are `<i class="brk-when-pin">`, not buttons. Each pin is a sibling of the lane button, outside `.brk-lane`, because that lane is `overflow: hidden`. Set `pointer-events: none` on `.brk-when-pin` for both lanes, not only on `.brk-heat-slot > .brk-when-pin`. Use the heat pin top, `top: 3px`, for both, so the 26px pin stays on the 16px bar inside the 32px hit. The light pin today is `top: -4px` and would sit in the gap above the taller hit. Hour lines and `.brk-now` already ignore the pointer.
+Timer pins exist only on `Освітлення` and `Обігрів`. They are `<i class="brk-when-pin">`, not buttons. Each pin is a sibling of the lane button, outside `.brk-lane`, because that lane is `overflow: hidden`. Set `pointer-events: none` on the pins in `.brk-lane-slot`. The hit is 16px, the same as the bar, so the 26px pin uses `top: -5px` and stays centered on that bar. Hour lines and `.brk-now` already ignore the pointer.
 
 Opening. Store the open lane id on `#pm-breakers-board` as `_laneOpen`: `plan`, `fact`, `charge`, `light`, `heat`, `boiler`, `alert`, or `""`. A boolean cannot choose the words once seven lanes share one pop, and `querySelector('.brk-lane-hit')` would mark the first bar. A click on `.brk-lane-hit` or `.brk-lane-info` toggles that `data-lane`. The same lane's `i` and bar are one control. A second click on either clears the id. Opening another lane replaces the id. Set `aria-expanded="true"` on both buttons whose `data-lane` is that id, and `false` on the others.
 
@@ -1152,6 +1152,7 @@ After a deploy the operator asks for: open the dashboard, confirm the shared key
 | 2026-11-22T23:46:00Z | Operator yes for Phase L1. Prompt 2. Proof `verifiedAtUtc=2026-11-22T23:46:15.449Z`. Deploy was not in that yes. |
 | 2026-11-22T23:51:00Z | Phase L1 landed locally. Both painters drop the shared legend. One pop, lane id on the board, heat journal appended after that lane's colors. Label column and hour pad share `--brk-label`. 127 tests OK. Not deployed. |
 | 2026-11-22T23:53:00Z | Deploy yes. Manual pull `c5bdc4b..f764d9b`, service restarted, `systemctl is-active` is `active`, server HEAD `f764d9b`. Public `/app.js?v=f764d9b` has `brk-lane-hit`, the empty-day sentence, and the charge sentence. `brk-journal-hit` is gone. The only `class="brk-legend"` left is inside `paintAlertDay`. Public stylesheet has `--brk-label` and `brk-lane-pop`. The keyed lane click was not driven. Proof `verifiedAtUtc=2026-11-22T23:53:20.351Z`. No `#автооновити`. |
+| 2026-11-22T23:59:00Z | Operator, looking at the live chart: the info marks sit against the names and are taller than the bars. They must sit on the right, in one column beside the bars, and be 16px, the bar height. Proof `verifiedAtUtc=2026-11-22T23:59:38.677Z`. |
 
 Open questions: none.
 
