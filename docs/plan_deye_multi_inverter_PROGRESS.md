@@ -5,15 +5,15 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - Status: `PHASE 4 DONE`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Next phase: none. The four phases in this plan are done. House poll stays on the apartment-safe path.
-- Last updated: 2026-11-13T21:00:27Z
+- Last updated: 2026-11-23T16:00:00Z
 
 ## Phase board
 
 | Phase | State | Note |
 |---|---|---|
 | 0 Find basement host | read ok | MAC `74:e9:d8:39:22:8a`, last address `192.168.0.104`. SOC 98%, load 9525 W. Serial not stored. |
-| 1 Schema, backfill, apartment writers | local, not deployed | 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. |
-| 2 Scope apartment reads | local, not deployed | 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. |
+| 1 Schema, backfill, apartment writers | deployed | Local work 2026-11-13T19:40:56Z. Apartment row seeded. Old samples backfilled. Poller and heartbeat write that id. 39 tests OK. Went out with the Phase 3 deploy. |
+| 2 Scope apartment reads | deployed | Local work 2026-11-13T19:45:27Z. Lamp, voltage JSON, aggregates, and the fragment are scoped. 41 tests OK. Went out with the Phase 3 deploy. |
 | 3 Public block, then route, then poll | poll on | 2026-11-13T20:56:34Z. First house sample 3776 W, SOC 98%. Apartment stayed 3255 W, SOC 93%. Public page 0.10s, no apartment block. |
 | 4 Doc location fix | done | 2026-11-13T21:00:27Z. Shelter card says the router is in the basement. Logger host stays in Phase 0. No deploy. |
 
@@ -48,3 +48,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-13T20:49:06Z — Operator said yes to the one host and no poll. TCP 8899 from GCP is open through the shelter. House poll stays 0.
 - 2026-11-13T20:56:34Z — House poll on. First sample 3776 W, SOC 98%. Apartment sample stayed separate. Public page shows the house block only.
 - 2026-11-13T21:00:27Z — Phase 4. Shelter card no longer says the router is on the desk. No deploy.
+- 2026-11-23T16:00:00Z — Phase board only. Phases 1 and 2 are marked deployed. They left the machine with the Phase 3 deploy. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T15:59:57.964Z`.
