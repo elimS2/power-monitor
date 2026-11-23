@@ -24,7 +24,7 @@ Companion to `docs/plan_voltage_settled_calm.md`.
 - `2026-11-23T16:58:30Z` — Phase 2 page change. Operator yes via Agree & Continue. Repo Memory has no `power-monitor`. Plug section removed. 100 tests OK. Deploy not run.
 - `2026-11-23T16:59:43Z` — Pushed `9041629`. SSH publickey denied. gcloud cannot see the VM. Server not restarted.
 - `2026-11-23T17:06:27Z` — Deployed with the instance key and `IdentitiesOnly`. Before: `cef1f6d2fcbfe7ecd783b812e848d5b9ef8ad302`. After: `1964065`. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` untouched.
-- `2026-11-23T18:44:00Z` — Operator asked to clear the three leftovers. Status field and dead page script removed. `PHASES_ONLY` line to be deleted from the server `.env` in the same step. Router ping storage stays.
+- `2026-11-23T18:45:00Z` — Leftovers cleared on the server at `35ec406`. `PHASES_ONLY` removed from `.env` (1 line). Live status has no `heartbeats`. Dead page script is gone. Router ping storage stays.
 
 ## Phase status
 

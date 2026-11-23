@@ -319,7 +319,7 @@ None. Building light is the basement inverter. The apartment letter is the apart
 - `2026-11-23T15:45:53Z` — Phase 1 local. Spare path and the switch are gone. Site not restarted. Fast-read loop not edited.
 - `2026-11-23T16:58:30Z` — Phase 2 page change is local. Plug table is gone from the dashboard and from the section catalog.
 - `2026-11-23T17:06:27Z` — Deployed. Server moved `cef1f6d` to `1964065` and restarted. Service active. Plug table gone. Lamp «Світло ВІДСУТНЄ». No new light letter. `.env` not edited in that step.
-- `2026-11-23T18:44:00Z` — Operator asked to remove the three leftovers that would look like unfinished work. `GET /api/status` no longer returns `heartbeats`. The dead `#pm-hb-tbody` and `#pm-mk-wrap` assignments are deleted. The unused `PHASES_ONLY` line is removed from the server `.env`. `GET /api/heartbeat` still stores the router ping so that script does not start receiving errors.
+- `2026-11-23T18:44:00Z` — Operator asked to remove the three leftovers that would look like unfinished work. `GET /api/status` no longer returns `heartbeats`. The dead `#pm-hb-tbody` and `#pm-mk-wrap` assignments are deleted. The unused `PHASES_ONLY` line was removed from the server `.env` after `35ec406` restarted; a read of that file no longer contains the name. `GET /api/heartbeat` still stores the router ping so that script does not start receiving errors. Live status keys: `deye`, `events`, `power_down`, `voltage_anomaly`.
 
 ## 11. Handoff
 
