@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timedelta
 from html import escape
 
-from config import STALE_THRESHOLD_SEC, UA_TZ, itp_commands_on, itp_slot
+from config import UA_TZ, itp_commands_on, itp_slot
 
 STABLE = timedelta(minutes=15)
 _DEFAULT_START = 18 * 60
@@ -300,12 +300,10 @@ def tick_itp_decision(now_kyiv: datetime, now_unix: float, commands_on: bool | N
 
 
 def load_itp_context(now_kyiv: datetime, now_unix: float) -> tuple[dict, dict]:
-    """Light from up/down plus heartbeat age, and today's boiler row."""
+    """Light from the newest up/down event when the basement sample is fresh."""
     import database
 
-    beats = database.recent_heartbeats(1)
-    fresh = bool(beats) and now_unix - float(beats[0]["ts"]) <= STALE_THRESHOLD_SEC
-    if not fresh:
+    if database.house_grid_now(now_unix) == "unknown":
         light = {"kind": "unknown"}
     else:
         event = _latest_light_event()

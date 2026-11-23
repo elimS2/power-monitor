@@ -1,8 +1,12 @@
 """Heartbeat API routes."""
+import logging
+
 from fastapi import APIRouter, Query
 
 from api.deps import check_admin, check_permission
-from database import kv_set, save_heartbeat
+from database import save_heartbeat
+
+log = logging.getLogger("power_monitor")
 
 router = APIRouter(tags=["heartbeat"])
 
@@ -15,13 +19,7 @@ async def ep_heartbeat(
 ):
     check_permission(key, "heartbeat")
     save_heartbeat(plug204, plug175)
-    kv_set("stale_alerted", "0")
-    import detection
-    import logging
-
-    log = logging.getLogger("power_monitor")
     log.debug("HB plug204=%d plug175=%d", plug204, plug175)
-    await detection.analyze()
     return {"ok": True}
 
 

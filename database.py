@@ -14,7 +14,15 @@ import threading
 import time
 from datetime import datetime
 
-from config import CLEANUP_KEEP_DAYS, DB_PATH, DEYE_PASSIVE_DISCHARGE_W, DTEK_QUEUE, NOTIFY_GRID_SOURCE, UA_TZ
+from config import (
+    CLEANUP_KEEP_DAYS,
+    DB_PATH,
+    DEYE_PASSIVE_DISCHARGE_W,
+    DTEK_QUEUE,
+    NOTIFY_GRID_SOURCE,
+    STALE_THRESHOLD_SEC,
+    UA_TZ,
+)
 from schedule_board import (
     apply_power_event,
     apply_voltage_sample,
@@ -770,11 +778,11 @@ def tg_test_chat_id() -> str:
 # ─── API key config ─────────────────────────────────────────────
 
 # Permission groups for endpoints: dashboard, dashboard_full, heartbeat, deye, debug, admin
-# Sections: sched_details, boiler_details, ev_details, links_details, alert_ev_details, tg_details, deye_details, hb_details, legend_details, avatars_details
+# Sections: sched_details, boiler_details, ev_details, links_details, alert_ev_details, tg_details, deye_details, legend_details, avatars_details
 ALL_SECTIONS = [
     "sched_details", "boiler_details", "ev_details", "links_details",
     "alert_ev_details", "tg_details", "voltage_details", "voltage_house_details",
-    "deye_details", "deye_house_details", "breaker_details", "hb_details", "legend_details", "avatars_details",
+    "deye_details", "deye_house_details", "breaker_details", "legend_details", "avatars_details",
     "collections_details",
 ]
 
@@ -799,7 +807,6 @@ SECTION_LABELS = {
     "deye_details": "Deye інвертор",
     "deye_house_details": "Deye інвертор будинку",
     "breaker_details": "Автомати підвалу",
-    "hb_details": "Роутер / Heartbeats",
     "legend_details": "Легенда повідомлень",
     "avatars_details": "Аватарки каналу",
     "collections_details": "Участь у зборах",
@@ -1405,6 +1412,19 @@ def recent_events(n: int = 50) -> list[dict]:
             "SELECT event, ts FROM power_events ORDER BY id DESC LIMIT ?", (n,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def latest_light_event() -> dict | None:
+    """Newest up or down event. Voltage rows do not count as the light clock."""
+    with _conn() as db:
+        row = db.execute(
+            """SELECT event, ts FROM power_events
+               WHERE event IN ('up', 'down')
+               ORDER BY ts DESC, id DESC LIMIT 1"""
+        ).fetchone()
+    if row is None:
+        return None
+    return {"event": row["event"], "ts": float(row["ts"])}
 
 
 def events_in_range(ts_start: float, ts_end: float) -> list[dict]:
@@ -2359,6 +2379,56 @@ def has_all_three_phases_voltage(max_age_sec: float = 300, inverter_id: int | No
         return False
     v1, v2, v3 = r.get("grid_v_l1"), r.get("grid_v_l2"), r.get("grid_v_l3")
     return (v1 and v1 > 0) and (v2 and v2 > 0) and (v3 and v3 > 0)
+
+
+def _phase_volts(row: dict) -> tuple[float, float, float]:
+    def num(key: str) -> float:
+        value = row.get(key)
+        try:
+            return float(value) if value else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+    return num("grid_v_l1"), num("grid_v_l2"), num("grid_v_l3")
+
+
+def house_grid_now(now: float | None = None) -> str:
+    """Basement reading: up, down, voltage, or unknown. Does not read plugs.
+
+    `unknown` is no sample, or a sample older than STALE_THRESHOLD_SEC.
+    One live phase is voltage, not up. `now` lets a caller freeze the clock.
+    """
+    moment = time.time() if now is None else now
+    record = house_inverter_record()
+    if record is None:
+        return "unknown"
+    rows = recent_deye_log(1, record["id"])
+    if not rows:
+        return "unknown"
+    sample = rows[0]
+    if moment - float(sample["ts"]) > STALE_THRESHOLD_SEC:
+        return "unknown"
+    v1, v2, v3 = _phase_volts(sample)
+    if v1 > 0 and v2 > 0 and v3 > 0:
+        trend = deye_voltage_trend(1000, inverter_id=record["id"])
+        if trend in ("high", "low"):
+            return "voltage"
+        return "up"
+    if v1 > 0 or v2 > 0 or v3 > 0:
+        return "voltage"
+    return "down"
+
+
+def apartment_link_fresh(now: float | None = None) -> bool:
+    """True when the newest apartment inverter sample is still within the fresh window."""
+    moment = time.time() if now is None else now
+    try:
+        iid = apartment_inverter_id()
+    except ValueError:
+        return False
+    rows = recent_deye_log(1, iid)
+    if not rows:
+        return False
+    return moment - float(rows[0]["ts"]) <= STALE_THRESHOLD_SEC
 
 
 def _last_nonzero_for_phase(key: str, limit: int, inverter_id: int | None = None) -> list[tuple[float, float]]:

@@ -1,9 +1,8 @@
 """
 Power outage monitor server.
 
-Receives ICMP ping results from router every ~10s for two smart plugs,
-stores in SQLite, detects outages by cross-checking both plugs, and
-sends Telegram notifications.
+The building lamp and the light letters read the basement inverter phases.
+Plug heartbeats are stored and are not that decision.
 
 Run:
     uvicorn power_monitor:app --host 0.0.0.0 --port 8080
@@ -49,6 +48,7 @@ from config import (
     TUYA_BREAKER_SVITLO,
     TUYA_POLL_INTERVAL_SEC,
     GIT_COMMIT,
+    GRID_CHECK_SEC,
     STALE_THRESHOLD_SEC,
     TG_BOT_TOKEN,
     TG_WEBHOOK_SECRET,
@@ -87,7 +87,8 @@ from database import (
     deye_first_voltage_ts,
     deye_voltage_buckets,
     deye_voltage_trend,
-    first_heartbeat_ts,
+    house_grid_now,
+    latest_light_event,
     has_all_three_phases_voltage,
     has_grid_voltage_now,
     init_db,
@@ -105,7 +106,6 @@ from database import (
     overlay_fast_on_log_row,
     apply_fast_minute_load,
     recent_events,
-    recent_heartbeats,
     recent_tg_log,
     save_alert_event,
     save_boiler_schedule,
@@ -759,6 +759,19 @@ async def bg_loop():
         await asyncio.sleep(30)
 
 
+
+async def _grid_check_loop() -> None:
+    """Basement phase decision on its own clock. Not the one-second inverter read."""
+    while True:
+        try:
+            await detection.analyze()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("grid_check: %s", exc)
+        await asyncio.sleep(GRID_CHECK_SEC)
+
+
 # ─── FastAPI ─────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -768,6 +781,7 @@ async def lifespan(_app: FastAPI):
     await dtek.fetch_weather()
     await dtek.fetch_alert()
     task = asyncio.create_task(bg_loop())
+    grid_task = asyncio.create_task(_grid_check_loop())
     fast_task = None
     if DEYE_FAST_INTERVAL_SEC in (1, 2):
         fast_task = asyncio.create_task(_fast_loop())
@@ -798,6 +812,7 @@ async def lifespan(_app: FastAPI):
         log.error("access flush on stop failed")
     if fast_task is not None:
         fast_task.cancel()
+    grid_task.cancel()
     task.cancel()
 
 
@@ -829,8 +844,15 @@ app.include_router(static_router)
 def get_display_status() -> dict:
     """
     Single source of truth for power/voltage status. Used by dashboard (and must match Telegram logic).
-    Uses the inverter selected by NOTIFY_GRID_SOURCE, not the plugs. Returns: {status_cls, status_text, icon}
+    Uses the basement inverter phases, not the plugs. Returns: {status_cls, status_text, icon}
     """
+    if house_grid_now() == "unknown":
+        return {
+            "status_cls": "",
+            "status_text": "Немає свіжого заміру підвалу",
+            "icon": "icon_off.png",
+            "voltage": None,
+        }
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
     phases_ok = has_all_three_phases_voltage(inverter_id=notify_grid_inverter_id())
@@ -1043,20 +1065,9 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
     """Build HTML fragments for partial dashboard update (no full reload)."""
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
-    hb = recent_heartbeats(30)
     ev = recent_events(30)
 
-    mk_cls = "down"
-    mk_text = "Роутер: немає даних"
-    if hb:
-        last_hb_age = int(time.time() - hb[0]["ts"])
-        mk_online = last_hb_age < STALE_THRESHOLD_SEC
-        mk_cls = "up" if mk_online else "down"
-        ts_abs = datetime.fromtimestamp(hb[0]["ts"], tz=UA_TZ).strftime("%Y.%m.%d %H:%M:%S")
-        age_str = f"{last_hb_age}с тому" if mk_online else f"{last_hb_age // 60} хв тому"
-        mk_text = f"Роутер: online ({age_str}, {ts_abs})" if mk_online else f"Роутер: OFFLINE ({age_str}, {ts_abs})"
-
-    duration_text = _power_status_text() if (hb or ev) else ""
+    duration_text = _power_status_text()
     schedule_note = ""
     if dtek.schedule_cache and dtek.schedule_cache.get("today"):
         now_kyiv = datetime.now(UA_TZ)
@@ -1072,12 +1083,6 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
     status_text = status["status_text"]
     icon = status["icon"]
     dur_ext = f"&nbsp;&nbsp;{schedule_note}" if schedule_note else ""
-
-    hb_rows = ""
-    for r in hb:
-        c204 = "down" if r["plug204"] == 0 else "up"
-        c175 = "down" if r["plug175"] == 0 else "up"
-        hb_rows += f'<tr><td>{_ts_fmt(r["ts"])}</td><td class="{c204}">{r["plug204"]}/3</td><td class="{c175}">{r["plug175"]}/3</td></tr>\n'
 
     _ev_labels = {"down": "Пропало", "up": "З'явилось", "voltage_high": "Висока напруга", "voltage_low": "Низька напруга", "voltage_issue": "Проблема напруги"}
     _ev_downlike = ("down", "voltage_high", "voltage_low", "voltage_issue")
@@ -1292,9 +1297,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
         "pm_sched": _build_schedule_fragment(is_down),
         "pm_weather": weather_html,
         "pm_alert": alert_html,
-        "pm_mk": f'<div class="mk {mk_cls}" id="mkStatus">{mk_text}</div>',
         "pm_ev_tbody": ev_rows,
-        "pm_hb_tbody": hb_rows,
         "pm_tg_tbody": tg_rows,
         "pm_alert_ev_tbody": alert_ev_rows,
         "pm_deye": f'<div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details>',
@@ -1303,7 +1306,7 @@ def _build_update_fragments(chart_shift: int = 0) -> dict:
         "pm_voltage": voltage_html,
         "pm_voltage_house": house_voltage_html,
         "pm_ver": f'v <a href="https://github.com/elimS2/power-monitor/commit/{GIT_COMMIT}" target="_blank" rel="noopener">{GIT_COMMIT}</a> · {online_count()} в онлайні',
-        "title": ("❌ Світло нема" if is_down else "✅ Світло є") + " — Power Monitor",
+        "title": f"{status_text} — Power Monitor",
         "favicon": icon,
     }
 
@@ -1390,22 +1393,14 @@ def _format_duration(seconds: int) -> str:
 
 
 def _power_status_text() -> str:
-    is_down = kv_get("power_down") == "1"
-    ev = recent_events(1)
-    hb = recent_heartbeats(1)
-    now = time.time()
-
-    if ev:
-        since_ts = ev[0]["ts"]
-    elif hb:
-        since_ts = first_heartbeat_ts() or hb[0]["ts"]
-    else:
-        return "Світло є (немає даних)"
-
-    dur = _format_duration(int(now - since_ts))
-    if is_down:
-        return f"\u274c Світло ВІДСУТНЄ {dur} (з {_ts_fmt_hm(since_ts)})"
-    return f"\u2705 Світло є {dur} (з {_ts_fmt_hm(since_ts)})"
+    ev = latest_light_event()
+    if not ev:
+        return ""
+    since_ts = ev["ts"]
+    dur = _format_duration(int(time.time() - since_ts))
+    if kv_get("power_down") == "1":
+        return f"❌ Світло ВІДСУТНЄ {dur} (з {_ts_fmt_hm(since_ts)})"
+    return f"✅ Світло є {dur} (з {_ts_fmt_hm(since_ts)})"
 
 
 def _ts_fmt_hm(ts: float) -> str:
@@ -2161,21 +2156,9 @@ async def dashboard(request: Request, key: str = Query("")):
     footer_parts = allowed_footer_parts(key)
     is_down = kv_get("power_down") == "1"
     voltage_anomaly = kv_get("voltage_anomaly") == "1"
-    hb = recent_heartbeats(30)
     ev = recent_events(30)
 
-    if hb:
-        last_hb_age = int(time.time() - hb[0]["ts"])
-        mk_online = last_hb_age < STALE_THRESHOLD_SEC
-        mk_cls = "up" if mk_online else "down"
-        ts_abs = datetime.fromtimestamp(hb[0]["ts"], tz=UA_TZ).strftime("%Y.%m.%d %H:%M:%S")
-        age_str = f"{last_hb_age}с тому" if mk_online else f"{last_hb_age // 60} хв тому"
-        mk_text = f"Роутер: online ({age_str}, {ts_abs})" if mk_online else f"Роутер: OFFLINE ({age_str}, {ts_abs})"
-    else:
-        mk_cls = "down"
-        mk_text = "Роутер: немає даних"
-
-    duration_text = _power_status_text() if (hb or ev) else ""
+    duration_text = _power_status_text()
 
     schedule_note = ""
     if dtek.schedule_cache and dtek.schedule_cache.get("today"):
@@ -2196,16 +2179,6 @@ async def dashboard(request: Request, key: str = Query("")):
                 schedule_note = "\U0001f4c5 За графіком (можливе відкл. не сталось)"
             else:
                 schedule_note = "\U0001f4c5 За графіком"
-
-    hb_rows = ""
-    for r in hb:
-        c204 = "down" if r["plug204"] == 0 else "up"
-        c175 = "down" if r["plug175"] == 0 else "up"
-        hb_rows += (
-            f'<tr><td>{_ts_fmt(r["ts"])}</td>'
-            f'<td class="{c204}">{r["plug204"]}/3</td>'
-            f'<td class="{c175}">{r["plug175"]}/3</td></tr>\n'
-        )
 
     _ev_labels = {"down": "Пропало", "up": "З'явилось", "voltage_high": "Висока напруга", "voltage_low": "Низька напруга", "voltage_issue": "Проблема напруги"}
     _ev_downlike = ("down", "voltage_high", "voltage_low", "voltage_issue")
@@ -2532,7 +2505,6 @@ async def dashboard(request: Request, key: str = Query("")):
 {_wrap_dashboard_section("voltage_details", f'<details id="voltage_details" open data-ls-key="voltage_open" data-default-open="1"><summary><h2 style="display:inline">Напруга мережі в квартирі</h2></summary><div id="pm-voltage" class="vchart-host">{voltage_html}</div></details>', allowed) if "deye_details" in allowed else ""}
 {(_wrap_dashboard_section("deye_details", f'<details id="deye_details" data-ls-key="deye_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор</h2></summary><div id="pm-deye"><div class="{"mk up" if deye_log else "mk"}" style="margin-bottom:0.5rem;color:var(--muted)">⚡ {deye_summary}{f"<br>{deye_summary_line2}" if deye_summary_line2 else ""}</div>{deye_battery_html}{deye_cumulative_table}{deye_grid_html}<details id="deye_daily_details" open data-ls-key="deye_daily_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Споживання по днях</summary><table><tr><th>День</th><th>Load</th><th>Grid</th><th>Інтеграція</th><th>Зразків</th></tr>{deye_daily_rows}</table></details><details id="deye_table_details" open data-ls-key="deye_table_open" data-default-open="1"><summary style="font-size:0.85rem;color:var(--muted)">Історія показників</summary><table><tr><th>Час</th><th>Спожив. (Вт)</th><th>Мережа (Вт)</th><th>АКБ %</th><th>L1 В</th><th>L2 В</th><th>L3 В</th><th>Батарея (Вт)</th></tr>{deye_rows}</table></details></div></details>', allowed) if "deye_details" in allowed else "")}
 {_wrap_dashboard_section("deye_house_details", '<details id="deye_house_details" data-ls-key="deye_house_open" data-default-open="0"><summary><h2 style="display:inline">Deye інвертор будинку</h2></summary><div id="pm-deye-house">' + house_deye_inner_html() + '</div></details>', allowed)}
-{(f'<div class="dashboard-section" data-section-id="hb_details"><span class="drag-handle" draggable="true" title="Перетягніть для зміни порядку">⋮⋮</span><details id="hb_details" data-ls-key="hb_open" data-default-open="0"><summary><h2 style="display:inline">Роутер / Heartbeats</h2></summary><div id="pm-mk-wrap"><div class="mk {mk_cls}" id="mkStatus">{mk_text}</div></div><table><tr><th>Час</th><th>Plug 204</th><th>Plug 175</th></tr><tbody id="pm-hb-tbody">{hb_rows}</tbody></table></details></div>' if "hb_details" in allowed else "")}
 {_wrap_dashboard_section("legend_details", legend_html, allowed) if "legend_details" in allowed else ""}
 {_wrap_dashboard_section("avatars_details", '<details id="avatars_details" data-ls-key="avatars_open" data-default-open="0"><summary><h2 style="display:inline">Аватарки каналу</h2></summary><table><tr><th>Стан</th><th>Іконка</th><th>Файл</th></tr><tr><td>Світло є (активна)</td><td><img src="/icons/icon_on.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_on.png</td></tr><tr><td>Світло нема (активна)</td><td><img src="/icons/icon_off.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off.png</td></tr><tr><td>Світло нема (v3)</td><td><img src="/icons/icon_off_v3.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v3.png</td></tr><tr><td>Світло нема (v2)</td><td><img src="/icons/icon_off_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_off_v2.png</td></tr><tr><td>Висока напруга (v1)</td><td><img src="/icons/icon_high_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v1.png</td></tr><tr><td>Висока напруга (v2)</td><td><img src="/icons/icon_high_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_high_voltage_v2.png</td></tr><tr><td>Низька напруга (v1)</td><td><img src="/icons/icon_low_voltage_v1.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v1.png</td></tr><tr><td>Низька напруга (v2)</td><td><img src="/icons/icon_low_voltage_v2.png" style="width:64px;height:64px;border-radius:50%"></td><td>icon_low_voltage_v2.png</td></tr></table></details>', allowed) if "avatars_details" in allowed else ""}
 

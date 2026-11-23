@@ -332,21 +332,22 @@ class TickItpTests(unittest.TestCase):
         self._tmpdir.cleanup()
         reset_itp_tick_clock()
 
-    def _beat(self, ts: float) -> None:
+    def _basement(self, ts: float) -> None:
+        record = database.house_inverter_record()
         with database._conn() as db:
             db.execute(
-                "INSERT INTO heartbeats(plug204, plug175, ts) VALUES(1, 1, ?)",
-                (ts,),
+                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id) VALUES (?,?,?,?,?)",
+                (230.0, 230.0, 230.0, ts, record["id"]),
             )
 
     def _event(self, event: str, ts: float) -> None:
         with database._conn() as db:
             db.execute("INSERT INTO power_events(event, ts) VALUES(?, ?)", (event, ts))
 
-    def test_stale_heartbeat_stores_hold(self):
+    def test_stale_basement_sample_stores_hold(self):
         now = _at(10, 0)
         unix = now.timestamp()
-        self._beat(unix - 301)
+        self._basement(unix - 301)
         self._event("up", unix - 20 * 60)
         with self.assertLogs("power_monitor", level="INFO") as caught:
             action = tick_itp_decision(now, unix)
@@ -360,7 +361,7 @@ class TickItpTests(unittest.TestCase):
     def test_missing_boiler_at_18_stores_default_on(self):
         now = _at(18, 0)
         unix = now.timestamp()
-        self._beat(unix - 301)
+        self._basement(unix - 301)
         with self.assertLogs("power_monitor", level="INFO") as caught:
             action = tick_itp_decision(now, unix)
         self.assertEqual(action, "none")
@@ -377,7 +378,7 @@ class TickItpTests(unittest.TestCase):
     def test_light_up_for_16_minutes_stores_on(self):
         now = _at(10, 0)
         unix = now.timestamp()
-        self._beat(unix)
+        self._basement(unix)
         self._event("up", unix - 16 * 60)
         action = tick_itp_decision(now, unix)
         self.assertEqual(action, "none")
@@ -393,7 +394,7 @@ class TickItpTests(unittest.TestCase):
 
         now = _at(10, 0)
         unix = now.timestamp()
-        self._beat(unix)
+        self._basement(unix)
         self._event("down", unix - 20 * 60)
 
         def plant(doc):
@@ -438,7 +439,7 @@ class TickItpTests(unittest.TestCase):
     def test_second_tick_inside_a_minute_keeps_the_previous_decision(self):
         now = _at(10, 0)
         unix = now.timestamp()
-        self._beat(unix)
+        self._basement(unix)
         self._event("up", unix - 16 * 60)
         tick_itp_decision(now, unix)
         self._event("down", unix - 20 * 60)
@@ -673,9 +674,13 @@ class CloudItpTests(unittest.TestCase):
         cache.refresh_at = now + 10_000
         return cache
 
-    def _beat(self, ts: float) -> None:
+    def _basement(self, ts: float) -> None:
+        record = database.house_inverter_record()
         with database._conn() as db:
-            db.execute("INSERT INTO heartbeats(plug204, plug175, ts) VALUES(1, 1, ?)", (ts,))
+            db.execute(
+                "INSERT INTO deye_log(grid_v_l1, grid_v_l2, grid_v_l3, ts, inverter_id) VALUES (?,?,?,?,?)",
+                (230.0, 230.0, 230.0, ts, record["id"]),
+            )
 
     def _event(self, event: str, ts: float) -> None:
         with database._conn() as db:
@@ -697,14 +702,14 @@ class CloudItpTests(unittest.TestCase):
 
     def test_hold_and_disabled_issue_no_requests(self):
         moment, now = self._moment()
-        self._beat(now - 301)
+        self._basement(now - 301)
         self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
         cloud = _Cloud()
         self._run(cloud, moment, now)
         self.assertEqual(cloud.calls, [])
         reset_itp_tick_clock()
         self._plant(enabled=False, timers_cleared_at=1, timer_delete_attempted=True)
-        self._beat(now)
+        self._basement(now)
         self._event("up", now - 16 * 60)
         cloud = _Cloud()
         self._run(cloud, moment, now)
@@ -712,7 +717,7 @@ class CloudItpTests(unittest.TestCase):
 
     def test_edge_reads_once_and_posts_only_when_the_breaker_differs(self):
         moment, now = self._moment()
-        self._beat(now)
+        self._basement(now)
         self._event("down", now - 20 * 60)
         self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
         cloud = _Cloud(switch_on=True)
@@ -735,7 +740,7 @@ class CloudItpTests(unittest.TestCase):
 
     def test_failed_read_does_not_post_or_retry_inside_the_quarter(self):
         moment, now = self._moment()
-        self._beat(now)
+        self._basement(now)
         self._event("down", now - 20 * 60)
         self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
         cloud = _Cloud(fail_status=True)
@@ -749,7 +754,7 @@ class CloudItpTests(unittest.TestCase):
     def test_commands_off_issues_nothing_while_armed(self):
         os.environ["ITP_AUTO_COMMANDS"] = "0"
         moment, now = self._moment()
-        self._beat(now)
+        self._basement(now)
         self._event("down", now - 20 * 60)
         self._plant(enabled=True, applied="on", timers_cleared_at=1, timer_delete_attempted=True)
         cloud = _Cloud()
@@ -797,7 +802,7 @@ class CloudItpTests(unittest.TestCase):
         from api.admin import set_itp_armed
 
         moment, now = self._moment()
-        self._beat(now - 301)
+        self._basement(now - 301)
         self._plant(enabled=True, applied="on")
         cloud = _Cloud(timer_ok=False)
         self._run(cloud, moment, now)

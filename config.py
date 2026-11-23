@@ -57,16 +57,13 @@ API_KEYS = _parse_keys(os.getenv("API_KEYS", os.getenv("API_KEY", "changeme")))
 
 DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "power_monitor.db")))
 
-# When 1: ignore plug status, use only L1/L2/L3 phases from Deye for detection
-PHASES_ONLY = os.getenv("PHASES_ONLY", "0") == "1"
-
 # Which inverter's phases decide the voltage alerts and whether the light is gone.
 # "house" reads the basement Deye, past the apartment voltage limiters.
 # Set this to "apartment" if the basement logger stops answering.
 NOTIFY_GRID_SOURCE = "house"
 
-# Both plugs must be dead for this many consecutive heartbeats → outage (ignored if PHASES_ONLY)
-OUTAGE_CONFIRM_COUNT = 18  # 18 × 10s = ~3 minutes
+# How often the basement phase decision runs. A period, not a switch.
+GRID_CHECK_SEC = 10
 
 # Sample bands for the schedule board and the panel meter. Not the notification pause.
 VOLTAGE_PRESENT_MIN = 50.0
@@ -74,7 +71,7 @@ VOLTAGE_LOW_BELOW = 198.0
 VOLTAGE_HIGH_ABOVE = 240.0
 VOLTAGE_SAMPLE_GAP_SEC = 90
 
-# Voltage anti-spam: require N consecutive readings before notify (3 ≈ 30s at heartbeat rate)
+# Voltage anti-spam: require N consecutive readings before notify (3 ≈ 30s at GRID_CHECK_SEC)
 VOLTAGE_CONFIRM_COUNT = 3
 # Quiet gap after a voltage alert. A new alert waits this long, and
 # "voltage settled" is sent only after this long of actually normal phases.
@@ -84,7 +81,7 @@ VOLTAGE_UNSTABLE_CHANGES_THRESHOLD = 3
 VOLTAGE_UNSTABLE_WINDOW_SEC = 600
 VOLTAGE_UNSTABLE_SUPPRESS_SEC = 900
 
-# No heartbeat for this long → router/internet alert
+# A basement or apartment sample older than this is not a fresh reading.
 STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", "300"))
 
 # Keep heartbeat data for this many days
@@ -222,8 +219,8 @@ VOLTAGE_STATUS = {
 DASHBOARD_SECTION_ORDER = [
     "breaker_details", "voltage_house_details", "sched_details", "collections_details",
     "boiler_details", "ev_details", "links_details",
-    "alert_ev_details", "tg_details", "deye_details", "voltage_details", "deye_house_details",
-    "hb_details", "legend_details", "avatars_details",
+    "alert_ev_details", "tg_details",     "deye_details", "voltage_details", "deye_house_details",
+    "legend_details", "avatars_details",
 ]
 
 GIT_COMMIT = _git_version()
