@@ -3,7 +3,7 @@
 - Status: `PHASE 4 DONE`
 - Owner: Volodymyr
 - Repo: `power-monitor/` (Life workspace). House facts live in local markdown and canvas files, not in the company Knowledge Base.
-- Last updated: 2026-11-23T17:41:22Z
+- Last updated: 2026-11-23T18:28:58Z
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Related: `docs/DEYE_WIREGUARD_VPN.md`, `docs/DEYE_PORT_FORWARD.md`, canvas `shelter-wifi-plan`, `house/hv-battery.md`, `house/shelter-wifi.md`, `house/basement-breakers.md`
 - Source dialog for the draft: [OpenWRT router IP check](2ae03383-22c4-4f8e-8fe6-7f4a2f5d2bad), 2026-11-13. Scan dialog: [Tuya і автомати підвалу](cbc74fb3-6d9d-49c0-bc80-7686f6abfc21).
@@ -108,7 +108,7 @@ Apartment Deye only. The process on GCP polls it.
 - Lamp: `get_display_status` and `detection.py` follow `notify_grid_inverter_id`. That is the basement row while it exists. The 2026-11-13 sentence that said a newer house row must not move the lamp is superseded.
 - UI: section id `deye_details`, title "Deye інвертор". Section `voltage_details` ("Напруга мережі") is a different block, fed from apartment samples, and the built-in role "Без Deye" includes it. Inner ids that must stay unique per block: `deye_details` / `deye_open`, `pm-deye`, `deye_battery_details` / `deye_battery_open`, `deye_grid_details` / `deye_grid_open`, `deye_cumulative_details` / `deye_cumulative_open`, `deye_daily_details` / `deye_daily_open`, `deye_table_details` / `deye_table_open`.
 - Live refresh: `GET /api/dashboard-fragments` returns `pm_deye` to any key with the `dashboard` permission. `static/app.js` paints it into `#pm-deye`. Hiding the HTML section does not stop the JSON. The response body is the leak.
-- Capacity: `DEYE_BATTERY_KWH` is one float. The apartment card says the dashboard uses 60. The building pack is about 160. One env value cannot serve both blocks.
+- Capacity: `DEYE_BATTERY_KWH` is one float. The apartment card says the dashboard uses 60. The building pack was first summed as 160 on 2026-11-07. Since 2026-11-14 the counted pack is 153.6 kWh, and that is the number the registry stores. One env value cannot serve both blocks.
 - Keys: `allowed_sections` uses `api_key_config_get`. Label `admin` sees every section. No row, or a resolved section list that is null or empty, also returns every section. When `role_id` is set, `api_key_config_get` replaces the row's `sections` column with the role's list, and `api_key_config_set_permissions` stores `sections` as NULL. Writing the column while `role_id` is set does nothing. The hide-apartment setup is that role list, often the builtin "Без Deye". Putting `deye_details` on the public key would publish the apartment inverter. Adding a new id to `ALL_SECTIONS` publishes it to every fail-open key immediately.
 - Path: GCP reaches the apartment logger through WireGuard `192.168.88.0/24` (`docs/DEYE_WIREGUARD_VPN.md`). The basement host, from the November scan, is on `192.168.0.0/24`. That prefix is not in the documented AllowedIPs. The canvas route `192.168.67.0/24` via `10.99.0.6` is a desk-era plan, not a measured path, and it is the wrong subnet for the breakers.
 
@@ -337,6 +337,7 @@ Which Tuya MAC is the light and which is the heating breaker is not in this file
 - 2026-11-23T17:11:00Z — Two stale locks brought in line with the code already on `HEAD` `0396c0b`. `config.py` → `NOTIFY_GRID_SOURCE` is `"house"`. `database.py` → `notify_grid_inverter_id` returns the basement row, and the apartment id only when that row is missing. `get_display_status` and `detection.py` follow that id. `save_deye_log` still writes `schedule_day.voltage_json` only for the apartment id. The public chart is `voltage_house_details` ("Напруга мережі будинку"). `voltage_details` ("Напруга мережі в квартирі") is rendered only when `deye_details` is allowed, so the public key does not get it. The 2026-11-13 sentences that froze the lamp on the apartment and left the public voltage strip on the apartment are superseded. No code change. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:10:46.489Z`.
 - 2026-11-23T17:22:00Z — The three leftover current-tense copies of that old lamp lock are updated: the section 3 map, the section 5 diagram, and the section 7 compatibility bullet. The Phase 2 lamp asserts are marked superseded. No code change. Source proof `verifiedAtUtc=2026-11-23T17:21:40.386Z`.
 - 2026-11-23T17:41:22Z — Acceptance leftovers, text only. The shelter-card map now says the router is in the basement. The route sentence now points at the one-host gate of `2026-11-13T20:49:06Z`. The handoff no longer waits on `REVIEWED / READY FOR LOCAL WORK`. Pack count: on 2026-11-14 the operator counted 10 modules × 15.360 kWh = 153.6, and `database.py` → `_ensure_house_inverter` rewrites a stored 160 to 153.6 once. The 2026-11-13 seed line that says battery 160 stays as the history of that evening. No code change. Source proof composer `195973fe-c59a-43b4-85a5-83484b6497f6`, `verifiedAtUtc=2026-11-23T17:41:22.449Z`.
+- 2026-11-23T18:28:58Z — Two leftover present-tense lines. Section 3 now says the counted pack is 153.6. The critic note no longer says Phase 1 is not deployed. No code. Source proof `verifiedAtUtc=2026-11-23T18:28:58.687Z`.
 
 ### Open questions
 
@@ -362,7 +363,7 @@ None. The building logger is the Phase 0 host. The lamp follows that basement ro
 - Verdict then: `CHANGES REQUIRED`. CRITICAL 0, HIGH 2, MEDIUM 4, LOW 2.
 - Lead accepted both HIGH findings and the MEDIUM/LOW fixes.
 - Final confirmation, same critic: `APPROVE`, CRITICAL 0, HIGH 0, MEDIUM 0, LOW 0. Includes the builtin-role `UPDATE` sentence.
-- Status is `REVIEWED / READY FOR LOCAL WORK` after confirmation of the MAC revision. That sentence described the plan before Phase 1. Phase 1 later landed locally at 2026-11-13T19:40:56Z and is not deployed.
+- Status is `REVIEWED / READY FOR LOCAL WORK` after confirmation of the MAC revision. That sentence described the plan before Phase 1. Phase 1 later landed locally at 2026-11-13T19:40:56Z and left with the Phase 3 deploy. The words "is not deployed" were only true at the moment of this critic note.
 
 ## 10. Progress log
 

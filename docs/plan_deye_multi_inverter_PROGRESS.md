@@ -5,7 +5,7 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - Status: `PHASE 4 DONE`
 - Active skin: A (registry + `deye_log.inverter_id`, MAC stored, host is last confirmed address)
 - Next phase: none. The four phases in this plan are done. House poll stays on the apartment-safe path.
-- Last updated: 2026-11-23T17:41:22Z
+- Last updated: 2026-11-23T18:28:58Z
 
 ## Phase board
 
@@ -53,3 +53,4 @@ Companion of `docs/plan_deye_multi_inverter.md`.
 - 2026-11-23T17:22:00Z — The three leftover copies of the old lamp lock are updated in the map, the diagram, and the compatibility list. No code. Source proof `verifiedAtUtc=2026-11-23T17:21:40.386Z`.
 - 2026-11-23T17:34:30Z — Prompt #19 rejected acceptance. The two named modules were green alone (40 and 28) and red together: `test_board_read_does_not_scan_samples_or_events` left four stubs on `database`. Operator agreed. The `finally` now restores `deye_voltage_trend`, `events_in_range`, `recent_events`, and `deye_aggregates_refresh` with `_conn`. One process: 68 OK. No product path change. No deploy. Acceptance was not re-issued. Source proof `verifiedAtUtc=2026-11-23T17:33:33.106Z`.
 - 2026-11-23T17:41:22Z — Two acceptance leftovers, text only. The shelter card, the one-host route, and the closed review gate are stated in the present tense. The pack recount of 2026-11-14 is recorded: 153.6 kWh, and a stored 160 is rewritten once. No code. No deploy. Source proof `verifiedAtUtc=2026-11-23T17:41:22.449Z`.
+- 2026-11-23T18:28:58Z — Section 3 no longer calls the pack "about 160". The critic note no longer says Phase 1 is not deployed. No code. No deploy. Source proof `verifiedAtUtc=2026-11-23T18:28:58.687Z`.
